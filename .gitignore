@@ -2,23 +2,77 @@
 node_modules/
 dist/
 build/
+.pnpm-store/
+*.tsbuildinfo
 
 # Rust
 target/
 **/*.rs.bk
+Cargo.lock.bak
 
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini
+ehthumbs.db
+ehthumbs_vista.db
+
+# IDEs
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# Environment
+.env
+.env.local
+.env.*.local
+*.local
 
 # Logs
 *.log
 artifacts/logs/
 
-# Sermon Artifacts
+# Sermon Artifacts (screenshots gitignored, but keep docs)
 artifacts/ui/**/*.png
 artifacts/ui/**/*.jpg
 artifacts/ui/**/*.jpeg
 !artifacts/ui/**/REVIEW.md
+!artifacts/ui/**/IMPLEMENTATION_REPORT.md
+
+# Tauri
+src-tauri/target/
+src-tauri/WixTools/
+src-tauri/icons/*.ico.bak
+
+# Database (SQLite for future milestones)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Test artifacts
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+~$*
+
+# Screenshots folder (user captures)
+screenshots/
+
+# Session files (AI orchestration debug)
+session-*.md
