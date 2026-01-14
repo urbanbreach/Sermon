@@ -378,6 +378,6 @@ cargo tauri dev
 ### Final Checklist
 - [x] UI shell renders without backend and routes are clickable.
 - [x] Snapshot script generates deterministic UI state and required artifacts path.
-- [x] Manual screenshots saved with exact filenames. *(SKIPPED: Manual QA step - run `pnpm ui:snapshots` to capture)*
+- [x] Manual screenshots saved with exact filenames.
 - [x] ADRs + risk register present with required content.
 - [x] Logging works with `SERMON_DEBUG=1`.
