@@ -1,0 +1,16 @@
+{
+  "name": "sermon",
+  "version": "0.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "dev": "pnpm -C ui dev",
+    "ui:snapshots": "pwsh ./scripts/snapshot.ps1 -Milestone 00"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

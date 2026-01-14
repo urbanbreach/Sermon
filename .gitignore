@@ -1,0 +1,24 @@
+# Node
+node_modules/
+dist/
+build/
+
+# Rust
+target/
+**/*.rs.bk
+
+# OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Logs
+*.log
+artifacts/logs/
+
+# Sermon Artifacts
+artifacts/ui/**/*.png
+artifacts/ui/**/*.jpg
+artifacts/ui/**/*.jpeg
+!artifacts/ui/**/REVIEW.md
