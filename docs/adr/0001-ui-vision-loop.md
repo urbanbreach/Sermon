@@ -16,13 +16,13 @@ To ensure screenshots are consistent (deterministic) and comparable, the applica
 - `SERMON_SNAPSHOT=1`: Freezes UI animations, sets fixed dates/times, and hides non-deterministic elements (like blinking cursors or random tips).
 
 ## Manual Capture Steps
-1. Launch the application with flags:
-   ```bash
-   SERMON_MOCK=1 SERMON_SNAPSHOT=1 npm run dev
+1. Launch the application with snapshot mode:
+   ```powershell
+   pnpm ui:snapshots -- --milestone 01
    ```
 2. Navigate to the screen/state to be verified.
 3. Manually capture a screenshot of the window.
-4. Save the screenshot to `test/snapshots/<feature_name>.png`.
+4. Save the screenshot to `artifacts/ui/<milestone-name>/<screenshot>.png`.
 
 ## Review Pack Format
 When submitting UI changes, include a "Review Pack" in the PR description or a separate Markdown file:

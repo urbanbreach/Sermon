@@ -4,13 +4,30 @@ param (
 
 $ErrorActionPreference = "Stop"
 
+# Milestone to directory mapping
+$MilestoneMap = @{
+    "00" = "00-foundation"
+    "01" = "01-library-db-scan"
+}
+
+# Milestone to expected screenshots mapping
+$ScreenshotMap = @{
+    "00" = @("shell-library.png", "shell-now-playing.png", "shell-settings.png")
+    "01" = @("tracks-empty.png", "scanning.png", "tracks-populated.png")
+}
+
 # Set environment variables for snapshot mode
 $env:SERMON_MOCK = "1"
 $env:SERMON_SNAPSHOT = "1"
 
-# Construct artifacts path
-# Using -foundation suffix as per convention seen in plans/milestones
-$ArtifactsDir = "$Milestone-foundation"
+# Get artifacts directory from mapping
+$ArtifactsDir = $MilestoneMap[$Milestone]
+if (-not $ArtifactsDir) {
+    Write-Host "Unknown milestone: $Milestone" -ForegroundColor Red
+    Write-Host "Available milestones: $($MilestoneMap.Keys -join ', ')" -ForegroundColor Yellow
+    exit 1
+}
+
 $ArtifactsPath = Join-Path "artifacts" "ui" $ArtifactsDir
 
 # Create artifacts directory if it doesn't exist
@@ -19,10 +36,13 @@ if (-not (Test-Path $ArtifactsPath)) {
     Write-Host "Created artifacts directory: $ArtifactsPath" -ForegroundColor Green
 }
 
+# Get expected screenshots
+$ExpectedScreenshots = $ScreenshotMap[$Milestone]
+
 # Print status and instructions
 Write-Host ""
 Write-Host "📸 SERMON SNAPSHOT RUNNER" -ForegroundColor Magenta
-Write-Host "=========================" -ForegroundColor Magenta
+Write-Host "==========================" -ForegroundColor Magenta
 Write-Host ""
 Write-Host "Environment:" -ForegroundColor Cyan
 Write-Host "  SERMON_MOCK     = $env:SERMON_MOCK"
@@ -31,9 +51,9 @@ Write-Host "  Milestone       = $Milestone"
 Write-Host "  Artifacts Path  = $ArtifactsPath"
 Write-Host ""
 Write-Host "Expected Screenshots:" -ForegroundColor Yellow
-Write-Host "  - shell-library.png"
-Write-Host "  - shell-now-playing.png"
-Write-Host "  - shell-settings.png"
+foreach ($screenshot in $ExpectedScreenshots) {
+    Write-Host "  - $screenshot"
+}
 Write-Host ""
 Write-Host "⚠️  DISPLAY REQUIREMENTS:" -ForegroundColor Red -BackgroundColor Black
 Write-Host "  - Viewport: 1440 x 900"

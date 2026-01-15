@@ -11,22 +11,31 @@ This directory contains manual UI snapshots and review packs for each milestone.
 
 2. **Run Snapshot Mode**:
    ```powershell
-   pnpm ui:snapshots -- --milestone 00
+   pnpm ui:snapshots -- --milestone 00   # Foundation
+   pnpm ui:snapshots -- --milestone 01   # Library DB Scan
    ```
    This will launch the application with mocked data (`SERMON_MOCK=1`) and snapshot mode enabled (`SERMON_SNAPSHOT=1`).
 
 3. **Capture Screenshots**:
    - Navigate to the required screens.
    - Use Windows Snipping Tool (Win+Shift+S) or Alt+PrntScrn.
-   - Save files to `artifacts/ui/{milestone}-foundation/`.
+   - Save files to `artifacts/ui/{milestone-name}/`.
 
-## Naming Conventions
+## Milestone Directories
 
-Save screenshots with the following standard names (PNG format):
+### Milestone 00 - Foundation
+- Directory: `artifacts/ui/00-foundation/`
+- Screenshots:
+  - `shell-library.png` - Main library view (Albums)
+  - `shell-now-playing.png` - Now Playing view/mode
+  - `shell-settings.png` - Settings screen
 
-- `shell-library.png` - Main library view (Albums)
-- `shell-now-playing.png` - Now Playing view/mode
-- `shell-settings.png` - Settings screen
+### Milestone 01 - Library DB Scan
+- Directory: `artifacts/ui/01-library-db-scan/`
+- Screenshots:
+  - `tracks-empty.png` - Tracks view with no library folders
+  - `scanning.png` - Tracks view during active scan (progress indicator)
+  - `tracks-populated.png` - Tracks view with populated library
 
 ## Review Packs
 
@@ -41,6 +50,11 @@ artifacts/
 │   │   ├── REVIEW.md
 │   │   ├── shell-library.png
 │   │   └── ...
+│   ├── 01-library-db-scan/
+│   │   ├── REVIEW.md
+│   │   ├── tracks-empty.png
+│   │   ├── scanning.png
+│   │   └── tracks-populated.png
 │   └── ...
 └── README.md
 ```
