@@ -1,11 +1,22 @@
-use tauri::Listener;
-use tracing::{info, debug, Level};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, fmt, filter::LevelFilter, Layer};
+mod commands;
+mod state;
+
+use commands::{
+    cmd_library_add_folder, cmd_library_list_folders, cmd_library_list_tracks, cmd_scan_start,
+};
+use state::LibraryState;
 use std::fs;
+use tauri::{Listener, Manager};
+use tracing::{Level, debug, info};
+use tracing_subscriber::{
+    Layer, filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt,
+};
 
 pub fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
     // 1. Determine Log Level
-    let is_debug = std::env::var("SERMON_DEBUG").map(|v| v == "1").unwrap_or(false);
+    let is_debug = std::env::var("SERMON_DEBUG")
+        .map(|v| v == "1")
+        .unwrap_or(false);
     let level = if is_debug { Level::DEBUG } else { Level::INFO };
 
     // 2. Determine Log Path
@@ -50,14 +61,41 @@ pub fn run() {
     let _guard = init_tracing();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Register event listener
             app.listen("sermon://first-interactive", |_event| {
                 info!("first_interactive");
             });
 
+            // Resolve DB path
+            let app_data_dir = app
+                .path()
+                .app_data_dir()
+                .expect("Failed to get app data directory");
+
+            // Ensure directory exists
+            fs::create_dir_all(&app_data_dir).expect("Failed to create app data directory");
+
+            let db_path = app_data_dir.join("library.db");
+            info!("Database path: {:?}", db_path);
+
+            // Initialize database
+            let conn = library::open_db(&db_path).expect("Failed to open database");
+            library::apply_migrations(&conn).expect("Failed to apply migrations");
+            drop(conn);
+
+            // Register state
+            app.manage(LibraryState::new(db_path));
+
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![
+            cmd_library_add_folder,
+            cmd_library_list_folders,
+            cmd_library_list_tracks,
+            cmd_scan_start,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
