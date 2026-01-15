@@ -136,6 +136,11 @@ impl WasapiOutput {
             self.start()?;
         }
 
+        let channels = self.channels as usize;
+        if channels == 0 || samples.is_empty() {
+            return Ok(());
+        }
+
         let available_frames = match self.client.get_available_space_in_frames() {
             Ok(frames) => frames,
             Err(err) if is_device_invalidated(&err) => {
@@ -145,17 +150,18 @@ impl WasapiOutput {
             Err(err) => return Err(map_wasapi_error(err)),
         };
 
-        let channels = self.channels as usize;
-        if channels == 0 || available_frames == 0 {
+        if available_frames == 0 {
             return Ok(());
         }
 
-        let desired_frames = available_frames as usize;
-        let desired_samples = desired_frames * channels;
+        // Calculate how many frames we can actually write
+        let input_frames = samples.len() / channels;
+        let frames_to_write = input_frames.min(available_frames as usize);
+        let samples_to_write = frames_to_write * channels;
 
-        // Prepare samples with volume applied
-        let mut scratch = vec![0.0f32; desired_samples];
-        let copy_len = samples.len().min(desired_samples);
+        if frames_to_write == 0 {
+            return Ok(());
+        }
 
         let vol = if volume.is_finite() {
             volume.clamp(0.0, 1.0)
@@ -163,19 +169,16 @@ impl WasapiOutput {
             1.0
         };
 
-        for (i, dst) in scratch.iter_mut().take(copy_len).enumerate() {
-            *dst = (samples[i] * vol).clamp(-1.0, 1.0);
-        }
-
-        // Convert f32 samples to bytes (32-bit float LE)
-        let mut data = Vec::with_capacity(desired_samples * 4);
-        for &s in &scratch {
-            data.extend_from_slice(&s.to_le_bytes());
+        // Convert f32 samples to bytes (32-bit float LE) with volume applied
+        let mut data = Vec::with_capacity(samples_to_write * 4);
+        for &s in samples.iter().take(samples_to_write) {
+            let adjusted = (s * vol).clamp(-1.0, 1.0);
+            data.extend_from_slice(&adjusted.to_le_bytes());
         }
 
         match self
             .render_client
-            .write_to_device(desired_frames, &data, None)
+            .write_to_device(frames_to_write, &data, None)
         {
             Ok(()) => Ok(()),
             Err(err) if is_device_invalidated(&err) => {
