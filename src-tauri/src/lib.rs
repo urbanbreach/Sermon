@@ -3,7 +3,7 @@ mod state;
 
 use audio_engine::decode::AudioDecoder;
 use audio_engine::device::{get_default_device, get_device_by_id};
-use audio_engine::output::{WasapiOutput, convert_channels_interleaved_f32};
+use audio_engine::output::{AudioRingBuffer, WasapiOutput, convert_channels_interleaved_f32};
 use audio_engine::{PlaybackState, TrackInfo};
 use commands::{
     AudioDebugEvent, AudioFormatData, DeviceChangedEvent, NowPlayingEvent, PlaybackErrorEvent,
@@ -142,9 +142,11 @@ pub fn run() {
 struct AudioPlayback {
     decoder: Option<AudioDecoder>,
     output: Option<WasapiOutput>,
+    ring_buffer: Option<AudioRingBuffer>,
     device_id: String, // "default" or specific device ID
     output_sample_rate: u32,
     output_channels: u16,
+    end_of_track: bool, // Track if decoder has finished
 }
 
 impl AudioPlayback {
@@ -152,9 +154,11 @@ impl AudioPlayback {
         Self {
             decoder: None,
             output: None,
+            ring_buffer: None,
             device_id: "default".to_string(),
             output_sample_rate: 0,
             output_channels: 0,
+            end_of_track: false,
         }
     }
 
@@ -240,9 +244,13 @@ impl AudioPlayback {
         );
 
         self.decoder = Some(decoder);
+        self.end_of_track = false;
 
         // Open output with decoder's format (Windows will handle conversion)
         self.open_output_for_format(sample_rate, channels)?;
+
+        // Create ring buffer sized for ~500ms of audio
+        self.ring_buffer = Some(AudioRingBuffer::new(sample_rate, channels as usize, 500));
 
         // Start the output stream
         if let Some(ref mut output) = self.output {
@@ -254,6 +262,8 @@ impl AudioPlayback {
 
     fn stop_playback(&mut self) {
         self.decoder = None;
+        self.ring_buffer = None;
+        self.end_of_track = false;
         if let Some(ref mut output) = self.output {
             let _ = output.stop();
         }
@@ -263,50 +273,88 @@ impl AudioPlayback {
         if let Some(ref mut decoder) = self.decoder {
             decoder.seek(position_ms).map_err(|e| e.to_string())?;
         }
+        // Clear the ring buffer on seek to avoid stale audio
+        if let Some(ref mut ring_buffer) = self.ring_buffer {
+            ring_buffer.clear();
+        }
+        self.end_of_track = false;
         Ok(())
     }
 
-    /// Decode and output one chunk of audio. Returns true if playback should continue.
-    fn process_audio(&mut self, volume: f32) -> Result<bool, String> {
+    /// Fill the ring buffer with decoded samples. Returns false if track ended.
+    fn fill_ring_buffer(&mut self) -> Result<bool, String> {
         let decoder = match self.decoder.as_mut() {
             Some(d) => d,
-            None => return Ok(false), // No decoder = not playing
+            None => return Ok(false),
         };
+
+        let ring_buffer = match self.ring_buffer.as_mut() {
+            Some(rb) => rb,
+            None => return Ok(false),
+        };
+
+        let output_channels = self.output_channels as usize;
+
+        // Decode packets until ring buffer is reasonably full or we hit end of track
+        // Target: keep buffer at least 50% full
+        let target_frames = ring_buffer.capacity_frames() / 2;
+
+        while ring_buffer.available_frames() < target_frames {
+            let samples = match decoder.decode_next() {
+                Ok(Some(samples)) => samples,
+                Ok(None) => {
+                    // End of track
+                    self.end_of_track = true;
+                    return Ok(ring_buffer.available_frames() > 0);
+                }
+                Err(e) => {
+                    return Err(format!("Decode error: {}", e));
+                }
+            };
+
+            if samples.is_empty() {
+                continue;
+            }
+
+            // Channel conversion if needed
+            let input_channels = decoder.channels();
+            let converted = if input_channels != output_channels {
+                convert_channels_interleaved_f32(&samples, input_channels, output_channels)
+            } else {
+                samples
+            };
+
+            ring_buffer.push(&converted);
+        }
+
+        Ok(true)
+    }
+
+    /// Process audio: fill buffer, then write to WASAPI. Returns true if playback should continue.
+    fn process_audio(&mut self, volume: f32) -> Result<bool, String> {
+        if self.decoder.is_none() {
+            return Ok(false);
+        }
 
         let output = match self.output.as_mut() {
             Some(o) => o,
             None => return Err("No output device".to_string()),
         };
 
-        // Decode next chunk
-        let samples = match decoder.decode_next() {
-            Ok(Some(samples)) => samples,
-            Ok(None) => {
-                // End of track
-                return Ok(false);
-            }
-            Err(e) => {
-                return Err(format!("Decode error: {}", e));
-            }
+        let ring_buffer = match self.ring_buffer.as_mut() {
+            Some(rb) => rb,
+            None => return Err("No ring buffer".to_string()),
         };
 
-        if samples.is_empty() {
-            return Ok(true); // Continue, just no samples this time
-        }
-
-        // Channel conversion if needed
-        let input_channels = decoder.channels();
-        let output_channels = output.channels() as usize;
-
-        let converted = if input_channels != output_channels {
-            convert_channels_interleaved_f32(&samples, input_channels, output_channels)
-        } else {
-            samples
-        };
-
-        // Write to output
-        match output.write_samples(&converted, volume) {
-            Ok(()) => Ok(true),
+        // Write from ring buffer to WASAPI
+        match output.write_from_buffer(ring_buffer, volume) {
+            Ok(_frames_written) => {
+                // Check if we're done (end of track and buffer empty)
+                if self.end_of_track && ring_buffer.available_frames() == 0 {
+                    return Ok(false);
+                }
+                Ok(true)
+            }
             Err(audio_engine::output::OutputError::DeviceInvalidated) => {
                 Err("Device invalidated".to_string())
             }
@@ -366,6 +414,21 @@ fn spawn_audio_thread(
                     };
 
                     if is_playing {
+                        // First, fill the ring buffer with decoded samples
+                        if let Err(e) = playback.fill_ring_buffer() {
+                            error!("Failed to fill ring buffer: {}", e);
+                            let track_id = {
+                                let engine = engine.lock();
+                                engine.session.as_ref().map(|s| s.track_id)
+                            };
+                            emit_playback_error(&app, "decode_error", &e, track_id, false, None);
+                            engine.lock().stop();
+                            playback.stop_playback();
+                            emit_playback_state(&app, &engine);
+                            continue;
+                        }
+
+                        // Then write from ring buffer to WASAPI
                         match playback.process_audio(volume) {
                             Ok(true) => {
                                 // Continue playing

@@ -234,6 +234,74 @@ impl WasapiOutput {
     pub fn event_handle(&self) -> &Handle {
         &self.event_handle
     }
+
+    /// Wait for WASAPI to signal it needs more data. Returns false on timeout/error.
+    pub fn wait_for_buffer_request(&self, timeout_ms: u32) -> bool {
+        self.event_handle.wait_for_event(timeout_ms).is_ok()
+    }
+
+    /// Get the number of frames available in the buffer for writing.
+    pub fn available_frames(&self) -> Result<u32, OutputError> {
+        match self.client.get_available_space_in_frames() {
+            Ok(frames) => Ok(frames),
+            Err(err) if is_device_invalidated(&err) => Err(OutputError::DeviceInvalidated),
+            Err(err) => Err(map_wasapi_error(err)),
+        }
+    }
+
+    /// Write samples from a ring buffer, filling as much of the available space as possible.
+    /// This is the proper way to use WASAPI - call this after wait_for_buffer_request returns true.
+    pub fn write_from_buffer(
+        &mut self,
+        ring_buffer: &mut AudioRingBuffer,
+        volume: f32,
+    ) -> Result<usize, OutputError> {
+        if !self.started {
+            self.start()?;
+        }
+
+        let channels = self.channels as usize;
+        if channels == 0 {
+            return Ok(0);
+        }
+
+        let available_frames = self.available_frames()?;
+        if available_frames == 0 {
+            return Ok(0);
+        }
+
+        let frames_to_write = available_frames as usize;
+        let samples_to_write = frames_to_write * channels;
+
+        // Get samples from ring buffer
+        let mut samples = vec![0.0f32; samples_to_write];
+        ring_buffer.pop_into(&mut samples);
+
+        let vol = if volume.is_finite() {
+            volume.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+
+        // Convert f32 samples to bytes (32-bit float LE) with volume applied
+        let mut data = Vec::with_capacity(samples_to_write * 4);
+        for &s in &samples {
+            let adjusted = (s * vol).clamp(-1.0, 1.0);
+            data.extend_from_slice(&adjusted.to_le_bytes());
+        }
+
+        match self
+            .render_client
+            .write_to_device(frames_to_write, &data, None)
+        {
+            Ok(()) => Ok(frames_to_write),
+            Err(err) if is_device_invalidated(&err) => {
+                let _ = self.stop();
+                Err(OutputError::DeviceInvalidated)
+            }
+            Err(err) => Err(map_wasapi_error(err)),
+        }
+    }
 }
 
 fn init_com() -> Result<(), OutputError> {
