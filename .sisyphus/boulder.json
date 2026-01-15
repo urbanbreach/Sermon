@@ -1,13 +1,17 @@
 {
-  "active_plan": "E:\\Code\\Sermon\\.sisyphus\\plans\\foundation.md",
-  "started_at": "2026-01-14T14:42:17.925Z",
-  "completed_at": "2026-01-14T17:48:00.000Z",
-  "session_ids": [
-    "ses_443a0dd1fffeoF4ehc2KefEce9",
-    "ses_44260a4a7ffeiDRYgP0OsVR1HL"
+  "active_plan": null,
+  "completed_plans": [
+    {
+      "plan": "E:\\Code\\Sermon\\.sisyphus\\plans\\foundation.md",
+      "plan_name": "foundation",
+      "completed_at": "2026-01-14"
+    },
+    {
+      "plan": "E:\\Code\\Sermon\\.sisyphus\\plans\\library-db-scan.md",
+      "plan_name": "library-db-scan",
+      "completed_at": "2026-01-15",
+      "session_ids": ["ses_43e7f5990ffe1EBP7m8aJnbwDa"]
+    }
   ],
-  "plan_name": "foundation",
-  "status": "complete",
-  "tasks_completed": 6,
-  "tasks_total": 6
+  "last_updated": "2026-01-15T12:45:00.000Z"
 }
