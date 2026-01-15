@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { emit } from '@tauri-apps/api/event';
   import { currentRoute } from './lib/state/route';
+  import { initPlaybackListeners } from './lib/state/playback';
   
   import TopBar from './lib/components/TopBar.svelte';
   import LeftNav from './lib/components/LeftNav.svelte';
@@ -14,6 +15,8 @@
   import NowPlayingView from './lib/views/NowPlayingView.svelte';
 
   onMount(async () => {
+    initPlaybackListeners();
+
     // Snapshot mode: disable transitions
     if (import.meta.env.SERMON_SNAPSHOT === '1') {
       document.body.classList.add('snapshot-mode');

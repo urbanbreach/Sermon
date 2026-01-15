@@ -210,3 +210,43 @@ pub fn get_folder_by_path(
     .optional()
     .map_err(LibraryError::from)
 }
+
+// Settings helpers
+
+pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>, LibraryError> {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = ?",
+        params![key],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(LibraryError::from)
+}
+
+pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), LibraryError> {
+    conn.execute(
+        "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, strftime('%s', 'now')) 
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        params![key, value],
+    )?;
+    Ok(())
+}
+
+pub fn get_audio_volume(conn: &Connection) -> f32 {
+    match get_setting(conn, "audio.volume") {
+        Ok(Some(v)) => v.parse().unwrap_or(1.0),
+        _ => 1.0,
+    }
+}
+
+pub fn get_audio_device_preference(conn: &Connection) -> String {
+    match get_setting(conn, "audio.device.preference") {
+        Ok(Some(v)) => v,
+        _ => "default".to_string(),
+    }
+}
+
+pub fn get_track_by_id(conn: &Connection, id: i64) -> Result<TrackRow, LibraryError> {
+    conn.query_row("SELECT * FROM tracks WHERE id = ?", params![id], map_track)
+        .map_err(LibraryError::from)
+}

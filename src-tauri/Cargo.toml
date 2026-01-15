@@ -27,3 +27,6 @@ tracing = "0.1.44"
 tracing-appender = "0.2.4"
 tracing-subscriber = { version = "0.3.22", features = ["fmt", "std", "env-filter"] }
 library = { path = "../crates/library" }
+audio-engine = { path = "../crates/audio-engine" }
+parking_lot = "0.12"
+crossbeam-channel = "0.5"

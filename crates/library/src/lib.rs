@@ -9,5 +9,8 @@ pub use db::migrations::apply_migrations;
 pub use db::open_db;
 pub use db::set_missing;
 pub use db::upsert_track;
+pub use db::{
+    get_audio_device_preference, get_audio_volume, get_setting, get_track_by_id, set_setting,
+};
 pub use models::{LibraryFolder, TrackRow};
 pub use scanner::scan_folder;

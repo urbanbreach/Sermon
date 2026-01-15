@@ -8,12 +8,14 @@ $ErrorActionPreference = "Stop"
 $MilestoneMap = @{
     "00" = "00-foundation"
     "01" = "01-library-db-scan"
+    "02" = "02-playback-shared-now-playing"
 }
 
 # Milestone to expected screenshots mapping
 $ScreenshotMap = @{
     "00" = @("shell-library.png", "shell-now-playing.png", "shell-settings.png")
     "01" = @("tracks-empty.png", "scanning.png", "tracks-populated.png")
+    "02" = @("now-playing-idle.png", "now-playing-playing.png", "queue.png")
 }
 
 # Set environment variables for snapshot mode

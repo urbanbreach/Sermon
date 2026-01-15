@@ -1,8 +1,14 @@
 <script lang="ts">
   import { open } from '@tauri-apps/plugin-dialog';
+  import { onMount } from 'svelte';
   import { folders, selectedFolderId, scanStatus, scanProgress, scanError, addFolder, startScan } from '../state/library';
+  import { devices, currentDevice, loadDevices, selectDevice } from '../state/playback';
 
   const isMock = import.meta.env.SERMON_MOCK === '1';
+
+  onMount(() => {
+    loadDevices();
+  });
 
   async function handleAddFolder() {
     if (isMock) return;
@@ -89,9 +95,17 @@
     <h2>Audio</h2>
     <div class="setting">
       <label>Output Device</label>
-      <select>
-        <option>Default Output</option>
-        <option>External DAC</option>
+      <select 
+        value={$currentDevice?.id || 'default'} 
+        on:change={(e) => selectDevice(e.currentTarget.value)}
+      >
+        <option value="default">Default Output</option>
+        {#each $devices as device}
+           <!-- Skip default which is already handled above if needed, or list all -->
+           {#if !device.is_default}
+             <option value={device.id}>{device.name}</option>
+           {/if}
+        {/each}
       </select>
     </div>
   </div>

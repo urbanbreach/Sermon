@@ -9,6 +9,9 @@
 | R005 | **Dependency version drift**<br>Rust crates or NPM packages might update, introducing breaking changes or bugs if not pinned. | DevOps | **Lock files and engine constraints**: Commit `Cargo.lock` and `package-lock.json`. Enforce strict versioning in CI. | Open - Lock files committed |
 | R006 | **Network share identity instability**<br>Files on network shares may not have stable file IDs, causing duplicate detection issues. | Backend Lead | **Fallback identity strategy**: Use path+mtime+size+hash when NTFS File ID unavailable. Set folder status to warn user. | Mitigated - M01: Fallback identity implemented in identity.rs |
 | R007 | **Large library scan performance**<br>Scanning 100K+ files could take excessive time or memory. | Perf Lead | **Incremental scanning**: Skip unchanged files. Batch DB inserts. Avoid audio decoding during scan. | Mitigated - M01: Incremental scan implemented. Baseline to be measured |
+| R008 | **Device Invalidation**<br>WASAPI device becomes invalid during playback. | Backend Lead | **Recovery strategy**: Detect error, attempt recovery, fallback to default. | Open |
+| R009 | **Playback Position Drift**<br>UI position may drift from actual playback. | UI Lead | **Throttled updates**: Event-driven updates from engine, throttled to 250ms. | Open |
+| R010 | **Device Preference Missing**<br>Saved device no longer exists on startup. | Backend Lead | **Default fallback**: Fallback to system default with warning. | Open |
 
 ## Milestone 01 Burn-Down Notes
 

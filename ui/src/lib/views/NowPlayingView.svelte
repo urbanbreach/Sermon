@@ -1,74 +1,308 @@
 <script lang="ts">
   import { currentRoute } from '../state/route';
+  import { 
+    currentTrack, playbackState, queue, currentIndex, progress, 
+    positionMs, durationMs, seek, audioDebug, isPlaying, playNow
+  } from '../state/playback';
   
+  let isDebugging = false;
+
   function goBack() {
-    currentRoute.set('albums'); // Or previous route if tracked
+    currentRoute.set('tracks'); // Default back to tracks or maintain history
+  }
+
+  function formatDuration(ms: number): string {
+    if (!ms && ms !== 0) return '--:--';
+    const minutes = Math.floor(ms / 60000);
+    const seconds = Math.floor((ms % 60000) / 1000);
+    return minutes + ":" + (seconds < 10 ? '0' : '') + seconds;
+  }
+
+  function handleSeek(e: Event) {
+    const target = e.target as HTMLInputElement;
+    const percent = parseFloat(target.value);
+    const ms = percent * ($durationMs || 0);
+    seek(ms);
+  }
+
+  function toggleDebug() {
+    isDebugging = !isDebugging;
   }
 </script>
 
 <div class="now-playing-view">
-  <button class="back-btn" on:click={goBack}>&larr; Back to Library</button>
+  <div class="top-nav">
+    <button class="back-btn" on:click={goBack}>&larr; Back</button>
+    <button class="debug-btn" class:active={isDebugging} on:click={toggleDebug}>
+      Wait what? (Debug)
+    </button>
+  </div>
   
-  <div class="content">
-    <div class="art-large"></div>
-    <div class="info-large">
-      <h1>Track Title</h1>
-      <h2>Artist Name</h2>
-      <h3>Album Title</h3>
+  <div class="main-layout">
+    <div class="track-area">
+      <div class="art-large">
+        <div class="art-placeholder"></div>
+      </div>
+      
+      <div class="info-large">
+        <h1>{$currentTrack?.title || 'Nothing Playing'}</h1>
+        <h2>{$currentTrack?.artist || 'Unknown Artist'}</h2>
+        <h3>{$currentTrack?.album || 'Unknown Album'}</h3>
+      </div>
+
+      <div class="scrubber-area">
+        <div class="time-labels">
+          <span>{formatDuration($positionMs)}</span>
+          <span>{formatDuration($durationMs)}</span>
+        </div>
+        <input 
+          type="range" 
+          class="scrubber"
+          min="0" 
+          max="1" 
+          step="0.001" 
+          value={$progress} 
+          on:change={handleSeek}
+        />
+      </div>
+    </div>
+
+    <div class="queue-area">
+      <h3>Queue</h3>
+      <div class="queue-list">
+        {#each $queue as item, i}
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
+          <!-- svelte-ignore a11y-no-static-element-interactions -->
+          <div 
+            class="queue-item" 
+            class:active={i === $currentIndex}
+            on:dblclick={() => playNow(item.track_id)}
+          >
+            <span class="q-index">{i + 1}</span>
+            <div class="q-info">
+              <span class="q-title">{item.title}</span>
+              <span class="q-artist">{item.artist}</span>
+            </div>
+            <span class="q-time">{formatDuration(item.duration_ms || 0)}</span>
+          </div>
+        {:else}
+          <div class="empty-queue">Queue is empty</div>
+        {/each}
+      </div>
     </div>
   </div>
+
+  {#if isDebugging && $audioDebug}
+    <div class="debug-overlay">
+      <h4>Audio Engine Debug</h4>
+      <div class="debug-grid">
+        <div class="debug-row">
+          <label>Output Mode:</label>
+          <span>{$audioDebug.output_mode}</span>
+        </div>
+        <div class="debug-row">
+          <label>Device:</label>
+          <span>{$audioDebug.device_name}</span>
+        </div>
+        <div class="debug-section">
+          <h5>Source Format</h5>
+          <div>{$audioDebug.decode_format.codec || 'Unknown'} / {$audioDebug.decode_format.container || 'Unknown'}</div>
+          <div>{$audioDebug.decode_format.sample_rate}Hz / {$audioDebug.decode_format.bit_depth}-bit / {$audioDebug.decode_format.channels}ch</div>
+        </div>
+        <div class="debug-section">
+          <h5>Output Format</h5>
+          <div>{$audioDebug.output_format.sample_rate}Hz / {$audioDebug.output_format.bit_depth}-bit / {$audioDebug.output_format.channels}ch</div>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
   .now-playing-view {
     position: absolute;
-    top: 40px; /* Below top bar */
+    top: 0;
     left: 0;
     right: 0;
-    bottom: 80px; /* Above bottom bar */
+    bottom: 0; /* Cover everything including bottom bar if needed? No, bottom bar is persistent */
+    /* Adjust to fit within content-area */
+    height: 100%;
     background: #0a0a0a;
     z-index: 100;
     padding: 2rem;
     display: flex;
     flex-direction: column;
     color: #fff;
+    box-sizing: border-box;
+    overflow: hidden;
   }
 
-  .back-btn {
-    align-self: flex-start;
-    background: none;
-    border: none;
-    color: #888;
-    cursor: pointer;
-    font-size: 1rem;
+  .top-nav {
+    display: flex;
+    justify-content: space-between;
     margin-bottom: 2rem;
   }
-  .back-btn:hover {
+
+  .back-btn, .debug-btn {
+    background: none;
+    border: 1px solid var(--glass-border);
+    padding: 0.5rem 1rem;
+    color: #888;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s;
+  }
+  .back-btn:hover, .debug-btn:hover {
     color: #fff;
+    border-color: #fff;
+    background: rgba(255,255,255,0.1);
+  }
+  .debug-btn.active {
+    background: #4af;
+    color: #000;
+    border-color: #4af;
   }
 
-  .content {
+  .main-layout {
+    display: flex;
+    gap: 4rem;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .track-area {
+    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100%;
     gap: 2rem;
   }
 
+  .queue-area {
+    width: 350px;
+    display: flex;
+    flex-direction: column;
+    background: var(--glass-bg);
+    border-radius: 12px;
+    padding: 1rem;
+    border: 1px solid var(--glass-border);
+  }
+
+  .queue-area h3 {
+    margin: 0 0 1rem 0;
+    font-size: 1.2rem;
+    color: #ccc;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--glass-border);
+  }
+
+  .queue-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .queue-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem;
+    border-radius: 4px;
+    cursor: default;
+    transition: background 0.1s;
+  }
+  .queue-item:hover {
+    background: rgba(255,255,255,0.05);
+  }
+  .queue-item.active {
+    background: rgba(74, 175, 255, 0.1);
+    border-left: 3px solid #4af;
+  }
+  .queue-item.active .q-title {
+    color: #4af;
+  }
+
+  .q-index { color: #555; font-size: 0.8rem; width: 20px; }
+  .q-info { flex: 1; overflow: hidden; }
+  .q-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .q-artist { display: block; font-size: 0.8rem; color: #888; }
+  .q-time { color: #666; font-size: 0.8rem; }
+  .empty-queue { color: #555; text-align: center; padding: 2rem; }
+
   .art-large {
-    width: 300px;
-    height: 300px;
+    width: 350px;
+    height: 350px;
     background: #222;
-    border-radius: 8px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .art-placeholder {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(45deg, #222, #333);
+    border-radius: 12px;
   }
 
   .info-large {
     text-align: center;
   }
+  .info-large h1 { font-size: 2.5rem; margin: 0 0 0.5rem 0; letter-spacing: -1px; }
+  .info-large h2 { font-size: 1.5rem; color: #aaa; margin: 0 0 0.5rem 0; font-weight: normal; }
+  .info-large h3 { font-size: 1.1rem; color: #666; margin: 0; font-weight: normal; }
 
-  h1 { font-size: 2rem; margin: 0 0 0.5rem 0; }
-  h2 { font-size: 1.5rem; color: #ccc; margin: 0 0 0.5rem 0; font-weight: normal; }
-  h3 { font-size: 1.2rem; color: #888; margin: 0; font-weight: normal; }
+  .scrubber-area {
+    width: 100%;
+    max-width: 600px;
+  }
+  
+  .time-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: #888;
+    margin-bottom: 0.5rem;
+  }
+
+  .scrubber {
+    width: 100%;
+    height: 6px;
+    background: #333;
+    border-radius: 3px;
+    appearance: none;
+    cursor: pointer;
+  }
+  .scrubber::-webkit-slider-thumb {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+  }
+
+  .debug-overlay {
+    position: absolute;
+    top: 80px;
+    left: 2rem;
+    width: 300px;
+    background: rgba(0,0,0,0.9);
+    border: 1px solid #333;
+    padding: 1rem;
+    border-radius: 8px;
+    font-family: monospace;
+    font-size: 0.85rem;
+    pointer-events: none; /* Let clicks pass through? No, might want to copy text */
+    pointer-events: auto;
+  }
+  .debug-overlay h4 { color: #4af; margin: 0 0 1rem 0; border-bottom: 1px solid #333; padding-bottom: 0.5rem; }
+  .debug-row { display: flex; justify-content: space-between; margin-bottom: 0.5rem; }
+  .debug-row label { color: #888; }
+  .debug-section { margin-top: 1rem; border-top: 1px dashed #333; padding-top: 0.5rem; }
+  .debug-section h5 { margin: 0 0 0.5rem 0; color: #aaa; }
 </style>

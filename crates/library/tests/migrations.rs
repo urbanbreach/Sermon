@@ -22,6 +22,15 @@ fn test_migration_idempotency() {
         )
         .unwrap();
     assert_eq!(count, 1);
+
+    let count_settings: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='settings'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(count_settings, 1);
 }
 
 #[test]
@@ -33,5 +42,5 @@ fn test_in_memory_migration() {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 1);
+    assert_eq!(version, 2);
 }

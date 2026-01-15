@@ -11,7 +11,13 @@
       "plan_name": "library-db-scan",
       "completed_at": "2026-01-15",
       "session_ids": ["ses_43e7f5990ffe1EBP7m8aJnbwDa"]
+    },
+    {
+      "plan": "E:\\Code\\Sermon\\.sisyphus\\plans\\playback-shared-now-playing.md",
+      "plan_name": "playback-shared-now-playing",
+      "completed_at": "2026-01-15",
+      "session_ids": ["ses_43cd5b24dffe2vIlJC5m0KA9V1"]
     }
   ],
-  "last_updated": "2026-01-15T12:45:00.000Z"
+  "last_updated": "2026-01-15T20:15:00.000Z"
 }
