@@ -13,6 +13,7 @@ This directory contains manual UI snapshots and review packs for each milestone.
    ```powershell
    pnpm ui:snapshots -- --milestone 00   # Foundation
    pnpm ui:snapshots -- --milestone 01   # Library DB Scan
+   pnpm ui:snapshots -- --milestone 03   # WASAPI Exclusive Bit-Perfect
    ```
    This will launch the application with mocked data (`SERMON_MOCK=1`) and snapshot mode enabled (`SERMON_SNAPSHOT=1`).
 
@@ -36,6 +37,13 @@ This directory contains manual UI snapshots and review packs for each milestone.
   - `tracks-empty.png` - Tracks view with no library folders
   - `scanning.png` - Tracks view during active scan (progress indicator)
   - `tracks-populated.png` - Tracks view with populated library
+
+### Milestone 03 - WASAPI Exclusive Bit-Perfect
+- Directory: `artifacts/ui/03-wasapi-exclusive-bit-perfect/`
+- Screenshots:
+  - `settings-audio.png` - Settings view showing Audio section with Output Mode, Policy, and Fade controls
+  - `diagnostics-playing-44k.png` - Diagnostics view while playing a 44.1 kHz track (showing bit-perfect status)
+  - `diagnostics-playing-96k.png` - Diagnostics view while playing a 96 kHz track (showing format switch)
 
 ## Review Packs
 

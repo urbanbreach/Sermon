@@ -12,6 +12,9 @@
 | R008 | **Device Invalidation**<br>WASAPI device becomes invalid during playback. | Backend Lead | **Recovery strategy**: Detect error, attempt recovery, fallback to default. | Open |
 | R009 | **Playback Position Drift**<br>UI position may drift from actual playback. | UI Lead | **Throttled updates**: Event-driven updates from engine, throttled to 250ms. | Open |
 | R010 | **Device Preference Missing**<br>Saved device no longer exists on startup. | Backend Lead | **Default fallback**: Fallback to system default with warning. | Open |
+| R011 | **Exclusive Mode Device In Use**<br>WASAPI Exclusive mode fails when another application holds exclusive access to the audio device. | Backend Lead | **Clear error + Fallback**: Clear error message. Suggest closing other apps. One-click fallback to Compatibility mode. Auto-fallback in Compatibility policy. | Mitigated |
+| R012 | **Unsupported Format in Strict Mode**<br>Track format not supported by DAC in Exclusive mode with Strict policy. | Backend Lead | **Error details + Fallback**: Clear error with format mismatch details. Offer switch to Compatibility mode. Log negotiation attempts. | Mitigated |
+| R013 | **Silent Quality Degradation**<br>User unaware that audio is not bit-perfect when in Compatibility mode. | UI Lead | **UI Indicators**: Bit-perfect indicator in BottomBar. Diagnostics view details. Reason string explaining why not bit-perfect. | Mitigated |
 
 ## Milestone 01 Burn-Down Notes
 
