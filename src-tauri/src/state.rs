@@ -24,14 +24,29 @@ pub struct AudioState {
 }
 
 pub enum PlaybackCommand {
-    PlayNow { track_id: i64 },
-    AddToQueue { track_id: i64 },
+    PlayNow {
+        track_id: i64,
+    },
+    AddToQueue {
+        track_id: i64,
+    },
     Pause,
     Resume,
     Stop,
-    Seek { position_ms: u64 },
+    Seek {
+        position_ms: u64,
+    },
     Next,
     Previous,
-    SetVolume { volume: f32 },
-    SetDevice { device_id: String },
+    SetVolume {
+        volume: f32,
+    },
+    SetDevice {
+        device_id: String,
+    },
+    SetOutputSettings {
+        mode: String,
+        policy: String,
+        fade: bool,
+    },
 }

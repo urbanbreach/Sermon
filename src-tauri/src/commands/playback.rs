@@ -1,7 +1,10 @@
 use crate::state::{AudioState, LibraryState, PlaybackCommand};
 use audio_engine::device::list_devices;
-use library::{apply_migrations, get_track_by_id, open_db};
-use serde::Serialize;
+use library::{
+    apply_migrations, get_audio_output_fade, get_audio_output_mode, get_audio_output_policy,
+    get_track_by_id, open_db, set_setting,
+};
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 // -----------------
@@ -69,7 +72,14 @@ pub struct DeviceChangedEvent {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AudioDebugEvent {
-    pub output_mode: String, // "shared"
+    pub output_mode: String, // "exclusive" | "shared"
+    pub policy: String,      // "strict" | "compatibility"
+    pub conversion: String,  // "none" | "shared_fallback" | "pad_16_to_24"
+    pub gain_mode: String,   // "unity" | "software"
+    pub fade_enabled: bool,
+    pub exclusive_active: bool,
+    pub bit_perfect: String,        // "yes" | "no"
+    pub bit_perfect_reason: String, // "" if yes, or specific reason string
     pub device_id: String,
     pub device_name: String,
     pub output_format: AudioFormatData,
@@ -270,5 +280,55 @@ pub fn cmd_volume_set(audio_state: State<'_, AudioState>, volume: f32) -> Result
         .command_tx
         .send(PlaybackCommand::SetVolume { volume })
         .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioOutputSettings {
+    pub mode: String,   // "exclusive" | "shared"
+    pub policy: String, // "strict" | "compatibility"
+    pub fade: bool,
+}
+
+#[tauri::command]
+pub fn cmd_output_get_settings(
+    library_state: State<'_, LibraryState>,
+) -> Result<AudioOutputSettings, String> {
+    let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
+
+    Ok(AudioOutputSettings {
+        mode: get_audio_output_mode(&conn),
+        policy: get_audio_output_policy(&conn),
+        fade: get_audio_output_fade(&conn),
+    })
+}
+
+#[tauri::command]
+pub fn cmd_output_set_settings(
+    audio_state: State<'_, AudioState>,
+    library_state: State<'_, LibraryState>,
+    settings: AudioOutputSettings,
+) -> Result<(), String> {
+    // 1. Persist to DB
+    let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
+    set_setting(&conn, "audio.output.mode", &settings.mode).map_err(|e| e.to_string())?;
+    set_setting(&conn, "audio.output.policy", &settings.policy).map_err(|e| e.to_string())?;
+    set_setting(
+        &conn,
+        "audio.output.fade",
+        if settings.fade { "on" } else { "off" },
+    )
+    .map_err(|e| e.to_string())?;
+
+    // 2. Notify audio thread
+    audio_state
+        .command_tx
+        .send(PlaybackCommand::SetOutputSettings {
+            mode: settings.mode,
+            policy: settings.policy,
+            fade: settings.fade,
+        })
+        .map_err(|e| e.to_string())?;
+
     Ok(())
 }

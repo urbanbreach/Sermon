@@ -3,16 +3,18 @@ mod state;
 
 use audio_engine::decode::AudioDecoder;
 use audio_engine::device::{get_default_device, get_device_by_id};
-use audio_engine::output::{AudioRingBuffer, WasapiOutput, convert_channels_interleaved_f32};
+use audio_engine::output::{
+    AudioOutput, AudioRingBuffer, OutputBackend, WasapiOutput, convert_channels_interleaved_f32,
+};
 use audio_engine::{PlaybackState, TrackInfo};
 use commands::{
     AudioDebugEvent, AudioFormatData, DeviceChangedEvent, NowPlayingEvent, PlaybackErrorEvent,
     PlaybackPositionEvent, PlaybackStateEvent, QueueChangedEvent, QueueItemData, TrackEventData,
     cmd_library_add_folder, cmd_library_list_folders, cmd_library_list_tracks,
-    cmd_output_list_devices, cmd_output_set_device, cmd_playback_next, cmd_playback_pause,
-    cmd_playback_previous, cmd_playback_resume, cmd_playback_seek, cmd_playback_start,
-    cmd_playback_stop, cmd_queue_add, cmd_queue_play_now, cmd_scan_start, cmd_volume_get,
-    cmd_volume_set,
+    cmd_output_get_settings, cmd_output_list_devices, cmd_output_set_device,
+    cmd_output_set_settings, cmd_playback_next, cmd_playback_pause, cmd_playback_previous,
+    cmd_playback_resume, cmd_playback_seek, cmd_playback_start, cmd_playback_stop, cmd_queue_add,
+    cmd_queue_play_now, cmd_scan_start, cmd_volume_get, cmd_volume_set,
 };
 use crossbeam_channel::{Receiver, select, tick, unbounded};
 use parking_lot::Mutex;
@@ -131,6 +133,8 @@ pub fn run() {
             cmd_queue_add,
             cmd_output_list_devices,
             cmd_output_set_device,
+            cmd_output_get_settings,
+            cmd_output_set_settings,
             cmd_volume_get,
             cmd_volume_set,
         ])
@@ -141,12 +145,30 @@ pub fn run() {
 /// Audio playback state held by the audio thread
 struct AudioPlayback {
     decoder: Option<AudioDecoder>,
-    output: Option<WasapiOutput>,
+    output: Option<OutputBackend>,
     ring_buffer: Option<AudioRingBuffer>,
     device_id: String, // "default" or specific device ID
     output_sample_rate: u32,
     output_channels: u16,
-    end_of_track: bool, // Track if decoder has finished
+    end_of_track: bool,         // Track if decoder has finished
+    output_mode: String,        // "exclusive" or "shared"
+    policy: String,             // "strict" or "compatibility"
+    gain_mode: String,          // "unity" or "software"
+    conversion: Option<String>, // None, "pad_16_to_24", "shared_fallback"
+    fade_enabled: bool,
+    fade_state: Option<FadeState>,
+}
+
+struct FadeState {
+    direction: FadeDirection,
+    samples_remaining: usize,
+    total_samples: usize,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum FadeDirection {
+    In,
+    Out,
 }
 
 impl AudioPlayback {
@@ -159,6 +181,12 @@ impl AudioPlayback {
             output_sample_rate: 0,
             output_channels: 0,
             end_of_track: false,
+            output_mode: "shared".to_string(),
+            policy: "compatibility".to_string(), // Default to compatibility
+            gain_mode: "software".to_string(),   // Default to software volume
+            conversion: None,
+            fade_enabled: true, // Default to true
+            fade_state: None,
         }
     }
 
@@ -187,7 +215,7 @@ impl AudioPlayback {
         self.device_id = device_id.to_string();
         self.output_sample_rate = output.sample_rate();
         self.output_channels = output.channels();
-        self.output = Some(output);
+        self.output = Some(OutputBackend::Wasapi(output));
 
         info!(
             device_id = device_id,
@@ -199,58 +227,177 @@ impl AudioPlayback {
         Ok(())
     }
 
-    fn open_output_for_format(&mut self, sample_rate: u32, channels: u16) -> Result<(), String> {
-        // Close existing output if format changed
-        if let Some(ref mut output) = self.output {
-            if output.sample_rate() != sample_rate || output.channels() != channels {
-                let _ = output.stop();
-                self.output = None;
+    fn open_output_for_format(
+        &mut self,
+        sample_rate: u32,
+        channels: u16,
+        bit_depth: u16,
+        authoritative_bit_depth: Option<u16>,
+    ) -> Result<(), String> {
+        // Check for unknown bit depth in strict mode
+        if self.output_mode == "exclusive"
+            && self.policy == "strict"
+            && authoritative_bit_depth.is_none()
+        {
+            return Err("bit_depth_unknown: Unknown bit depth for strict mode".to_string());
+        }
+
+        // Check if we need to reopen
+        if let Some(ref output) = self.output {
+            let mode_mismatch = if self.output_mode == "exclusive" {
+                !output.is_exclusive()
+            } else {
+                output.is_exclusive()
+            };
+
+            if !mode_mismatch
+                && output.sample_rate() == sample_rate
+                && output.channels() == channels
+                // For exclusive, check bit depth match. For shared, bit depth is always 32-float so we ignore source bit depth.
+                && (!output.is_exclusive() || output.bit_depth() == bit_depth)
+            {
+                return Ok(());
             }
         }
 
-        if self.output.is_some() {
-            return Ok(()); // Already open with correct format
+        // Close existing output - must fully release before acquiring exclusive mode
+        if let Some(ref mut output) = self.output {
+            let _ = output.stop();
         }
+        // Drop the old output to fully release WASAPI resources
+        self.output = None;
+        // Small delay to ensure WASAPI fully releases the device
+        // This is necessary when switching between shared and exclusive modes
+        std::thread::sleep(std::time::Duration::from_millis(50));
 
         info!(
             sample_rate = sample_rate,
             channels = channels,
-            "Opening WASAPI output for source format"
+            bit_depth = bit_depth,
+            mode = self.output_mode,
+            "Opening audio output"
         );
 
-        let output =
-            WasapiOutput::open_with_format(sample_rate, channels).map_err(|e| e.to_string())?;
+        if self.output_mode == "exclusive" {
+            // audio_engine::device functions imported locally where needed
+            use audio_engine::device::{get_default_device, get_device_by_id};
+            use audio_engine::output::WasapiOutput;
 
-        self.output_sample_rate = output.sample_rate();
-        self.output_channels = output.channels();
-        self.output = Some(output);
+            let device = if self.device_id == "default" {
+                get_default_device().map_err(|e| e.to_string())?
+            } else {
+                get_device_by_id(&self.device_id).map_err(|e| e.to_string())?
+            };
+
+            match WasapiOutput::negotiate_exclusive_format(
+                &device,
+                sample_rate,
+                channels,
+                bit_depth,
+                &self.policy,
+            ) {
+                Ok((output, conversion)) => {
+                    self.output_sample_rate = output.sample_rate();
+                    self.output_channels = output.channels();
+                    self.output = Some(OutputBackend::Wasapi(output));
+                    self.conversion = conversion;
+                    info!(
+                        "Opened exclusive output (conversion: {:?})",
+                        self.conversion
+                    );
+                }
+                Err(e) => {
+                    warn!("Exclusive mode failed: {}. Falling back.", e);
+                    if self.policy == "strict" {
+                        let code = if e.to_string().contains("Format not supported") {
+                            "exclusive_unsupported_format"
+                        } else {
+                            "exclusive_unavailable"
+                        };
+                        return Err(format!("{}: {}", code, e));
+                    }
+                    // Fallback to shared
+                    self.conversion = Some("shared_fallback".to_string());
+                    // Proceed to shared block below...
+                    // Wait, cannot fall through easily. Just duplicate shared logic here.
+                    let output = WasapiOutput::open_with_format(sample_rate, channels)
+                        .map_err(|e| e.to_string())?;
+                    self.output_sample_rate = output.sample_rate();
+                    self.output_channels = output.channels();
+                    self.output = Some(OutputBackend::Wasapi(output));
+                }
+            }
+        } else {
+            // Shared mode
+            let output =
+                WasapiOutput::open_with_format(sample_rate, channels).map_err(|e| e.to_string())?;
+            self.output_sample_rate = output.sample_rate();
+            self.output_channels = output.channels();
+            self.output = Some(OutputBackend::Wasapi(output));
+            self.conversion = None;
+        }
+
+        // Initialize fade-in if enabled
+        if self.fade_enabled && self.output.is_some() {
+            let fade_frames = (self.output_sample_rate * 10) / 1000; // 10ms
+            self.fade_state = Some(FadeState {
+                direction: FadeDirection::In,
+                samples_remaining: fade_frames as usize,
+                total_samples: fade_frames as usize,
+            });
+        }
 
         Ok(())
     }
 
-    fn start_playback(&mut self, track_path: &Path) -> Result<(), String> {
+    fn start_playback(&mut self, track: &TrackInfo) -> Result<(), String> {
+        let track_path = Path::new(&track.path);
         // Open decoder first to get its format
         let decoder = AudioDecoder::open(track_path).map_err(|e| e.to_string())?;
 
         // Get decoder format
         let sample_rate = decoder.sample_rate();
         let channels = decoder.channels() as u16;
+        let bit_depth = decoder.bit_depth() as u16;
 
         info!(
             path = %track_path.display(),
             sample_rate = sample_rate,
             channels = channels,
+            bit_depth = bit_depth,
             "Starting playback"
         );
 
         self.decoder = Some(decoder);
         self.end_of_track = false;
 
-        // Open output with decoder's format (Windows will handle conversion)
-        self.open_output_for_format(sample_rate, channels)?;
+        // Open output with decoder's format
+        self.open_output_for_format(sample_rate, channels, bit_depth, track.bit_depth)?;
+
+        let output_bit_depth = if let Some(o) = &self.output {
+            o.bit_depth()
+        } else {
+            0
+        };
+
+        info!(
+            track_sample_rate = sample_rate,
+            track_bit_depth = bit_depth,
+            track_channels = channels,
+            output_sample_rate = self.output_sample_rate,
+            output_bit_depth = output_bit_depth,
+            output_channels = self.output_channels,
+            conversion = ?self.conversion,
+            "Format negotiation result"
+        );
 
         // Create ring buffer sized for ~500ms of audio
-        self.ring_buffer = Some(AudioRingBuffer::new(sample_rate, channels as usize, 500));
+        // Use output_channels because fill_ring_buffer converts to output channels before pushing
+        self.ring_buffer = Some(AudioRingBuffer::new(
+            sample_rate,
+            self.output_channels as usize,
+            500,
+        ));
 
         // Start the output stream
         if let Some(ref mut output) = self.output {
@@ -330,11 +477,27 @@ impl AudioPlayback {
         Ok(true)
     }
 
+    fn effective_volume(&self, volume: f32) -> f32 {
+        if let Some(ref output) = self.output {
+            if output.is_exclusive() && self.policy == "strict" {
+                return 1.0;
+            }
+        }
+        if self.gain_mode == "unity" {
+            1.0
+        } else {
+            volume
+        }
+    }
+
     /// Process audio: fill buffer, then write to WASAPI. Returns true if playback should continue.
     fn process_audio(&mut self, volume: f32) -> Result<bool, String> {
         if self.decoder.is_none() {
             return Ok(false);
         }
+
+        // Determine effective volume
+        let eff_vol = self.effective_volume(volume);
 
         let output = match self.output.as_mut() {
             Some(o) => o,
@@ -347,7 +510,7 @@ impl AudioPlayback {
         };
 
         // Write from ring buffer to WASAPI
-        match output.write_from_buffer(ring_buffer, volume) {
+        match output.write_from_buffer(ring_buffer, eff_vol) {
             Ok(_frames_written) => {
                 // Check if we're done (end of track and buffer empty)
                 if self.end_of_track && ring_buffer.available_frames() == 0 {
@@ -370,12 +533,51 @@ fn spawn_audio_thread(
     command_rx: Receiver<PlaybackCommand>,
 ) {
     std::thread::spawn(move || {
+        // Initialize settings defaults
+        if let Ok(conn) = library::open_db(&db_path) {
+            if library::get_setting(&conn, "audio.output.mode")
+                .unwrap_or(None)
+                .is_none()
+            {
+                let _ = library::set_setting(&conn, "audio.output.mode", "exclusive");
+            }
+            if library::get_setting(&conn, "audio.output.policy")
+                .unwrap_or(None)
+                .is_none()
+            {
+                let _ = library::set_setting(&conn, "audio.output.policy", "strict");
+            }
+            if library::get_setting(&conn, "audio.output.fade")
+                .unwrap_or(None)
+                .is_none()
+            {
+                let _ = library::set_setting(&conn, "audio.output.fade", "off");
+            }
+        }
+
         let position_tick = tick(Duration::from_millis(250));
         // Audio processing tick - run at ~10ms for smooth playback
         let audio_tick = tick(Duration::from_millis(10));
 
         let mut playback = AudioPlayback::new();
         let mut current_device_info: Option<audio_engine::device::AudioDeviceInfo> = None;
+
+        // Load saved settings from DB into playback state
+        if let Ok(conn) = library::open_db(&db_path) {
+            if let Ok(Some(mode)) = library::get_setting(&conn, "audio.output.mode") {
+                playback.output_mode = mode;
+            }
+            if let Ok(Some(policy)) = library::get_setting(&conn, "audio.output.policy") {
+                playback.policy = policy;
+            }
+            if let Ok(Some(fade)) = library::get_setting(&conn, "audio.output.fade") {
+                playback.fade_enabled = fade == "on";
+            }
+            // Set gain_mode based on output_mode and policy
+            if playback.output_mode == "exclusive" && playback.policy == "strict" {
+                playback.gain_mode = "unity".to_string();
+            }
+        }
 
         // Try to open default output at startup
         if let Err(e) = playback.open_output("default") {
@@ -448,10 +650,17 @@ fn spawn_audio_thread(
                                 };
 
                                 if let Some(track) = next_track {
-                                    let path = Path::new(&track.path);
-                                    if let Err(e) = playback.start_playback(path) {
+                                    if let Err(e) = playback.start_playback(&track) {
                                         error!("Failed to start next track: {}", e);
-                                        emit_playback_error(&app, "decode_error", &e, Some(track.id), false, None);
+                                        let (code, msg) = parse_playback_error(&e);
+                                        emit_playback_error(
+                                            &app,
+                                            &code,
+                                            &msg,
+                                            Some(track.id),
+                                            false,
+                                            None,
+                                        );
                                         engine.lock().stop();
                                     }
                                     emit_now_playing(&app, &engine);
@@ -512,19 +721,17 @@ fn handle_playback_command(
                 return;
             };
 
-            let track_path = track.path.clone();
-
             // Update engine state
             {
                 let mut engine = engine.lock();
-                engine.play_now(track);
+                engine.play_now(track.clone());
             }
 
             // Start actual playback
-            let path = Path::new(&track_path);
-            if let Err(e) = playback.start_playback(path) {
+            if let Err(e) = playback.start_playback(&track) {
                 error!("Failed to start playback: {}", e);
-                emit_playback_error(app, "decode_error", &e, Some(track_id), false, None);
+                let (code, msg) = parse_playback_error(&e);
+                emit_playback_error(app, &code, &msg, Some(track_id), false, None);
                 engine.lock().stop();
                 emit_playback_state(app, engine);
                 return;
@@ -591,10 +798,10 @@ fn handle_playback_command(
             };
 
             if let Some(track) = next_track {
-                let path = Path::new(&track.path);
-                if let Err(e) = playback.start_playback(path) {
+                if let Err(e) = playback.start_playback(&track) {
                     error!("Failed to start next track: {}", e);
-                    emit_playback_error(app, "decode_error", &e, Some(track.id), false, None);
+                    let (code, msg) = parse_playback_error(&e);
+                    emit_playback_error(app, &code, &msg, Some(track.id), false, None);
                     engine.lock().stop();
                 }
             } else {
@@ -618,10 +825,10 @@ fn handle_playback_command(
             };
 
             if let Some(track) = track {
-                let path = Path::new(&track.path);
-                if let Err(e) = playback.start_playback(path) {
+                if let Err(e) = playback.start_playback(&track) {
                     error!("Failed to start previous track: {}", e);
-                    emit_playback_error(app, "decode_error", &e, Some(track.id), false, None);
+                    let (code, msg) = parse_playback_error(&e);
+                    emit_playback_error(app, &code, &msg, Some(track.id), false, None);
                     engine.lock().stop();
                 }
             }
@@ -689,6 +896,79 @@ fn handle_playback_command(
                     is_default: device.is_default,
                 },
             );
+
+            emit_audio_debug(app, engine, playback, current_device_info.as_ref());
+        }
+        PlaybackCommand::SetOutputSettings { mode, policy, fade } => {
+            info!(
+                "Received output settings update: mode={}, policy={}, fade={}",
+                mode, policy, fade
+            );
+
+            let mut changed = false;
+
+            if playback.output_mode != mode {
+                playback.output_mode = mode.clone();
+                changed = true;
+            }
+
+            playback.policy = policy.clone();
+
+            // Update gain_mode based on output_mode and policy
+            if mode == "exclusive" && policy == "strict" {
+                playback.gain_mode = "unity".to_string();
+            } else {
+                playback.gain_mode = "software".to_string();
+            }
+
+            if playback.output_mode == "exclusive" {
+                changed = true;
+            }
+
+            playback.fade_enabled = fade;
+
+            if changed {
+                // Trigger reopen if playing
+                if engine.lock().state == PlaybackState::Playing {
+                    if let Some(decoder) = &playback.decoder {
+                        let sr = decoder.sample_rate();
+                        let ch = decoder.channels() as u16;
+                        let bd = decoder.bit_depth() as u16;
+
+                        // Get track bit depth from session
+                        let track_bd = engine
+                            .lock()
+                            .session
+                            .as_ref()
+                            .and_then(|s| s.track.bit_depth);
+
+                        if let Err(e) = playback.open_output_for_format(sr, ch, bd, track_bd) {
+                            error!("Failed to apply output settings: {}", e);
+                            engine.lock().stop();
+                            playback.stop_playback();
+                            emit_playback_state(app, engine);
+
+                            let (code, msg) = parse_playback_error(&e);
+                            emit_playback_error(app, &code, &msg, None, false, None);
+                        } else {
+                            // Recreate ring buffer with decoder's sample rate and output's channels
+                            // The ring buffer sits between decoder and output, storing decoded samples
+                            // before they're written to the output device
+                            playback.ring_buffer = Some(AudioRingBuffer::new(
+                                sr, // decoder's sample rate
+                                playback.output_channels as usize,
+                                500,
+                            ));
+                            // Start output if needed
+                            if let Some(output) = &mut playback.output {
+                                if let Err(e) = output.start() {
+                                    error!("Failed to restart output: {}", e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             emit_audio_debug(app, engine, playback, current_device_info.as_ref());
         }
@@ -829,6 +1109,94 @@ fn emit_position_tick(app: &tauri::AppHandle, engine: &Arc<Mutex<audio_engine::E
     emit_position_now(app, engine);
 }
 
+fn determine_bit_perfect(playback: &AudioPlayback, track: Option<&TrackInfo>) -> (String, String) {
+    // Precedence order (first matching wins):
+    // 1. Output mode: Shared fallback (Windows SRC)
+    if playback.output_mode == "shared" {
+        return (
+            "no".to_string(),
+            "Output mode: Shared fallback (Windows SRC)".to_string(),
+        );
+    }
+
+    if let Some(c) = &playback.conversion {
+        if c == "shared_fallback" {
+            return (
+                "no".to_string(),
+                "Output mode: Shared fallback (Windows SRC)".to_string(),
+            );
+        }
+    }
+
+    // Check if we are actually in exclusive mode
+    if let Some(output) = &playback.output {
+        if !output.is_exclusive() {
+            return ("no".to_string(), "Output mode: Shared".to_string());
+        }
+    } else {
+        return ("no".to_string(), "No output active".to_string());
+    }
+
+    // 2. Policy: Compatibility
+    if playback.policy == "compatibility" {
+        return ("no".to_string(), "Policy: Compatibility".to_string());
+    }
+
+    // 3. Conversion: Zero-pad 16->24 (compat)
+    if playback.conversion.as_deref() == Some("pad_16_to_24") {
+        return (
+            "no".to_string(),
+            "Conversion: Zero-pad 16->24 (compat)".to_string(),
+        );
+    }
+
+    // 4. Gain: Software volume
+    if playback.gain_mode == "software" {
+        return ("no".to_string(), "Gain: Software volume".to_string());
+    }
+
+    // 5. Fade enabled (not bit-perfect during fade window)
+    if playback.fade_enabled && playback.fade_state.is_some() {
+        return (
+            "no".to_string(),
+            "Fade enabled (not bit-perfect during fade window)".to_string(),
+        );
+    }
+
+    // 6. Format mismatch (track vs output)
+    if let Some(track) = track {
+        if let Some(track_sr) = track.sample_rate {
+            if track_sr != playback.output_sample_rate {
+                return (
+                    "no".to_string(),
+                    format!(
+                        "Sample rate mismatch: {} vs {}",
+                        track_sr, playback.output_sample_rate
+                    ),
+                );
+            }
+        }
+
+        // 7. Bit depth unknown
+        if let Some(track_bd) = track.bit_depth {
+            if let Some(output) = &playback.output {
+                if output.bit_depth() != track_bd && playback.conversion.is_none() {
+                    return (
+                        "no".to_string(),
+                        format!("Bit depth mismatch: {} vs {}", track_bd, output.bit_depth()),
+                    );
+                }
+            }
+        } else {
+            return ("no".to_string(), "Bit depth unknown".to_string());
+        }
+    } else {
+        return ("no".to_string(), "No track info".to_string());
+    }
+
+    ("yes".to_string(), "".to_string())
+}
+
 fn emit_audio_debug(
     app: &tauri::AppHandle,
     engine: &Arc<Mutex<audio_engine::EngineState>>,
@@ -837,37 +1205,76 @@ fn emit_audio_debug(
 ) {
     let engine = engine.lock();
     let session = engine.session.as_ref();
+    let track = session.map(|s| &s.track);
 
     let decode_format = AudioFormatData {
-        sample_rate: session.and_then(|s| s.track.sample_rate).unwrap_or(0),
-        bit_depth: session.and_then(|s| s.track.bit_depth).unwrap_or(0),
-        channels: session.and_then(|s| s.track.channels).unwrap_or(0),
-        codec: session.and_then(|s| s.track.codec.clone()),
-        container: session.and_then(|s| s.track.container.clone()),
+        sample_rate: track.and_then(|t| t.sample_rate).unwrap_or(0),
+        bit_depth: track.and_then(|t| t.bit_depth).unwrap_or(0),
+        channels: track.and_then(|t| t.channels).unwrap_or(0),
+        codec: track.and_then(|t| t.codec.clone()),
+        container: track.and_then(|t| t.container.clone()),
     };
 
     let output_format = AudioFormatData {
         sample_rate: playback.output_sample_rate,
-        bit_depth: 32, // WASAPI shared mode typically uses 32-bit float
+        bit_depth: if let Some(o) = &playback.output {
+            o.bit_depth()
+        } else {
+            0
+        },
         channels: playback.output_channels,
         codec: None,
-        container: None,
+        container: playback.conversion.clone(),
     };
 
     let (device_id, device_name) = device
         .map(|d| (d.id.clone(), d.name.clone()))
         .unwrap_or_else(|| ("default".to_string(), "Default".to_string()));
 
+    let exclusive_active = playback
+        .output
+        .as_ref()
+        .map(|o| o.is_exclusive())
+        .unwrap_or(false);
+
+    let (bit_perfect, bit_perfect_reason) = determine_bit_perfect(playback, track);
+
     let _ = app.emit(
         "evt_audio_debug",
         AudioDebugEvent {
-            output_mode: "shared".to_string(),
+            output_mode: playback.output_mode.clone(),
+            policy: playback.policy.clone(),
+            conversion: playback
+                .conversion
+                .clone()
+                .unwrap_or_else(|| "none".to_string()),
+            gain_mode: playback.gain_mode.clone(),
+            fade_enabled: playback.fade_enabled,
+            exclusive_active,
+            bit_perfect,
+            bit_perfect_reason,
             device_id,
             device_name,
             output_format,
             decode_format,
         },
     );
+}
+
+fn parse_playback_error(e: &str) -> (String, String) {
+    if let Some(msg) = e.strip_prefix("bit_depth_unknown:") {
+        return ("bit_depth_unknown".to_string(), msg.trim().to_string());
+    }
+    if let Some(msg) = e.strip_prefix("exclusive_unavailable:") {
+        return ("exclusive_unavailable".to_string(), msg.trim().to_string());
+    }
+    if let Some(msg) = e.strip_prefix("exclusive_unsupported_format:") {
+        return (
+            "exclusive_unsupported_format".to_string(),
+            msg.trim().to_string(),
+        );
+    }
+    ("decode_error".to_string(), e.to_string())
 }
 
 fn emit_playback_error(
