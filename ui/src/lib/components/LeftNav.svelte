@@ -31,6 +31,12 @@
     >
       Settings
     </button>
+    <button 
+      class:active={$currentRoute === 'diagnostics'}
+      on:click={() => navigate('diagnostics')}
+    >
+      Diagnostics
+    </button>
   </div>
 </nav>
 

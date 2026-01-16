@@ -12,6 +12,7 @@
   import ArtistsView from './lib/views/ArtistsView.svelte';
   import TracksView from './lib/views/TracksView.svelte';
   import SettingsView from './lib/views/SettingsView.svelte';
+  import DiagnosticsView from './lib/views/DiagnosticsView.svelte';
   import NowPlayingView from './lib/views/NowPlayingView.svelte';
 
   onMount(async () => {
@@ -49,6 +50,8 @@
         <TracksView />
       {:else if $currentRoute === 'settings'}
         <SettingsView />
+      {:else if $currentRoute === 'diagnostics'}
+        <DiagnosticsView />
       {/if}
       
       {#if $currentRoute === 'now-playing'}

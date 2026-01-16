@@ -2,12 +2,13 @@
   import { open } from '@tauri-apps/plugin-dialog';
   import { onMount } from 'svelte';
   import { folders, selectedFolderId, scanStatus, scanProgress, scanError, addFolder, startScan } from '../state/library';
-  import { devices, currentDevice, loadDevices, selectDevice } from '../state/playback';
+  import { devices, currentDevice, loadDevices, selectDevice, outputSettings, loadOutputSettings, saveOutputSettings } from '../state/playback';
 
   const isMock = import.meta.env.SERMON_MOCK === '1';
 
   onMount(() => {
     loadDevices();
+    loadOutputSettings();
   });
 
   async function handleAddFolder() {
@@ -108,6 +109,41 @@
         {/each}
       </select>
     </div>
+
+    {#if $outputSettings}
+      <div class="setting">
+        <label>Output Mode</label>
+        <select 
+          value={$outputSettings.mode} 
+          on:change={(e) => saveOutputSettings({ ...$outputSettings!, mode: e.currentTarget.value as 'exclusive' | 'shared' })}
+        >
+          <option value="shared">Shared (Windows Mixer)</option>
+          <option value="exclusive">Exclusive (Bit-Perfect)</option>
+        </select>
+      </div>
+
+      <div class="setting">
+        <label>Policy</label>
+        <select 
+          value={$outputSettings.policy} 
+          on:change={(e) => saveOutputSettings({ ...$outputSettings!, policy: e.currentTarget.value as 'strict' | 'compatibility' })}
+        >
+          <option value="strict">Strict (Exact Match)</option>
+          <option value="compatibility">Compatibility (Allow Conversion)</option>
+        </select>
+      </div>
+
+      <div class="setting">
+        <label>
+          <input 
+            type="checkbox" 
+            checked={$outputSettings.fade} 
+            on:change={(e) => saveOutputSettings({ ...$outputSettings!, fade: e.currentTarget.checked })}
+          />
+          Enable fade on format switch
+        </label>
+      </div>
+    {/if}
   </div>
 
   <div class="section">

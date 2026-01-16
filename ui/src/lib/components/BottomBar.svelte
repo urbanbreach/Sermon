@@ -2,8 +2,10 @@
   import { currentRoute } from '../state/route';
   import { 
     currentTrack, playbackState, togglePlayPause, next, previous, 
-    volume, setVolume, playbackError, switchToDefault, progress 
+    volume, setVolume, playbackError, switchToDefault, progress, audioDebug 
   } from '../state/playback';
+
+  $: isUnity = $audioDebug?.policy === 'strict' && $audioDebug?.output_mode === 'exclusive';
 
   function openNowPlaying() {
     currentRoute.set('now-playing');
@@ -36,6 +38,14 @@
     <div class="track-details">
       <div class="title">{$currentTrack?.title || 'Nothing Playing'}</div>
       <div class="artist">{$currentTrack?.artist || 'Select a track'}</div>
+      {#if $audioDebug && $currentTrack}
+        <div class="bit-perfect-status" class:is-perfect={$audioDebug.bit_perfect === 'yes'}>
+          <div class="dot"></div>
+          <span class="status-text" title={$audioDebug.bit_perfect === 'yes' ? 'Bit-Perfect' : $audioDebug.bit_perfect_reason}>
+            {$audioDebug.bit_perfect === 'yes' ? 'Bit-Perfect' : ($audioDebug.bit_perfect_reason || 'Not Bit-Perfect')}
+          </span>
+        </div>
+      {/if}
     </div>
   </div>
 
@@ -52,13 +62,18 @@
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div class="volume" on:click|stopPropagation>
-    <span class="vol-icon">🔊</span>
+    {#if isUnity}
+      <span class="vol-label-unity">Unity</span>
+    {:else}
+      <span class="vol-icon">🔊</span>
+    {/if}
     <input 
       type="range" 
       min="0" 
       max="1" 
       step="0.01" 
-      value={$volume} 
+      value={isUnity ? 1.0 : $volume} 
+      disabled={isUnity}
       on:input={(e) => setVolume(e.currentTarget.valueAsNumber)} 
     />
   </div>
@@ -212,5 +227,52 @@
     border-radius: 50%;
     background: #fff;
     cursor: pointer;
+  }
+  
+  input[type=range]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
+  input[type=range]:disabled::-webkit-slider-thumb {
+    background: #888;
+    cursor: not-allowed;
+  }
+
+  .vol-label-unity {
+    font-size: 0.8rem;
+    color: #4af;
+    text-transform: uppercase;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+  }
+
+  .bit-perfect-status {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.2rem;
+    font-size: 0.75rem;
+  }
+  
+  .bit-perfect-status .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #fa4;
+    flex-shrink: 0;
+  }
+  
+  .bit-perfect-status.is-perfect .dot {
+    background: #4f4;
+    box-shadow: 0 0 5px rgba(68, 255, 68, 0.4);
+  }
+  
+  .status-text {
+    color: #aaa;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
   }
 </style>
