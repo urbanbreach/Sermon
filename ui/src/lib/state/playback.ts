@@ -6,6 +6,7 @@ import type {
   TrackEventData, QueueItemData
 } from '../types/playback';
 import * as api from '../api/playback';
+import type { AudioOutputSettings } from '../api/playback';
 
 // Core state
 export const playbackState = writable<'playing' | 'paused' | 'stopped'>('stopped');
@@ -23,6 +24,7 @@ export const currentIndex = writable<number | null>(null);
 // Device state
 export const currentDevice = writable<{ id: string; name: string; isDefault: boolean } | null>(null);
 export const devices = writable<api.AudioDeviceInfo[]>([]);
+export const outputSettings = writable<AudioOutputSettings | null>(null);
 
 // Audio debug
 export const audioDebug = writable<AudioDebugEvent | null>(null);
@@ -109,6 +111,24 @@ export async function switchToDefault() {
   playbackError.set(null);
 }
 
+export async function loadOutputSettings() {
+  try {
+    const settings = await api.getOutputSettings();
+    outputSettings.set(settings);
+  } catch (e) {
+    console.error('Failed to load output settings:', e);
+  }
+}
+
+export async function saveOutputSettings(settings: AudioOutputSettings) {
+  try {
+    await api.setOutputSettings(settings);
+    outputSettings.set(settings);
+  } catch (e) {
+    console.error('Failed to save output settings:', e);
+  }
+}
+
 // Event listeners
 export function initPlaybackListeners(): void {
   listen<PlaybackStateEvent>('evt_playback_state', (event) => {
@@ -151,4 +171,7 @@ export function initPlaybackListeners(): void {
 
   // Load initial volume
   api.getVolume().then(v => volume.set(v)).catch(() => {});
+  
+  // Load settings
+  loadOutputSettings();
 }

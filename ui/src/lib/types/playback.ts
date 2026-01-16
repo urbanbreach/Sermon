@@ -61,7 +61,14 @@ export interface AudioFormatData {
 }
 
 export interface AudioDebugEvent {
-  output_mode: 'shared';
+  output_mode: 'exclusive' | 'shared';
+  policy: 'strict' | 'compatibility';
+  conversion: 'none' | 'shared_fallback' | 'pad_16_to_24';
+  gain_mode: 'unity' | 'software';
+  fade_enabled: boolean;
+  exclusive_active: boolean;
+  bit_perfect: 'yes' | 'no';
+  bit_perfect_reason: string;
   device_id: string;
   device_name: string;
   output_format: AudioFormatData;

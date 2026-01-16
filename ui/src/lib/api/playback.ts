@@ -6,6 +6,12 @@ export interface AudioDeviceInfo {
   is_default: boolean;
 }
 
+export interface AudioOutputSettings {
+  mode: 'exclusive' | 'shared';
+  policy: 'strict' | 'compatibility';
+  fade: boolean;
+}
+
 export async function playbackStart(trackId: number): Promise<void> {
   return invoke('cmd_playback_start', { trackId });
 }
@@ -56,4 +62,12 @@ export async function getVolume(): Promise<number> {
 
 export async function setVolume(volume: number): Promise<void> {
   return invoke('cmd_volume_set', { volume });
+}
+
+export async function getOutputSettings(): Promise<AudioOutputSettings> {
+  return invoke('cmd_output_get_settings');
+}
+
+export async function setOutputSettings(settings: AudioOutputSettings): Promise<void> {
+  return invoke('cmd_output_set_settings', { settings });
 }
