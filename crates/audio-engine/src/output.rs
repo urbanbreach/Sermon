@@ -8,6 +8,9 @@ use wasapi::{
 };
 
 const AUDCLNT_E_DEVICE_INVALIDATED: u32 = 0x8889_0004;
+const AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED: u32 = 0x8889_000E;
+const AUDCLNT_E_DEVICE_IN_USE: u32 = 0x8889_000A;
+const AUDCLNT_E_UNSUPPORTED_FORMAT: u32 = 0x8889_0018;
 
 #[derive(Debug, Error)]
 pub enum OutputError {
@@ -19,6 +22,12 @@ pub enum OutputError {
 
     #[error("Buffer underrun")]
     BufferUnderrun,
+
+    #[error("Exclusive mode not allowed or device in use")]
+    ExclusiveUnavailable,
+
+    #[error("Format not supported in exclusive mode")]
+    ExclusiveUnsupportedFormat,
 }
 
 /// WASAPI output configured for a specific source format.
@@ -31,8 +40,12 @@ pub struct WasapiOutput {
     // Source format (what we're feeding in)
     sample_rate: u32,
     channels: u16,
+    bit_depth: u16,  // Container size (e.g., 32 for 24-in-32)
+    valid_bits: u16, // Actual valid bits (e.g., 24 for 24-in-32)
+    sample_type: SampleType,
     buffer_frames: u32,
     started: bool,
+    is_exclusive: bool,
 }
 
 impl WasapiOutput {
@@ -108,9 +121,224 @@ impl WasapiOutput {
             event_handle,
             sample_rate,
             channels,
+            bit_depth: 32,
+            valid_bits: 32,
+            sample_type: SampleType::Float,
             buffer_frames,
             started: false,
+            is_exclusive: false,
         })
+    }
+
+    pub fn open_exclusive_with_format(
+        sample_rate: u32,
+        channels: u16,
+        bit_depth: u16,
+    ) -> Result<Self, OutputError> {
+        init_com()?;
+
+        let enumerator = DeviceEnumerator::new().map_err(map_wasapi_error)?;
+        let device = enumerator
+            .get_default_device(&Direction::Render)
+            .map_err(map_wasapi_error)?;
+
+        Self::open_device_exclusive_with_format(&device, sample_rate, channels, bit_depth)
+    }
+
+    pub fn open_device_exclusive_with_format(
+        device: &Device,
+        sample_rate: u32,
+        channels: u16,
+        bit_depth: u16,
+    ) -> Result<Self, OutputError> {
+        init_com()?;
+
+        let mut client = device.get_iaudioclient().map_err(map_wasapi_error)?;
+
+        let channel_mask = if channels == 2 {
+            Some(0x3) // SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT
+        } else if channels == 1 {
+            Some(0x4) // SPEAKER_FRONT_CENTER
+        } else {
+            None
+        };
+
+        // Try different format configurations in order of preference
+        // Many DACs prefer 32-bit containers for 24-bit audio, or 32-bit float
+        let format_attempts: Vec<(usize, usize, SampleType)> = match bit_depth {
+            24 => vec![
+                (32, 24, SampleType::Int),   // 24-bit in 32-bit container (most compatible)
+                (24, 24, SampleType::Int),   // Native 24-bit
+                (32, 32, SampleType::Float), // 32-bit float fallback
+            ],
+            16 => vec![
+                (16, 16, SampleType::Int),   // Native 16-bit
+                (32, 32, SampleType::Float), // 32-bit float fallback
+            ],
+            32 => vec![
+                (32, 32, SampleType::Float), // 32-bit float
+                (32, 32, SampleType::Int),   // 32-bit int
+            ],
+            _ => vec![(bit_depth as usize, bit_depth as usize, SampleType::Int)],
+        };
+
+        let mut last_error = None;
+        for (store_bits, valid_bits, sample_type) in &format_attempts {
+            let desired_format = WaveFormat::new(
+                *store_bits,
+                *valid_bits,
+                sample_type,
+                sample_rate as usize,
+                channels as usize,
+                channel_mask,
+            );
+
+            info!(
+                store_bits = store_bits,
+                valid_bits = valid_bits,
+                sample_type = ?sample_type,
+                sample_rate = sample_rate,
+                "Trying exclusive format"
+            );
+
+            match client.is_supported_exclusive_with_quirks(&desired_format) {
+                Ok(wave_format) => {
+                    // Format is supported, try to initialize
+                    let actual_bits = wave_format.get_bitspersample();
+                    let actual_valid_bits = wave_format.get_validbitspersample();
+                    let actual_sample_type = wave_format.get_subformat().unwrap_or(*sample_type);
+
+                    info!(
+                        requested_bits = bit_depth,
+                        store_bits = store_bits,
+                        actual_bits = actual_bits,
+                        actual_valid_bits = actual_valid_bits,
+                        "Format accepted for exclusive mode"
+                    );
+
+                    let (def_time, min_time) =
+                        client.get_device_period().map_err(map_wasapi_error)?;
+
+                    // Calculate aligned period for better compatibility
+                    let desired_period = client
+                        .calculate_aligned_period_near(def_time, Some(128), &wave_format)
+                        .unwrap_or(def_time);
+
+                    info!(
+                        def_period = def_time,
+                        min_period = min_time,
+                        desired_period = desired_period,
+                        "Exclusive mode period calculation"
+                    );
+
+                    let mode = StreamMode::EventsExclusive {
+                        period_hns: desired_period,
+                    };
+
+                    if let Err(e) =
+                        client.initialize_client(&wave_format, &Direction::Render, &mode)
+                    {
+                        if let WasapiError::Windows(werr) = &e {
+                            let code = werr.code().0 as u32;
+                            if code == AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED
+                                || code == AUDCLNT_E_DEVICE_IN_USE
+                            {
+                                return Err(OutputError::ExclusiveUnavailable);
+                            }
+                        }
+                        // Try next format
+                        last_error = Some(e);
+                        // Need a new audio client for the next attempt
+                        client = device.get_iaudioclient().map_err(map_wasapi_error)?;
+                        continue;
+                    }
+
+                    let event_handle = client.set_get_eventhandle().map_err(map_wasapi_error)?;
+                    let render_client = client.get_audiorenderclient().map_err(map_wasapi_error)?;
+                    let buffer_frames = client.get_buffer_size().map_err(map_wasapi_error)?;
+                    let block_align = wave_format.get_blockalign();
+
+                    info!(
+                        sample_rate = sample_rate,
+                        channels = channels,
+                        bit_depth = actual_bits,
+                        valid_bits = actual_valid_bits,
+                        buffer_frames = buffer_frames,
+                        block_align = block_align,
+                        "Opened WASAPI output (Exclusive)"
+                    );
+
+                    return Ok(Self {
+                        client,
+                        render_client,
+                        event_handle,
+                        sample_rate,
+                        channels,
+                        bit_depth: actual_bits,
+                        valid_bits: actual_valid_bits,
+                        sample_type: actual_sample_type,
+                        buffer_frames,
+                        started: false,
+                        is_exclusive: true,
+                    });
+                }
+                Err(e) => {
+                    info!(
+                        store_bits = store_bits,
+                        valid_bits = valid_bits,
+                        error = %e,
+                        "Format not supported, trying next"
+                    );
+                    last_error = Some(e);
+                    // Need a new audio client for the next attempt
+                    client = device.get_iaudioclient().map_err(map_wasapi_error)?;
+                }
+            }
+        }
+
+        // All formats failed
+        if let Some(e) = last_error {
+            warn!("All exclusive formats failed, last error: {}", e);
+        }
+        Err(OutputError::ExclusiveUnsupportedFormat)
+    }
+
+    pub fn negotiate_exclusive_format(
+        device: &Device,
+        sample_rate: u32,
+        channels: u16,
+        bit_depth: u16,
+        policy: &str, // "strict" or "compatibility"
+    ) -> Result<(WasapiOutput, Option<String>), OutputError> {
+        // Try exact match
+        match Self::open_device_exclusive_with_format(device, sample_rate, channels, bit_depth) {
+            Ok(output) => return Ok((output, None)),
+            Err(OutputError::ExclusiveUnsupportedFormat) => {
+                if policy == "strict" {
+                    return Err(OutputError::ExclusiveUnsupportedFormat);
+                }
+                // Compatibility: try zero-pad 16->24 if original was 16
+                if bit_depth == 16 {
+                    match Self::open_device_exclusive_with_format(device, sample_rate, channels, 24)
+                    {
+                        Ok(output) => return Ok((output, Some("pad_16_to_24".to_string()))),
+                        Err(_) => {} // Fall through
+                    }
+                    // Try 32?
+                    match Self::open_device_exclusive_with_format(device, sample_rate, channels, 32)
+                    {
+                        Ok(output) => return Ok((output, Some("pad_16_to_32".to_string()))),
+                        Err(_) => {} // Fall through
+                    }
+                }
+                Err(OutputError::ExclusiveUnsupportedFormat)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn is_exclusive(&self) -> bool {
+        self.is_exclusive
     }
 
     /// Open with the device's default/mix format (for pre-initialization).
@@ -169,12 +397,38 @@ impl WasapiOutput {
             1.0
         };
 
-        // Convert f32 samples to bytes (32-bit float LE) with volume applied
-        let mut data = Vec::with_capacity(samples_to_write * 4);
-        for &s in samples.iter().take(samples_to_write) {
-            let adjusted = (s * vol).clamp(-1.0, 1.0);
-            data.extend_from_slice(&adjusted.to_le_bytes());
-        }
+        // Convert f32 samples to bytes based on format
+        // Use valid_bits to determine actual audio precision, bit_depth for container size
+        let samples_subset = &samples[..samples_to_write];
+        let data = match (self.sample_type, self.bit_depth, self.valid_bits) {
+            (SampleType::Float, 32, _) => {
+                let mut d = Vec::with_capacity(samples_to_write * 4);
+                for &s in samples_subset {
+                    let adjusted = (s * vol).clamp(-1.0, 1.0);
+                    d.extend_from_slice(&adjusted.to_le_bytes());
+                }
+                d
+            }
+            (SampleType::Int, 16, 16) => f32_to_i16_le(samples_subset, vol),
+            (SampleType::Int, 24, 24) => {
+                // Native 24-bit: 3 bytes per sample
+                f32_to_i24_native_le(samples_subset, vol)
+            }
+            (SampleType::Int, 32, 24) => {
+                // 24-bit in 32-bit container: 4 bytes per sample, 24 valid bits
+                f32_to_i24_in_i32_le(samples_subset, vol)
+            }
+            (SampleType::Int, 32, 32) => f32_to_i32_le(samples_subset, vol),
+            _ => {
+                // Fallback to float
+                let mut d = Vec::with_capacity(samples_to_write * 4);
+                for &s in samples_subset {
+                    let adjusted = (s * vol).clamp(-1.0, 1.0);
+                    d.extend_from_slice(&adjusted.to_le_bytes());
+                }
+                d
+            }
+        };
 
         match self
             .render_client
@@ -195,6 +449,10 @@ impl WasapiOutput {
 
     pub fn channels(&self) -> u16 {
         self.channels
+    }
+
+    pub fn bit_depth(&self) -> u16 {
+        self.bit_depth
     }
 
     pub fn buffer_frames(&self) -> u32 {
@@ -250,7 +508,7 @@ impl WasapiOutput {
     }
 
     /// Write samples from a ring buffer, filling as much of the available space as possible.
-    /// This is the proper way to use WASAPI - call this after wait_for_buffer_request returns true.
+    /// For exclusive mode with event-driven timing, this waits for the event handle first.
     pub fn write_from_buffer(
         &mut self,
         ring_buffer: &mut AudioRingBuffer,
@@ -263,6 +521,14 @@ impl WasapiOutput {
         let channels = self.channels as usize;
         if channels == 0 {
             return Ok(0);
+        }
+
+        // In exclusive mode, wait for WASAPI to signal it needs data
+        if self.is_exclusive {
+            if !self.wait_for_buffer_request(100) {
+                // Timeout - no data needed yet, or error
+                return Ok(0);
+            }
         }
 
         let available_frames = self.available_frames()?;
@@ -283,12 +549,37 @@ impl WasapiOutput {
             1.0
         };
 
-        // Convert f32 samples to bytes (32-bit float LE) with volume applied
-        let mut data = Vec::with_capacity(samples_to_write * 4);
-        for &s in &samples {
-            let adjusted = (s * vol).clamp(-1.0, 1.0);
-            data.extend_from_slice(&adjusted.to_le_bytes());
-        }
+        // Convert f32 samples to bytes based on format
+        // Use valid_bits to determine actual audio precision, bit_depth for container size
+        let data = match (self.sample_type, self.bit_depth, self.valid_bits) {
+            (SampleType::Float, 32, _) => {
+                let mut d = Vec::with_capacity(samples_to_write * 4);
+                for &s in &samples {
+                    let adjusted = (s * vol).clamp(-1.0, 1.0);
+                    d.extend_from_slice(&adjusted.to_le_bytes());
+                }
+                d
+            }
+            (SampleType::Int, 16, 16) => f32_to_i16_le(&samples, vol),
+            (SampleType::Int, 24, 24) => {
+                // Native 24-bit: 3 bytes per sample
+                f32_to_i24_native_le(&samples, vol)
+            }
+            (SampleType::Int, 32, 24) => {
+                // 24-bit in 32-bit container: 4 bytes per sample, 24 valid bits
+                f32_to_i24_in_i32_le(&samples, vol)
+            }
+            (SampleType::Int, 32, 32) => f32_to_i32_le(&samples, vol),
+            _ => {
+                // Fallback to float
+                let mut d = Vec::with_capacity(samples_to_write * 4);
+                for &s in &samples {
+                    let adjusted = (s * vol).clamp(-1.0, 1.0);
+                    d.extend_from_slice(&adjusted.to_le_bytes());
+                }
+                d
+            }
+        };
 
         match self
             .render_client
@@ -471,5 +762,436 @@ impl AudioRingBuffer {
 
     pub fn clear(&mut self) {
         self.buf.clear();
+    }
+}
+
+/// Convert f32 samples to 16-bit PCM (little-endian bytes)
+pub fn f32_to_i16_le(samples: &[f32], volume: f32) -> Vec<u8> {
+    let vol = if volume.is_finite() {
+        volume.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let mut out = Vec::with_capacity(samples.len() * 2);
+    for &s in samples {
+        let sample = (s * vol).clamp(-1.0, 1.0);
+        let i16_sample = (sample * 32767.0) as i16;
+        out.extend_from_slice(&i16_sample.to_le_bytes());
+    }
+    out
+}
+
+/// Convert f32 samples to 24-bit PCM in 32-bit container (little-endian bytes).
+/// Uses 24 valid bits right-justified in the 32-bit container (lower 24 bits).
+/// This matches WAVEFORMATEXTENSIBLE with wBitsPerSample=32 and wValidBitsPerSample=24.
+pub fn f32_to_i24_in_i32_le(samples: &[f32], volume: f32) -> Vec<u8> {
+    let vol = if volume.is_finite() {
+        volume.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let mut out = Vec::with_capacity(samples.len() * 4);
+    // 24-bit signed integer max is 2^23 - 1 = 8,388,607
+    const MAX_24BIT: f32 = 8_388_607.0;
+
+    for &s in samples {
+        let sample = (s * vol).clamp(-1.0, 1.0);
+        let i24_val = (sample * MAX_24BIT) as i32;
+        // Pack into 32-bit container, right-justified (lower 24 bits)
+        // The upper 8 bits will be sign-extended naturally by the i32 cast
+        // For WASAPI, valid bits are in the LSB position
+        out.extend_from_slice(&i24_val.to_le_bytes());
+    }
+    out
+}
+
+/// Convert f32 samples to native 24-bit PCM (3 bytes per sample, little-endian).
+/// This is used when the device accepts 24/24 format (not 24-in-32 container).
+pub fn f32_to_i24_native_le(samples: &[f32], volume: f32) -> Vec<u8> {
+    let vol = if volume.is_finite() {
+        volume.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let mut out = Vec::with_capacity(samples.len() * 3);
+    // 24-bit signed integer max is 2^23 - 1 = 8,388,607
+    const MAX_24BIT: f32 = 8_388_607.0;
+
+    for &s in samples {
+        let sample = (s * vol).clamp(-1.0, 1.0);
+        let i24_val = (sample * MAX_24BIT) as i32;
+        // Write only the lower 3 bytes (little-endian)
+        let bytes = i24_val.to_le_bytes();
+        out.push(bytes[0]);
+        out.push(bytes[1]);
+        out.push(bytes[2]);
+    }
+    out
+}
+
+/// Convert f32 samples to 32-bit PCM (little-endian bytes)
+pub fn f32_to_i32_le(samples: &[f32], volume: f32) -> Vec<u8> {
+    let vol = if volume.is_finite() {
+        volume.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let mut out = Vec::with_capacity(samples.len() * 4);
+    for &s in samples {
+        let sample = (s * vol).clamp(-1.0, 1.0);
+        let i32_sample = (sample * 2147483647.0) as i32;
+        out.extend_from_slice(&i32_sample.to_le_bytes());
+    }
+    out
+}
+
+pub trait AudioOutput {
+    fn start(&mut self) -> Result<(), OutputError>;
+    fn stop(&mut self) -> Result<(), OutputError>;
+    fn sample_rate(&self) -> u32;
+    fn channels(&self) -> u16;
+    fn bit_depth(&self) -> u16;
+    fn is_exclusive(&self) -> bool;
+    fn write_samples(&mut self, samples: &[f32], volume: f32) -> Result<(), OutputError>;
+    fn write_from_buffer(
+        &mut self,
+        ring_buffer: &mut AudioRingBuffer,
+        volume: f32,
+    ) -> Result<usize, OutputError>;
+}
+
+impl AudioOutput for WasapiOutput {
+    fn start(&mut self) -> Result<(), OutputError> {
+        self.start()
+    }
+
+    fn stop(&mut self) -> Result<(), OutputError> {
+        self.stop()
+    }
+
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate()
+    }
+
+    fn channels(&self) -> u16 {
+        self.channels()
+    }
+
+    fn bit_depth(&self) -> u16 {
+        self.bit_depth()
+    }
+
+    fn is_exclusive(&self) -> bool {
+        self.is_exclusive()
+    }
+
+    fn write_samples(&mut self, samples: &[f32], volume: f32) -> Result<(), OutputError> {
+        self.write_samples(samples, volume)
+    }
+
+    fn write_from_buffer(
+        &mut self,
+        ring_buffer: &mut AudioRingBuffer,
+        volume: f32,
+    ) -> Result<usize, OutputError> {
+        self.write_from_buffer(ring_buffer, volume)
+    }
+}
+
+pub struct NullSinkOutput {
+    sample_rate: u32,
+    channels: u16,
+    bit_depth: u16,
+    is_exclusive: bool,
+    captured_samples: Vec<f32>,
+    started: bool,
+}
+
+impl NullSinkOutput {
+    pub fn new(sample_rate: u32, channels: u16, bit_depth: u16, is_exclusive: bool) -> Self {
+        Self {
+            sample_rate,
+            channels,
+            bit_depth,
+            is_exclusive,
+            captured_samples: Vec::new(),
+            started: false,
+        }
+    }
+
+    pub fn captured_samples(&self) -> &[f32] {
+        &self.captured_samples
+    }
+
+    pub fn clear_captured(&mut self) {
+        self.captured_samples.clear();
+    }
+}
+
+impl AudioOutput for NullSinkOutput {
+    fn start(&mut self) -> Result<(), OutputError> {
+        self.started = true;
+        Ok(())
+    }
+
+    fn stop(&mut self) -> Result<(), OutputError> {
+        self.started = false;
+        Ok(())
+    }
+
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    fn channels(&self) -> u16 {
+        self.channels
+    }
+
+    fn bit_depth(&self) -> u16 {
+        self.bit_depth
+    }
+
+    fn is_exclusive(&self) -> bool {
+        self.is_exclusive
+    }
+
+    fn write_samples(&mut self, samples: &[f32], volume: f32) -> Result<(), OutputError> {
+        if !self.started {
+            self.start()?;
+        }
+
+        let vol = if volume.is_finite() {
+            volume.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+
+        for &s in samples {
+            self.captured_samples.push(s * vol);
+        }
+        Ok(())
+    }
+
+    fn write_from_buffer(
+        &mut self,
+        ring_buffer: &mut AudioRingBuffer,
+        volume: f32,
+    ) -> Result<usize, OutputError> {
+        if !self.started {
+            self.start()?;
+        }
+        let available = ring_buffer.available_frames();
+        let channels = self.channels as usize;
+        let samples_count = available * channels;
+
+        let mut samples = vec![0.0; samples_count];
+        ring_buffer.pop_into(&mut samples);
+
+        self.write_samples(&samples, volume)?;
+
+        Ok(available)
+    }
+}
+
+pub enum OutputBackend {
+    Wasapi(WasapiOutput),
+    NullSink(NullSinkOutput),
+}
+
+impl AudioOutput for OutputBackend {
+    fn start(&mut self) -> Result<(), OutputError> {
+        match self {
+            OutputBackend::Wasapi(o) => o.start(),
+            OutputBackend::NullSink(o) => o.start(),
+        }
+    }
+
+    fn stop(&mut self) -> Result<(), OutputError> {
+        match self {
+            OutputBackend::Wasapi(o) => o.stop(),
+            OutputBackend::NullSink(o) => o.stop(),
+        }
+    }
+
+    fn sample_rate(&self) -> u32 {
+        match self {
+            OutputBackend::Wasapi(o) => o.sample_rate(),
+            OutputBackend::NullSink(o) => o.sample_rate(),
+        }
+    }
+
+    fn channels(&self) -> u16 {
+        match self {
+            OutputBackend::Wasapi(o) => o.channels(),
+            OutputBackend::NullSink(o) => o.channels(),
+        }
+    }
+
+    fn bit_depth(&self) -> u16 {
+        match self {
+            OutputBackend::Wasapi(o) => o.bit_depth(),
+            OutputBackend::NullSink(o) => o.bit_depth(),
+        }
+    }
+
+    fn is_exclusive(&self) -> bool {
+        match self {
+            OutputBackend::Wasapi(o) => o.is_exclusive(),
+            OutputBackend::NullSink(o) => o.is_exclusive(),
+        }
+    }
+
+    fn write_samples(&mut self, samples: &[f32], volume: f32) -> Result<(), OutputError> {
+        match self {
+            OutputBackend::Wasapi(o) => o.write_samples(samples, volume),
+            OutputBackend::NullSink(o) => o.write_samples(samples, volume),
+        }
+    }
+
+    fn write_from_buffer(
+        &mut self,
+        ring_buffer: &mut AudioRingBuffer,
+        volume: f32,
+    ) -> Result<usize, OutputError> {
+        match self {
+            OutputBackend::Wasapi(o) => o.write_from_buffer(ring_buffer, volume),
+            OutputBackend::NullSink(o) => o.write_from_buffer(ring_buffer, volume),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_f32_to_i16_clamps_correctly() {
+        let input = [1.0, 0.5, 0.0, -0.5, -1.0, 1.5, -1.5];
+        let volume = 1.0;
+        let bytes = f32_to_i16_le(&input, volume);
+
+        // i16 max is 32767
+        // 1.0 -> 32767 (0x7FFF) -> LE: FF 7F
+        // 0.5 -> 16383 (0x3FFF) -> LE: FF 3F
+        // 0.0 -> 0 -> LE: 00 00
+        // -0.5 -> -16383 (0xC001) -> LE: 01 C0
+        // -1.0 -> -32767 (0x8001) -> LE: 01 80
+
+        assert_eq!(bytes.len(), input.len() * 2);
+
+        let mut i = 0;
+        // 1.0
+        assert_eq!(bytes[i], 0xFF);
+        assert_eq!(bytes[i + 1], 0x7F);
+        i += 2;
+        // 0.5
+        assert_eq!(bytes[i], 0xFF);
+        assert_eq!(bytes[i + 1], 0x3F);
+        i += 2;
+        // 0.0
+        assert_eq!(bytes[i], 0x00);
+        assert_eq!(bytes[i + 1], 0x00);
+        i += 2;
+        // -0.5
+        assert_eq!(bytes[i], 0x01);
+        assert_eq!(bytes[i + 1], 0xC0);
+        i += 2;
+        // -1.0
+        assert_eq!(bytes[i], 0x01);
+        assert_eq!(bytes[i + 1], 0x80);
+        i += 2;
+        // 1.5 -> clamped to 1.0
+        assert_eq!(bytes[i], 0xFF);
+        assert_eq!(bytes[i + 1], 0x7F);
+        i += 2;
+        // -1.5 -> clamped to -1.0
+        assert_eq!(bytes[i], 0x01);
+        assert_eq!(bytes[i + 1], 0x80);
+        i += 2;
+    }
+
+    #[test]
+    fn test_f32_to_i24_in_i32_le() {
+        let input = [1.0, 0.0, -1.0];
+        let volume = 1.0;
+        let bytes = f32_to_i24_in_i32_le(&input, volume);
+
+        // 24-bit values are right-justified in 32-bit container (lower 24 bits)
+        // 1.0 * 8388607 = 8388607 (0x007FFFFF)
+        // LE: FF FF 7F 00
+
+        // -1.0 * 8388607 = -8388607
+        // -8388607 in 32-bit two's complement = 0xFF800001
+        // LE: 01 00 80 FF
+
+        assert_eq!(bytes.len(), input.len() * 4);
+
+        let mut i = 0;
+        // 1.0 -> 8388607 = 0x007FFFFF -> LE: FF FF 7F 00
+        assert_eq!(bytes[i], 0xFF);
+        assert_eq!(bytes[i + 1], 0xFF);
+        assert_eq!(bytes[i + 2], 0x7F);
+        assert_eq!(bytes[i + 3], 0x00);
+        i += 4;
+        // 0.0 -> 0 = 0x00000000 -> LE: 00 00 00 00
+        assert_eq!(bytes[i], 0x00);
+        assert_eq!(bytes[i + 1], 0x00);
+        assert_eq!(bytes[i + 2], 0x00);
+        assert_eq!(bytes[i + 3], 0x00);
+        i += 4;
+        // -1.0 -> -8388607 = 0xFF800001 -> LE: 01 00 80 FF
+        assert_eq!(bytes[i], 0x01);
+        assert_eq!(bytes[i + 1], 0x00);
+        assert_eq!(bytes[i + 2], 0x80);
+        assert_eq!(bytes[i + 3], 0xFF);
+    }
+
+    #[test]
+    fn test_null_sink_captures_samples() {
+        let mut sink = NullSinkOutput::new(44100, 2, 16, false);
+        sink.start().unwrap();
+        let samples = [0.5, -0.5, 0.25, -0.25];
+        sink.write_samples(&samples, 1.0).unwrap();
+        assert_eq!(sink.captured_samples(), &samples);
+    }
+
+    #[test]
+    fn test_f32_to_i24_native_le() {
+        let input = [1.0, 0.0, -1.0];
+        let volume = 1.0;
+        let bytes = f32_to_i24_native_le(&input, volume);
+
+        // Native 24-bit: 3 bytes per sample
+        // 1.0 * 8388607 = 8388607 (0x7FFFFF)
+        // LE: FF FF 7F
+
+        // -1.0 * 8388607 = -8388607
+        // -8388607 in 24-bit two's complement = 0x800001
+        // LE: 01 00 80
+
+        assert_eq!(bytes.len(), input.len() * 3);
+
+        let mut i = 0;
+        // 1.0 -> 8388607 = 0x7FFFFF -> LE: FF FF 7F
+        assert_eq!(bytes[i], 0xFF);
+        assert_eq!(bytes[i + 1], 0xFF);
+        assert_eq!(bytes[i + 2], 0x7F);
+        i += 3;
+        // 0.0 -> 0 = 0x000000 -> LE: 00 00 00
+        assert_eq!(bytes[i], 0x00);
+        assert_eq!(bytes[i + 1], 0x00);
+        assert_eq!(bytes[i + 2], 0x00);
+        i += 3;
+        // -1.0 -> -8388607 = 0x800001 -> LE: 01 00 80
+        assert_eq!(bytes[i], 0x01);
+        assert_eq!(bytes[i + 1], 0x00);
+        assert_eq!(bytes[i + 2], 0x80);
+    }
+
+    #[test]
+    fn test_null_sink_volume() {
+        let mut sink = NullSinkOutput::new(44100, 2, 16, false);
+        sink.write_samples(&[1.0, -1.0], 0.5).unwrap();
+        assert_eq!(sink.captured_samples(), &[0.5, -0.5]);
     }
 }

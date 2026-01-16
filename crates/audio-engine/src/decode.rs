@@ -33,6 +33,7 @@ pub struct AudioDecoder {
     track_id: u32,
     sample_rate: u32,
     channels: usize,
+    bit_depth: u32,
     sample_buffer: Option<SampleBuffer<f32>>,
 }
 
@@ -76,6 +77,7 @@ impl AudioDecoder {
             .channels
             .map(|channels| channels.count())
             .unwrap_or(0);
+        let bit_depth = track.codec_params.bits_per_sample.unwrap_or(16);
 
         Ok(Self {
             format_reader,
@@ -83,6 +85,7 @@ impl AudioDecoder {
             track_id: track.id,
             sample_rate,
             channels,
+            bit_depth,
             sample_buffer: None,
         })
     }
@@ -170,6 +173,10 @@ impl AudioDecoder {
 
     pub fn channels(&self) -> usize {
         self.channels
+    }
+
+    pub fn bit_depth(&self) -> u32 {
+        self.bit_depth
     }
 }
 
