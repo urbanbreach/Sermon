@@ -1,8 +1,10 @@
 {
-  "active_plan": "E:\\Code\\Sermon\\.sisyphus\\plans\\wasapi-exclusive-bit-perfect.md",
-  "started_at": "2026-01-16T20:12:19.262Z",
-  "session_ids": [
-    "ses_437900a59ffeJ9d0UM3qOEJVMM"
-  ],
-  "plan_name": "wasapi-exclusive-bit-perfect"
+  "active_plan": null,
+  "completed_milestones": [
+    {
+      "plan_name": "wasapi-exclusive-bit-perfect",
+      "completed_at": "2026-01-16T21:30:00.000Z",
+      "commits": 7
+    }
+  ]
 }

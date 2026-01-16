@@ -4,16 +4,17 @@ A high-fidelity music player for Windows, built with Tauri (Rust + Svelte).
 
 ## Features
 
-### Completed (Milestone 02)
+### Completed (Milestone 03)
 - **Library Management**: Scan folders for audio files, track metadata extraction
-- **Audio Playback**: WASAPI Shared mode with automatic sample rate/format conversion
+- **Audio Playback**: WASAPI Shared and Exclusive modes
+- **Bit-Perfect Playback**: WASAPI Exclusive mode with format negotiation (matching source bit-depth/sample-rate)
 - **Supported Formats**: FLAC, WAV, MP3 (via Symphonia decoder)
 - **Playback Controls**: Play/Pause, Stop, Seek, Next/Previous, Volume
 - **Queue Management**: Play Now, Add to Queue
 - **Device Selection**: Choose audio output device, persisted preference
+- **Audio Settings**: Toggle between Shared/Exclusive mode with live diagnostics
 
 ### Planned
-- WASAPI Exclusive mode (bit-perfect playback)
 - Album artwork and dynamic themes
 - Last.fm scrobbling
 - ASIO support
@@ -132,8 +133,9 @@ Sermon/
 | 00 | Foundation | ✅ Complete |
 | 01 | Library DB Scan | ✅ Complete |
 | 02 | Playback (WASAPI Shared) | ✅ Complete |
-| 03 | WASAPI Exclusive (Bit-Perfect) | 🔜 Next |
-| 04 | Library Browse & Search | Planned |
+| 03 | WASAPI Exclusive (Bit-Perfect) | ✅ Complete |
+| 04 | Gapless Playback | 🔜 Next |
+| 05 | Library Browse & Search | Planned |
 | 05 | Tagging & Safe Write Editor | Planned |
 | 06 | Artwork Cache & Dynamic Theme | Planned |
 | 07 | Preferences & Audiophile Settings | Planned |
