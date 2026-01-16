@@ -246,6 +246,27 @@ pub fn get_audio_device_preference(conn: &Connection) -> String {
     }
 }
 
+pub fn get_audio_output_mode(conn: &Connection) -> String {
+    match get_setting(conn, "audio.output.mode") {
+        Ok(Some(v)) => v,
+        _ => "exclusive".to_string(),
+    }
+}
+
+pub fn get_audio_output_policy(conn: &Connection) -> String {
+    match get_setting(conn, "audio.output.policy") {
+        Ok(Some(v)) => v,
+        _ => "strict".to_string(),
+    }
+}
+
+pub fn get_audio_output_fade(conn: &Connection) -> bool {
+    match get_setting(conn, "audio.output.fade") {
+        Ok(Some(v)) => v == "on",
+        _ => false,
+    }
+}
+
 pub fn get_track_by_id(conn: &Connection, id: i64) -> Result<TrackRow, LibraryError> {
     conn.query_row("SELECT * FROM tracks WHERE id = ?", params![id], map_track)
         .map_err(LibraryError::from)

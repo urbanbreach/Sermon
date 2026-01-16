@@ -42,6 +42,26 @@ fn test_settings_crud() {
     // Test audio device helper
     set_setting(&conn, "audio.device.preference", "device_guid_123").unwrap();
     assert_eq!(get_audio_device_preference(&conn), "device_guid_123");
+
+    // Test new output settings
+    use library::db::{get_audio_output_fade, get_audio_output_mode, get_audio_output_policy};
+
+    // Defaults
+    assert_eq!(get_audio_output_mode(&conn), "exclusive");
+    assert_eq!(get_audio_output_policy(&conn), "strict");
+    assert_eq!(get_audio_output_fade(&conn), false);
+
+    // Set values
+    set_setting(&conn, "audio.output.mode", "shared").unwrap();
+    set_setting(&conn, "audio.output.policy", "compatibility").unwrap();
+    set_setting(&conn, "audio.output.fade", "on").unwrap();
+
+    assert_eq!(get_audio_output_mode(&conn), "shared");
+    assert_eq!(get_audio_output_policy(&conn), "compatibility");
+    assert_eq!(get_audio_output_fade(&conn), true);
+
+    set_setting(&conn, "audio.output.fade", "off").unwrap();
+    assert_eq!(get_audio_output_fade(&conn), false);
 }
 
 #[test]
