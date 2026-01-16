@@ -1,23 +1,8 @@
 {
-  "active_plan": null,
-  "completed_plans": [
-    {
-      "plan": "E:\\Code\\Sermon\\.sisyphus\\plans\\foundation.md",
-      "plan_name": "foundation",
-      "completed_at": "2026-01-14"
-    },
-    {
-      "plan": "E:\\Code\\Sermon\\.sisyphus\\plans\\library-db-scan.md",
-      "plan_name": "library-db-scan",
-      "completed_at": "2026-01-15",
-      "session_ids": ["ses_43e7f5990ffe1EBP7m8aJnbwDa"]
-    },
-    {
-      "plan": "E:\\Code\\Sermon\\.sisyphus\\plans\\playback-shared-now-playing.md",
-      "plan_name": "playback-shared-now-playing",
-      "completed_at": "2026-01-15",
-      "session_ids": ["ses_43cd5b24dffe2vIlJC5m0KA9V1"]
-    }
+  "active_plan": "E:\\Code\\Sermon\\.sisyphus\\plans\\wasapi-exclusive-bit-perfect.md",
+  "started_at": "2026-01-16T20:12:19.262Z",
+  "session_ids": [
+    "ses_437900a59ffeJ9d0UM3qOEJVMM"
   ],
-  "last_updated": "2026-01-15T20:15:00.000Z"
+  "plan_name": "wasapi-exclusive-bit-perfect"
 }
