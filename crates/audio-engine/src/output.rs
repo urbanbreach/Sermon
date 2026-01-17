@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use thiserror::Error;
-use tracing::{info, warn};
+use tracing::{info, trace, warn};
 use wasapi::{
     AudioClient, AudioRenderClient, Device, DeviceEnumerator, Direction, Handle, SampleType,
     StreamMode, WasapiError, WaveFormat, initialize_mta,
@@ -46,6 +46,7 @@ pub struct WasapiOutput {
     buffer_frames: u32,
     started: bool,
     is_exclusive: bool,
+    timing_mode: String, // "event" or "polling"
 }
 
 impl WasapiOutput {
@@ -127,6 +128,7 @@ impl WasapiOutput {
             buffer_frames,
             started: false,
             is_exclusive: false,
+            timing_mode: "event".to_string(), // Shared mode always uses event timing
         })
     }
 
@@ -134,6 +136,7 @@ impl WasapiOutput {
         sample_rate: u32,
         channels: u16,
         bit_depth: u16,
+        timing_mode: &str,
     ) -> Result<Self, OutputError> {
         init_com()?;
 
@@ -142,7 +145,13 @@ impl WasapiOutput {
             .get_default_device(&Direction::Render)
             .map_err(map_wasapi_error)?;
 
-        Self::open_device_exclusive_with_format(&device, sample_rate, channels, bit_depth)
+        Self::open_device_exclusive_with_format(
+            &device,
+            sample_rate,
+            channels,
+            bit_depth,
+            timing_mode,
+        )
     }
 
     pub fn open_device_exclusive_with_format(
@@ -150,6 +159,7 @@ impl WasapiOutput {
         sample_rate: u32,
         channels: u16,
         bit_depth: u16,
+        timing_mode: &str,
     ) -> Result<Self, OutputError> {
         init_com()?;
 
@@ -228,11 +238,19 @@ impl WasapiOutput {
                         def_period = def_time,
                         min_period = min_time,
                         desired_period = desired_period,
+                        timing_mode = timing_mode,
                         "Exclusive mode period calculation"
                     );
 
-                    let mode = StreamMode::EventsExclusive {
-                        period_hns: desired_period,
+                    let mode = if timing_mode == "polling" {
+                        StreamMode::PollingExclusive {
+                            buffer_duration_hns: desired_period,
+                            period_hns: desired_period,
+                        }
+                    } else {
+                        StreamMode::EventsExclusive {
+                            period_hns: desired_period,
+                        }
                     };
 
                     if let Err(e) =
@@ -258,13 +276,30 @@ impl WasapiOutput {
                     let buffer_frames = client.get_buffer_size().map_err(map_wasapi_error)?;
                     let block_align = wave_format.get_blockalign();
 
+                    let avg_bytes_per_sec = wave_format.get_avgbytespersec();
+                    let channel_mask_val = channel_mask.unwrap_or(0);
+
+                    // Determine packing format for 24-in-32 case
+                    let packing_format = if actual_bits == 32 && actual_valid_bits == 24 {
+                        "24-in-32-msb-aligned"
+                    } else {
+                        "native"
+                    };
+
                     info!(
                         sample_rate = sample_rate,
                         channels = channels,
                         bit_depth = actual_bits,
                         valid_bits = actual_valid_bits,
-                        buffer_frames = buffer_frames,
+                        sample_type = ?actual_sample_type,
                         block_align = block_align,
+                        avg_bytes_per_sec = avg_bytes_per_sec,
+                        channel_mask = channel_mask_val,
+                        buffer_frames = buffer_frames,
+                        device_period_default = def_time,
+                        device_period_min = min_time,
+                        timing_mode = timing_mode,
+                        packing = packing_format,
                         "Opened WASAPI output (Exclusive)"
                     );
 
@@ -280,6 +315,7 @@ impl WasapiOutput {
                         buffer_frames,
                         started: false,
                         is_exclusive: true,
+                        timing_mode: timing_mode.to_string(),
                     });
                 }
                 Err(e) => {
@@ -308,10 +344,17 @@ impl WasapiOutput {
         sample_rate: u32,
         channels: u16,
         bit_depth: u16,
-        policy: &str, // "strict" or "compatibility"
+        policy: &str,      // "strict" or "compatibility"
+        timing_mode: &str, // "event" or "polling"
     ) -> Result<(WasapiOutput, Option<String>), OutputError> {
         // Try exact match
-        match Self::open_device_exclusive_with_format(device, sample_rate, channels, bit_depth) {
+        match Self::open_device_exclusive_with_format(
+            device,
+            sample_rate,
+            channels,
+            bit_depth,
+            timing_mode,
+        ) {
             Ok(output) => return Ok((output, None)),
             Err(OutputError::ExclusiveUnsupportedFormat) => {
                 if policy == "strict" {
@@ -319,14 +362,24 @@ impl WasapiOutput {
                 }
                 // Compatibility: try zero-pad 16->24 if original was 16
                 if bit_depth == 16 {
-                    match Self::open_device_exclusive_with_format(device, sample_rate, channels, 24)
-                    {
+                    match Self::open_device_exclusive_with_format(
+                        device,
+                        sample_rate,
+                        channels,
+                        24,
+                        timing_mode,
+                    ) {
                         Ok(output) => return Ok((output, Some("pad_16_to_24".to_string()))),
                         Err(_) => {} // Fall through
                     }
                     // Try 32?
-                    match Self::open_device_exclusive_with_format(device, sample_rate, channels, 32)
-                    {
+                    match Self::open_device_exclusive_with_format(
+                        device,
+                        sample_rate,
+                        channels,
+                        32,
+                        timing_mode,
+                    ) {
                         Ok(output) => return Ok((output, Some("pad_16_to_32".to_string()))),
                         Err(_) => {} // Fall through
                     }
@@ -455,6 +508,10 @@ impl WasapiOutput {
         self.bit_depth
     }
 
+    pub fn valid_bits(&self) -> u16 {
+        self.valid_bits
+    }
+
     pub fn buffer_frames(&self) -> u32 {
         self.buffer_frames
     }
@@ -523,8 +580,9 @@ impl WasapiOutput {
             return Ok(0);
         }
 
-        // In exclusive mode, wait for WASAPI to signal it needs data
-        if self.is_exclusive {
+        // In exclusive mode with event-driven timing, wait for WASAPI to signal it needs data
+        // In polling mode, skip the wait and check available frames directly
+        if self.is_exclusive && self.timing_mode == "event" {
             if !self.wait_for_buffer_request(100) {
                 // Timeout - no data needed yet, or error
                 return Ok(0);
@@ -541,7 +599,17 @@ impl WasapiOutput {
 
         // Get samples from ring buffer
         let mut samples = vec![0.0f32; samples_to_write];
+        let ring_buffer_fill = ring_buffer.available_frames();
         ring_buffer.pop_into(&mut samples);
+
+        if self.is_exclusive {
+            trace!(
+                available_frames = available_frames,
+                frames_to_write = frames_to_write,
+                ring_buffer_fill = ring_buffer_fill,
+                "Exclusive mode write"
+            );
+        }
 
         let vol = if volume.is_finite() {
             volume.clamp(0.0, 1.0)
@@ -782,8 +850,17 @@ pub fn f32_to_i16_le(samples: &[f32], volume: f32) -> Vec<u8> {
 }
 
 /// Convert f32 samples to 24-bit PCM in 32-bit container (little-endian bytes).
-/// Uses 24 valid bits right-justified in the 32-bit container (lower 24 bits).
-/// This matches WAVEFORMATEXTENSIBLE with wBitsPerSample=32 and wValidBitsPerSample=24.
+///
+/// Uses 24 valid bits LEFT-ALIGNED (MSB-aligned) in the 32-bit container.
+/// Per WAVEFORMATEXTENSIBLE spec, valid bits are left-aligned within the container
+/// with zero-padded LSBs.
+///
+/// Memory layout (little-endian bytes): [lsb_zeros, low, mid, high]
+/// Bit layout: [31:8] = 24-bit audio sample, [7:0] = zero padding
+///
+/// Reference: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ksmedia/ns-ksmedia-waveformatextensible
+/// "The wValidBitsPerSample member specifies the number of valid bits in each
+/// sample container. These valid bits are left-aligned within the sample container."
 pub fn f32_to_i24_in_i32_le(samples: &[f32], volume: f32) -> Vec<u8> {
     let vol = if volume.is_finite() {
         volume.clamp(0.0, 1.0)
@@ -797,10 +874,11 @@ pub fn f32_to_i24_in_i32_le(samples: &[f32], volume: f32) -> Vec<u8> {
     for &s in samples {
         let sample = (s * vol).clamp(-1.0, 1.0);
         let i24_val = (sample * MAX_24BIT) as i32;
-        // Pack into 32-bit container, right-justified (lower 24 bits)
-        // The upper 8 bits will be sign-extended naturally by the i32 cast
-        // For WASAPI, valid bits are in the LSB position
-        out.extend_from_slice(&i24_val.to_le_bytes());
+        // Pack into 32-bit container, LEFT-ALIGNED (MSB position)
+        // Shift left by 8 bits so valid 24 bits occupy upper portion [31:8]
+        // Lower 8 bits [7:0] are zero-padded per WAVEFORMATEXTENSIBLE spec
+        let i32_val = i24_val << 8;
+        out.extend_from_slice(&i32_val.to_le_bytes());
     }
     out
 }
@@ -851,6 +929,7 @@ pub trait AudioOutput {
     fn sample_rate(&self) -> u32;
     fn channels(&self) -> u16;
     fn bit_depth(&self) -> u16;
+    fn valid_bits(&self) -> u16;
     fn is_exclusive(&self) -> bool;
     fn write_samples(&mut self, samples: &[f32], volume: f32) -> Result<(), OutputError>;
     fn write_from_buffer(
@@ -879,6 +958,10 @@ impl AudioOutput for WasapiOutput {
 
     fn bit_depth(&self) -> u16 {
         self.bit_depth()
+    }
+
+    fn valid_bits(&self) -> u16 {
+        self.valid_bits()
     }
 
     fn is_exclusive(&self) -> bool {
@@ -949,6 +1032,10 @@ impl AudioOutput for NullSinkOutput {
 
     fn bit_depth(&self) -> u16 {
         self.bit_depth
+    }
+
+    fn valid_bits(&self) -> u16 {
+        self.bit_depth // NullSink doesn't distinguish valid bits
     }
 
     fn is_exclusive(&self) -> bool {
@@ -1034,6 +1121,13 @@ impl AudioOutput for OutputBackend {
         }
     }
 
+    fn valid_bits(&self) -> u16 {
+        match self {
+            OutputBackend::Wasapi(o) => o.valid_bits(),
+            OutputBackend::NullSink(o) => o.valid_bits(),
+        }
+    }
+
     fn is_exclusive(&self) -> bool {
         match self {
             OutputBackend::Wasapi(o) => o.is_exclusive(),
@@ -1116,34 +1210,37 @@ mod tests {
         let volume = 1.0;
         let bytes = f32_to_i24_in_i32_le(&input, volume);
 
-        // 24-bit values are right-justified in 32-bit container (lower 24 bits)
+        // 24-bit values are LEFT-ALIGNED (MSB position) in 32-bit container
+        // per WAVEFORMATEXTENSIBLE spec. Valid bits occupy [31:8], with [7:0] zero-padded.
+        //
         // 1.0 * 8388607 = 8388607 (0x007FFFFF)
-        // LE: FF FF 7F 00
-
-        // -1.0 * 8388607 = -8388607
-        // -8388607 in 32-bit two's complement = 0xFF800001
-        // LE: 01 00 80 FF
+        // Shifted left by 8: 0x7FFFFF00
+        // LE: 00 FF FF 7F
+        //
+        // -1.0 * 8388607 = -8388607 (0xFF800001 in 32-bit two's complement)
+        // Shifted left by 8: 0x80000100
+        // LE: 00 01 00 80
 
         assert_eq!(bytes.len(), input.len() * 4);
 
         let mut i = 0;
-        // 1.0 -> 8388607 = 0x007FFFFF -> LE: FF FF 7F 00
-        assert_eq!(bytes[i], 0xFF);
+        // 1.0 -> 8388607 << 8 = 0x7FFFFF00 -> LE: 00 FF FF 7F
+        assert_eq!(bytes[i], 0x00);
         assert_eq!(bytes[i + 1], 0xFF);
-        assert_eq!(bytes[i + 2], 0x7F);
-        assert_eq!(bytes[i + 3], 0x00);
+        assert_eq!(bytes[i + 2], 0xFF);
+        assert_eq!(bytes[i + 3], 0x7F);
         i += 4;
-        // 0.0 -> 0 = 0x00000000 -> LE: 00 00 00 00
+        // 0.0 -> 0 << 8 = 0x00000000 -> LE: 00 00 00 00
         assert_eq!(bytes[i], 0x00);
         assert_eq!(bytes[i + 1], 0x00);
         assert_eq!(bytes[i + 2], 0x00);
         assert_eq!(bytes[i + 3], 0x00);
         i += 4;
-        // -1.0 -> -8388607 = 0xFF800001 -> LE: 01 00 80 FF
-        assert_eq!(bytes[i], 0x01);
-        assert_eq!(bytes[i + 1], 0x00);
-        assert_eq!(bytes[i + 2], 0x80);
-        assert_eq!(bytes[i + 3], 0xFF);
+        // -1.0 -> -8388607 << 8 = 0x80000100 -> LE: 00 01 00 80
+        assert_eq!(bytes[i], 0x00);
+        assert_eq!(bytes[i + 1], 0x01);
+        assert_eq!(bytes[i + 2], 0x00);
+        assert_eq!(bytes[i + 3], 0x80);
     }
 
     #[test]
