@@ -2,7 +2,7 @@ use crate::state::{AudioState, LibraryState, PlaybackCommand};
 use audio_engine::device::list_devices;
 use library::{
     apply_migrations, get_audio_output_fade, get_audio_output_mode, get_audio_output_policy,
-    get_track_by_id, open_db, set_setting,
+    get_audio_output_timing, get_track_by_id, open_db, set_setting,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -93,6 +93,7 @@ pub struct AudioFormatData {
     pub channels: u16,
     pub codec: Option<String>,
     pub container: Option<String>,
+    pub valid_bits: Option<u16>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -288,6 +289,7 @@ pub struct AudioOutputSettings {
     pub mode: String,   // "exclusive" | "shared"
     pub policy: String, // "strict" | "compatibility"
     pub fade: bool,
+    pub timing: String, // "event" | "polling"
 }
 
 #[tauri::command]
@@ -300,6 +302,7 @@ pub fn cmd_output_get_settings(
         mode: get_audio_output_mode(&conn),
         policy: get_audio_output_policy(&conn),
         fade: get_audio_output_fade(&conn),
+        timing: get_audio_output_timing(&conn),
     })
 }
 
@@ -319,6 +322,7 @@ pub fn cmd_output_set_settings(
         if settings.fade { "on" } else { "off" },
     )
     .map_err(|e| e.to_string())?;
+    set_setting(&conn, "audio.output.timing", &settings.timing).map_err(|e| e.to_string())?;
 
     // 2. Notify audio thread
     audio_state
@@ -327,6 +331,7 @@ pub fn cmd_output_set_settings(
             mode: settings.mode,
             policy: settings.policy,
             fade: settings.fade,
+            timing: settings.timing,
         })
         .map_err(|e| e.to_string())?;
 

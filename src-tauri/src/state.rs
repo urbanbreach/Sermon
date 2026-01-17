@@ -48,5 +48,6 @@ pub enum PlaybackCommand {
         mode: String,
         policy: String,
         fade: bool,
+        timing: String,
     },
 }

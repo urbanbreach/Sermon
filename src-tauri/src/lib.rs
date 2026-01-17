@@ -157,6 +157,7 @@ struct AudioPlayback {
     conversion: Option<String>, // None, "pad_16_to_24", "shared_fallback"
     fade_enabled: bool,
     fade_state: Option<FadeState>,
+    timing_mode: String, // "event" or "polling"
 }
 
 struct FadeState {
@@ -187,6 +188,7 @@ impl AudioPlayback {
             conversion: None,
             fade_enabled: true, // Default to true
             fade_state: None,
+            timing_mode: "polling".to_string(), // Default to polling for USB compatibility
         }
     }
 
@@ -232,15 +234,10 @@ impl AudioPlayback {
         sample_rate: u32,
         channels: u16,
         bit_depth: u16,
-        authoritative_bit_depth: Option<u16>,
+        _authoritative_bit_depth: Option<u16>,
     ) -> Result<(), String> {
-        // Check for unknown bit depth in strict mode
-        if self.output_mode == "exclusive"
-            && self.policy == "strict"
-            && authoritative_bit_depth.is_none()
-        {
-            return Err("bit_depth_unknown: Unknown bit depth for strict mode".to_string());
-        }
+        // Don't block playback for unknown bit depth - just mark as not bit-perfect
+        // The determine_bit_perfect function will handle the "unknown" case
 
         // Check if we need to reopen
         if let Some(ref output) = self.output {
@@ -295,6 +292,7 @@ impl AudioPlayback {
                 channels,
                 bit_depth,
                 &self.policy,
+                &self.timing_mode,
             ) {
                 Ok((output, conversion)) => {
                     self.output_sample_rate = output.sample_rate();
@@ -899,16 +897,26 @@ fn handle_playback_command(
 
             emit_audio_debug(app, engine, playback, current_device_info.as_ref());
         }
-        PlaybackCommand::SetOutputSettings { mode, policy, fade } => {
+        PlaybackCommand::SetOutputSettings {
+            mode,
+            policy,
+            fade,
+            timing,
+        } => {
             info!(
-                "Received output settings update: mode={}, policy={}, fade={}",
-                mode, policy, fade
+                "Received output settings update: mode={}, policy={}, fade={}, timing={}",
+                mode, policy, fade, timing
             );
 
             let mut changed = false;
 
             if playback.output_mode != mode {
                 playback.output_mode = mode.clone();
+                changed = true;
+            }
+
+            if playback.timing_mode != timing {
+                playback.timing_mode = timing.clone();
                 changed = true;
             }
 
@@ -1180,10 +1188,16 @@ fn determine_bit_perfect(playback: &AudioPlayback, track: Option<&TrackInfo>) ->
         // 7. Bit depth unknown
         if let Some(track_bd) = track.bit_depth {
             if let Some(output) = &playback.output {
-                if output.bit_depth() != track_bd && playback.conversion.is_none() {
+                // Compare to valid_bits, not container bit_depth
+                // This correctly handles 24-bit in 32-bit container
+                if output.valid_bits() != track_bd && playback.conversion.is_none() {
                     return (
                         "no".to_string(),
-                        format!("Bit depth mismatch: {} vs {}", track_bd, output.bit_depth()),
+                        format!(
+                            "Bit depth mismatch: {} vs {}",
+                            track_bd,
+                            output.valid_bits()
+                        ),
                     );
                 }
             }
@@ -1213,6 +1227,7 @@ fn emit_audio_debug(
         channels: track.and_then(|t| t.channels).unwrap_or(0),
         codec: track.and_then(|t| t.codec.clone()),
         container: track.and_then(|t| t.container.clone()),
+        valid_bits: None, // Decode format doesn't distinguish valid bits
     };
 
     let output_format = AudioFormatData {
@@ -1225,6 +1240,7 @@ fn emit_audio_debug(
         channels: playback.output_channels,
         codec: None,
         container: playback.conversion.clone(),
+        valid_bits: playback.output.as_ref().map(|o| o.valid_bits()),
     };
 
     let (device_id, device_name) = device
