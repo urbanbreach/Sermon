@@ -10,11 +10,11 @@
   let nextCursor: AlbumCursor | undefined = $state(undefined);
   let hasMore = $state(true);
   let initialLoadComplete = $state(false);
-  let scrollContainer: HTMLElement | undefined = $state();
   
   let containerWidth = $state(0);
-  const minItemWidth = 180; // approximate width of card + gap
-  let columns = $derived(Math.max(1, Math.floor((containerWidth || 800) / minItemWidth)));
+  const cardWidth = 180;
+  const gap = 24;
+  let columns = $derived(Math.max(1, Math.floor((containerWidth || 600) / (cardWidth + gap))));
   
   let rows = $derived.by(() => {
     const res: AlbumListItem[][] = [];
@@ -37,7 +37,7 @@
     loading = true;
 
     try {
-      const page = await listAlbumsPage(50, nextCursor);
+      const page = await listAlbumsPage(100, nextCursor);
       albums = [...albums, ...page.items];
       nextCursor = page.nextCursor;
       hasMore = !!nextCursor;
@@ -48,12 +48,17 @@
     }
   }
 
+  // Debounced scroll handler to prevent freezing
+  let scrollTimeout: ReturnType<typeof setTimeout> | null = null;
   function handleScroll(e: Event) {
-    const target = e.target as HTMLElement;
-    const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
-    if (remaining < 500) {
-      loadMore();
-    }
+    if (scrollTimeout) clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(() => {
+      const target = e.target as HTMLElement;
+      const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
+      if (remaining < 800 && hasMore && !loading) {
+        loadMore();
+      }
+    }, 150);
   }
 
   function handleAlbumClick(album: AlbumListItem) {
@@ -67,7 +72,6 @@
 
 <div 
   class="view-container" 
-  bind:this={scrollContainer}
   bind:clientWidth={containerWidth}
   onscroll={handleScroll}
 >
@@ -81,25 +85,25 @@
     <div class="grid-wrapper">
       <VList data={rows}>
         {#snippet children(row: AlbumListItem[])}
-          <div 
-            class="row"
-            style:grid-template-columns="repeat({columns}, 1fr)"
-          >
+          <div class="row">
             {#each row as item}
               <div 
-                class="card-wrapper"
+                class="card"
                 role="button"
                 tabindex="0"
                 onkeydown={(e) => e.key === 'Enter' && handleAlbumClick(item)}
                 onclick={() => handleAlbumClick(item)}
               >
-                <div class="card">
-                  <div class="artwork-placeholder"></div>
-                  <div class="info">
-                    <div class="title" title={item.albumTitleDisplay}>{item.albumTitleDisplay}</div>
-                    <div class="artist" title={item.albumArtistDisplay}>{item.albumArtistDisplay}</div>
-                    {#if item.year}<div class="year">{item.year}</div>{/if}
-                  </div>
+                <div class="artwork-placeholder">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <circle cx="12" cy="12" r="10"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                </div>
+                <div class="info">
+                  <div class="title" title={item.albumTitleDisplay}>{item.albumTitleDisplay}</div>
+                  <div class="artist" title={item.albumArtistDisplay}>{item.albumArtistDisplay}</div>
+                  {#if item.year}<div class="year">{item.year}</div>{/if}
                 </div>
               </div>
             {/each}
@@ -131,28 +135,24 @@
   }
 
   .grid-wrapper {
-    flex-grow: 1;
-    min-height: 200px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
   
   .row {
-    display: grid;
+    display: flex;
+    flex-wrap: wrap;
     gap: 1.5rem;
-    margin-bottom: 1.5rem;
-    padding-right: 1.5rem; /* Match gap to avoid horizontal scroll if any */
-  }
-
-  .card-wrapper {
-    /* Width is handled by grid 1fr */
-    aspect-ratio: 0.7; /* Approximation of card aspect ratio */
+    padding-bottom: 1.5rem;
   }
 
   .card {
+    width: 180px;
     background: var(--glass-highlight);
     border-radius: var(--glass-radius);
     border: 1px solid var(--glass-border);
     overflow: hidden;
-    height: 100%;
     display: flex;
     flex-direction: column;
     transition: transform 0.2s, background-color 0.2s;
@@ -166,44 +166,46 @@
 
   .artwork-placeholder {
     width: 100%;
-    aspect-ratio: 1;
-    background: #333;
+    height: 180px;
+    background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
     display: flex;
     align-items: center;
     justify-content: center;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
+    color: #555;
+    flex-shrink: 0;
   }
 
   .info {
-    padding: 0.8rem;
-    overflow: hidden;
-    flex: 1;
+    padding: 0.75rem;
+    min-height: 70px;
     display: flex;
     flex-direction: column;
   }
 
   .title {
     font-weight: 600;
-    margin-bottom: 0.2rem;
+    margin-bottom: 0.25rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
+    line-height: 1.2;
   }
 
   .artist {
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     color: #aaa;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-bottom: 0.2rem;
+    line-height: 1.2;
   }
 
   .year {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: #666;
     margin-top: auto;
+    padding-top: 0.25rem;
   }
 
   .loading-state, .empty-state {
@@ -219,6 +221,5 @@
     text-align: center;
     padding: 1rem;
     color: #888;
-    width: 100%;
   }
 </style>
