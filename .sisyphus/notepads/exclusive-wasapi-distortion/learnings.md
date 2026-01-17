@@ -46,3 +46,22 @@
 - Fixed `f32_to_i24_in_i32_le` to shift 24-bit value left by 8 bits: `let i32_val = i24_val << 8;`
 - Bit layout: [31:8] = 24-bit audio sample, [7:0] = zero padding
 - This fix should resolve the audio distortion on USB DACs
+
+## 2026-01-17 Bug Fix: PollingExclusive Buffer Size
+
+### Issue
+- Error `0x88890011` (AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED) when using PollingExclusive mode
+- Playback failed immediately with "exclusive_unavailable" error
+
+### Root Cause
+- For `PollingExclusive`, `buffer_duration_hns` must be LARGER than `period_hns`
+- Original code set both to the same value (desired_period)
+- wasapi-rs examples use 16x period for buffer duration
+
+### Fix Applied
+- Changed `buffer_duration_hns` from `desired_period` to `4 * desired_period`
+- This gives enough buffer time to refill before underrun
+
+### Reference
+- wasapi-rs example: `examples/playnoise_exclusive_poll.rs:58`
+- Uses: `buffer_duration_hns: 16 * desired_period`

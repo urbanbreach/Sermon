@@ -243,8 +243,10 @@ impl WasapiOutput {
                     );
 
                     let mode = if timing_mode == "polling" {
+                        // For polling mode, buffer duration should be larger than period
+                        // to give us time to refill before underrun
                         StreamMode::PollingExclusive {
-                            buffer_duration_hns: desired_period,
+                            buffer_duration_hns: 4 * desired_period,
                             period_hns: desired_period,
                         }
                     } else {
