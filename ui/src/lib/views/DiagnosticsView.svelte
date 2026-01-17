@@ -79,7 +79,13 @@
           <h3>Output</h3>
           <div class="details">
             <div>{debug?.output_format?.sample_rate || 0} Hz</div>
-            <div>{debug?.output_format?.bit_depth || 0}-bit</div>
+            <div>
+              {#if debug?.output_format?.valid_bits && debug?.output_format?.valid_bits !== debug?.output_format?.bit_depth}
+                {debug?.output_format?.valid_bits}-bit (in {debug?.output_format?.bit_depth}-bit container)
+              {:else}
+                {debug?.output_format?.bit_depth || 0}-bit
+              {/if}
+            </div>
             <div>{debug?.output_format?.channels || 0} ch</div>
             <div class="sub">WASAPI</div>
           </div>

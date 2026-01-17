@@ -58,6 +58,7 @@ export interface AudioFormatData {
   channels: number;
   codec?: string;
   container?: string;
+  valid_bits?: number;
 }
 
 export interface AudioDebugEvent {

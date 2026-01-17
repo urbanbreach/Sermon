@@ -10,6 +10,7 @@ export interface AudioOutputSettings {
   mode: 'exclusive' | 'shared';
   policy: 'strict' | 'compatibility';
   fade: boolean;
+  timing: 'event' | 'polling';
 }
 
 export async function playbackStart(trackId: number): Promise<void> {

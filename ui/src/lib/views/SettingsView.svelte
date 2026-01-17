@@ -134,6 +134,17 @@
       </div>
 
       <div class="setting">
+        <label>Timing Mode</label>
+        <select 
+          value={$outputSettings.timing} 
+          on:change={(e) => saveOutputSettings({ ...$outputSettings!, timing: e.currentTarget.value as 'event' | 'polling' })}
+        >
+          <option value="polling">Polling (USB Compatible)</option>
+          <option value="event">Event-Driven</option>
+        </select>
+      </div>
+
+      <div class="setting">
         <label>
           <input 
             type="checkbox" 
