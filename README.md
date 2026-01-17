@@ -135,14 +135,13 @@ Sermon/
 | 02 | Playback (WASAPI Shared) | ✅ Complete |
 | 03 | WASAPI Exclusive (Bit-Perfect) | ✅ Complete |
 | 04 | Library Browse & Search Polish | ✅ Complete |
-| 05 | Gapless Playback | 🔜 Next |
-| 06 | Tagging & Safe Write Editor | Planned |
-| 07 | Artwork Cache & Dynamic Theme | Planned |
-| 08 | Preferences & Audiophile Settings | Planned |
-| 09 | DSD (DoP) | Planned |
-| 10 | ASIO Backend | Planned |
-| 11 | Last.fm & History | Planned |
-| 12 | Windows Productization | Planned |
+| 05 | Tagging & Safe Write Editor | 🔜 Next |
+| 06 | Artwork Cache & Dynamic Theme | Planned |
+| 07 | Preferences & Audiophile Settings | Planned |
+| 08 | DSD (DoP) | Planned |
+| 09 | ASIO Backend | Planned |
+| 10 | Last.fm & History | Planned |
+| 11 | Windows Productization | Planned |
 
 ## License
 
