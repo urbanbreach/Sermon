@@ -1,7 +1,30 @@
 <script lang="ts">
   import { audioDebug } from '../state/playback';
+  import { onMount } from 'svelte';
+  import { getLibraryStats } from '../api/library';
+  import type { LibraryStats } from '../types/library';
 
-  $: debug = $audioDebug;
+  let debug = $derived($audioDebug);
+  let stats: LibraryStats | null = $state(null);
+
+  onMount(async () => {
+    try {
+      stats = await getLibraryStats();
+    } catch (e) {
+      console.error('Failed to load library stats:', e);
+    }
+  });
+
+  function formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function formatDate(ms?: number): string {
+    if (!ms) return 'Never';
+    return new Date(ms).toLocaleString();
+  }
 </script>
 
 <div class="view-container">
@@ -91,6 +114,35 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Library Stats -->
+    <div class="card">
+      <h2>Library Stats</h2>
+      {#if stats}
+        <div class="row">
+          <span class="label">Tracks</span>
+          <span class="value">{stats.trackCount.toLocaleString()}</span>
+        </div>
+        <div class="row">
+          <span class="label">Albums</span>
+          <span class="value">{stats.albumCount.toLocaleString()}</span>
+        </div>
+        <div class="row">
+          <span class="label">Artists</span>
+          <span class="value">{stats.artistCount.toLocaleString()}</span>
+        </div>
+        <div class="row">
+          <span class="label">Database Size</span>
+          <span class="value">{formatBytes(stats.dbSizeBytes)}</span>
+        </div>
+        <div class="row">
+          <span class="label">Last Scan</span>
+          <span class="value">{formatDate(stats.lastScanCompletedMs)}</span>
+        </div>
+      {:else}
+        <div class="loading">Loading...</div>
+      {/if}
     </div>
   </div>
 </div>

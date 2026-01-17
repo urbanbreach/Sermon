@@ -1,14 +1,16 @@
 <script lang="ts">
-  import { currentRoute, type Route } from '../state/route';
+  import { currentRoute, currentRouteName, navigate } from '../state/route';
 
-  const navItems: { label: string; route: Route }[] = [
-    { label: 'Albums', route: 'albums' },
-    { label: 'Artists', route: 'artists' },
-    { label: 'Tracks', route: 'tracks' },
+  type SimpleRouteName = 'albums' | 'artists' | 'tracks' | 'settings' | 'diagnostics';
+
+  const navItems: { label: string; routeName: SimpleRouteName }[] = [
+    { label: 'Albums', routeName: 'albums' },
+    { label: 'Artists', routeName: 'artists' },
+    { label: 'Tracks', routeName: 'tracks' },
   ];
 
-  function navigate(route: Route) {
-    currentRoute.set(route);
+  function handleNavigate(routeName: SimpleRouteName) {
+    navigate({ name: routeName });
   }
 </script>
 
@@ -16,8 +18,8 @@
   <div class="nav-section">
     {#each navItems as item}
       <button 
-        class:active={$currentRoute === item.route}
-        on:click={() => navigate(item.route)}
+        class:active={$currentRouteName === item.routeName}
+        on:click={() => handleNavigate(item.routeName)}
       >
         {item.label}
       </button>
@@ -26,14 +28,14 @@
 
   <div class="nav-section settings">
     <button 
-      class:active={$currentRoute === 'settings'}
-      on:click={() => navigate('settings')}
+      class:active={$currentRouteName === 'settings'}
+      on:click={() => handleNavigate('settings')}
     >
       Settings
     </button>
     <button 
-      class:active={$currentRoute === 'diagnostics'}
-      on:click={() => navigate('diagnostics')}
+      class:active={$currentRouteName === 'diagnostics'}
+      on:click={() => handleNavigate('diagnostics')}
     >
       Diagnostics
     </button>

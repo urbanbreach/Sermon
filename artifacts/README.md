@@ -45,6 +45,14 @@ This directory contains manual UI snapshots and review packs for each milestone.
   - `diagnostics-playing-44k.png` - Diagnostics view while playing a 44.1 kHz track (showing bit-perfect status)
   - `diagnostics-playing-96k.png` - Diagnostics view while playing a 96 kHz track (showing format switch)
 
+### Milestone 04 - Library Browse & Search Polish
+- Directory: `artifacts/ui/04-library-browse-search-polish/`
+- Screenshots:
+  - `albums-grid.png` - Albums grid view with virtualized scrolling
+  - `album-detail.png` - Album detail view with track list and playback actions
+  - `artists.png` - Artists list view with virtualized scrolling
+  - `search-results.png` - Search results view showing artists, albums, and tracks
+
 ## Review Packs
 
 Each milestone directory contains a `REVIEW.md` file. This file serves as the sign-off document for the UI implementation, listing the captured artifacts, changes, and any known issues.

@@ -14,7 +14,13 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), LibraryError> {
     if version < 2 {
         info!("Applying migration 0002_settings");
         conn.execute_batch(include_str!("../../migrations/0002_settings.sql"))?;
-        // version = 2; // Not needed until we have migration 3
+        version = 2;
+    }
+
+    if version < 3 {
+        info!("Applying migration 0003_fts");
+        conn.execute_batch(include_str!("../../migrations/0003_fts.sql"))?;
+        // version = 3;
     }
 
     Ok(())

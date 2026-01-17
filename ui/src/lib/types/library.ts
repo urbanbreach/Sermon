@@ -42,3 +42,61 @@ export interface ScanComplete {
 
 export type SortBy = 'title' | 'artist' | 'album';
 export type SortDirection = 'asc' | 'desc';
+
+export type SearchHit = 
+  | { type: 'track'; trackId: number; title?: string; artist?: string; album?: string }
+  | { type: 'album'; albumArtistSort: string; albumTitleSort: string; albumArtistDisplay: string; albumTitleDisplay: string; year?: number }
+  | { type: 'artist'; artistSort: string; artistDisplay: string };
+
+export interface SearchSuggestResponse {
+  results: SearchHit[];
+}
+
+export interface AlbumListItem {
+  albumTitleDisplay: string;
+  albumArtistDisplay: string;
+  albumTitleSort: string;
+  albumArtistSort: string;
+  year?: number;
+  trackCount: number;
+}
+
+export interface AlbumCursor {
+  albumArtistSort: string;
+  albumTitleSort: string;
+}
+
+export interface Page<T, C> {
+  items: T[];
+  nextCursor?: C;
+}
+
+export interface ArtistListItem {
+  artistDisplay: string;
+  artistSort: string;
+  trackCount: number;
+  albumCount: number;
+}
+
+export interface ArtistCursor {
+  artistSort: string;
+}
+
+export interface AlbumTrackCursor {
+  discNo: number;
+  trackNo: number;
+  titleSort: string;
+  id: number;
+}
+
+export interface OffsetCursor {
+  offset: number;
+}
+
+export interface LibraryStats {
+  trackCount: number;
+  albumCount: number;
+  artistCount: number;
+  dbSizeBytes: number;
+  lastScanCompletedMs?: number;
+}

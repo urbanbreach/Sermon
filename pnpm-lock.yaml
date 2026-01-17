@@ -20,6 +20,9 @@ importers:
       '@tauri-apps/plugin-dialog':
         specifier: ^2
         version: 2.6.0
+      virtua:
+        specifier: ^0.48.3
+        version: 0.48.3(svelte@5.46.3)
     devDependencies:
       '@sveltejs/vite-plugin-svelte':
         specifier: ^6.2.1
@@ -574,6 +577,26 @@ packages:
   undici-types@7.16.0:
     resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
 
+  virtua@0.48.3:
+    resolution: {integrity: sha512-WTGPqMshLNtTQaIhvNo6EnjMvBP0GAYN8ZJsTY6HZqQCJlspW0L9IrIDi4vYV2J7uBlnuSqemnw40IKTg/aeGA==}
+    peerDependencies:
+      react: '>=16.14.0'
+      react-dom: '>=16.14.0'
+      solid-js: '>=1.0'
+      svelte: '>=5.0'
+      vue: '>=3.2'
+    peerDependenciesMeta:
+      react:
+        optional: true
+      react-dom:
+        optional: true
+      solid-js:
+        optional: true
+      svelte:
+        optional: true
+      vue:
+        optional: true
+
   vite@7.3.1:
     resolution: {integrity: sha512-w+N7Hifpc3gRjZ63vYBXA56dvvRlNWRczTdmCBBa+CotUzAPf5b7YMdMR/8CQoeYE5LX3W4wj6RYTgonm1b9DA==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -1042,6 +1065,10 @@ snapshots:
   typescript@5.9.3: {}
 
   undici-types@7.16.0: {}
+
+  virtua@0.48.3(svelte@5.46.3):
+    optionalDependencies:
+      svelte: 5.46.3
 
   vite@7.3.1(@types/node@24.10.8):
     dependencies:

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { currentRoute } from '../state/route';
+  import { goBack } from '../state/route';
   import { 
     currentTrack, playbackState, queue, currentIndex, progress, 
     positionMs, durationMs, seek, audioDebug, isPlaying, playNow
@@ -7,8 +7,8 @@
   
   let isDebugging = false;
 
-  function goBack() {
-    currentRoute.set('tracks'); // Default back to tracks or maintain history
+  function handleGoBack() {
+    goBack();
   }
 
   function formatDuration(ms: number): string {
@@ -32,7 +32,7 @@
 
 <div class="now-playing-view">
   <div class="top-nav">
-    <button class="back-btn" on:click={goBack}>&larr; Back</button>
+    <button class="back-btn" on:click={handleGoBack}>&larr; Back</button>
     <button class="debug-btn" class:active={isDebugging} on:click={toggleDebug}>
       Wait what? (Debug)
     </button>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { emit } from '@tauri-apps/api/event';
-  import { currentRoute } from './lib/state/route';
+  import { currentRoute, currentRouteName } from './lib/state/route';
   import { initPlaybackListeners } from './lib/state/playback';
   
   import TopBar from './lib/components/TopBar.svelte';
@@ -9,11 +9,13 @@
   import BottomBar from './lib/components/BottomBar.svelte';
   
   import AlbumsView from './lib/views/AlbumsView.svelte';
+  import AlbumDetailView from './lib/views/AlbumDetailView.svelte';
   import ArtistsView from './lib/views/ArtistsView.svelte';
   import TracksView from './lib/views/TracksView.svelte';
   import SettingsView from './lib/views/SettingsView.svelte';
   import DiagnosticsView from './lib/views/DiagnosticsView.svelte';
   import NowPlayingView from './lib/views/NowPlayingView.svelte';
+  import SearchResultsView from './lib/views/SearchResultsView.svelte';
 
   onMount(async () => {
     initPlaybackListeners();
@@ -42,19 +44,31 @@
     <LeftNav />
     
     <main class="content-area">
-      {#if $currentRoute === 'albums'}
+      {#if $currentRouteName === 'albums'}
         <AlbumsView />
-      {:else if $currentRoute === 'artists'}
+      {:else if $currentRouteName === 'artists'}
         <ArtistsView />
-      {:else if $currentRoute === 'tracks'}
+      {:else if $currentRouteName === 'tracks'}
         <TracksView />
-      {:else if $currentRoute === 'settings'}
+      {:else if $currentRouteName === 'settings'}
         <SettingsView />
-      {:else if $currentRoute === 'diagnostics'}
+      {:else if $currentRouteName === 'diagnostics'}
         <DiagnosticsView />
+      {:else if $currentRouteName === 'album-detail'}
+        <AlbumDetailView />
+      {:else if $currentRouteName === 'artist-detail'}
+        <!-- ArtistDetailView will be added in Task 9 -->
+        <div class="placeholder-view">
+          <h2>Artist Detail</h2>
+          {#if $currentRoute.name === 'artist-detail'}
+            <p>Artist: {$currentRoute.artistSort}</p>
+          {/if}
+        </div>
+      {:else if $currentRouteName === 'search-results'}
+        <SearchResultsView />
       {/if}
       
-      {#if $currentRoute === 'now-playing'}
+      {#if $currentRouteName === 'now-playing'}
         <NowPlayingView />
       {/if}
     </main>
@@ -85,5 +99,15 @@
     position: relative; /* For NowPlaying overlay if needed */
     background: var(--glass-bg); /* Use glass bg for consistency, or keep opaque if intended */
     overflow: hidden;
+  }
+
+  .placeholder-view {
+    padding: 2rem;
+    color: #888;
+  }
+  
+  .placeholder-view h2 {
+    color: #fff;
+    margin-bottom: 1rem;
   }
 </style>

@@ -1,7 +1,15 @@
 use crate::state::LibraryState;
-use library::db::{add_folder, list_folders};
+use library::db::{
+    add_folder, get_library_stats, list_album_tracks_page, list_albums_page,
+    list_artist_tracks_page, list_artists_page, list_folders, list_tracks_page, search_albums_page,
+    search_artists_page, search_suggest, search_tracks_page,
+};
+use library::models::{
+    AlbumCursor, AlbumListItem, ArtistCursor, ArtistListItem, LibraryStats, OffsetCursor, Page,
+    SearchSuggestResponse,
+};
 use library::{LibraryFolder, TrackRow, apply_migrations, list_tracks, open_db, scan_folder};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tracing::{error, info};
@@ -185,4 +193,304 @@ pub async fn cmd_scan_start(
     });
 
     Ok(ScanStartResponse { scan_id })
+}
+
+// ============================================================================
+// Browse Commands (Milestone 04)
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListTracksPageRequest {
+    pub sort_by: String,
+    pub direction: String,
+    pub limit: i64,
+    pub cursor: Option<OffsetCursor>,
+}
+
+#[tauri::command]
+pub fn cmd_library_list_tracks_page(
+    state: State<'_, LibraryState>,
+    request: ListTracksPageRequest,
+) -> Result<Page<TrackRow, OffsetCursor>, String> {
+    let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
+    apply_migrations(&conn).map_err(|e| e.to_string())?;
+    let offset = request.cursor.map(|c| c.offset).unwrap_or(0);
+    list_tracks_page(
+        &conn,
+        &request.sort_by,
+        &request.direction,
+        request.limit,
+        offset,
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListAlbumsPageRequest {
+    pub limit: i64,
+    pub cursor: Option<AlbumCursor>,
+}
+
+#[tauri::command]
+pub fn cmd_library_list_albums_page(
+    state: State<'_, LibraryState>,
+    request: ListAlbumsPageRequest,
+) -> Result<Page<AlbumListItem, AlbumCursor>, String> {
+    let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
+    apply_migrations(&conn).map_err(|e| e.to_string())?;
+    list_albums_page(&conn, request.limit, request.cursor.as_ref()).map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListArtistsPageRequest {
+    pub limit: i64,
+    pub cursor: Option<ArtistCursor>,
+}
+
+#[tauri::command]
+pub fn cmd_library_list_artists_page(
+    state: State<'_, LibraryState>,
+    request: ListArtistsPageRequest,
+) -> Result<Page<ArtistListItem, ArtistCursor>, String> {
+    let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
+    apply_migrations(&conn).map_err(|e| e.to_string())?;
+    list_artists_page(&conn, request.limit, request.cursor.as_ref()).map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListAlbumTracksPageRequest {
+    pub album_artist_sort: String,
+    pub album_title_sort: String,
+    pub limit: i64,
+    pub cursor: Option<AlbumTrackCursorRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlbumTrackCursorRequest {
+    pub disc_no: i32,
+    pub track_no: i32,
+    pub title_sort: String,
+    pub id: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlbumTrackCursorResponse {
+    pub disc_no: i32,
+    pub track_no: i32,
+    pub title_sort: String,
+    pub id: i64,
+}
+
+#[tauri::command]
+pub fn cmd_library_list_album_tracks_page(
+    state: State<'_, LibraryState>,
+    request: ListAlbumTracksPageRequest,
+) -> Result<Page<TrackRow, AlbumTrackCursorResponse>, String> {
+    let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
+    apply_migrations(&conn).map_err(|e| e.to_string())?;
+
+    let cursor = request
+        .cursor
+        .as_ref()
+        .map(|c| (c.disc_no, c.track_no, c.title_sort.as_str(), c.id));
+
+    let result = list_album_tracks_page(
+        &conn,
+        &request.album_artist_sort,
+        &request.album_title_sort,
+        request.limit,
+        cursor,
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(Page {
+        items: result.items,
+        next_cursor: result
+            .next_cursor
+            .map(|(d, t, ts, id)| AlbumTrackCursorResponse {
+                disc_no: d,
+                track_no: t,
+                title_sort: ts,
+                id,
+            }),
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListArtistTracksPageRequest {
+    pub artist_sort: String,
+    pub limit: i64,
+    pub cursor: Option<ArtistTrackCursorRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtistTrackCursorRequest {
+    pub album_title_sort: String,
+    pub disc_no: i32,
+    pub track_no: i32,
+    pub title_sort: String,
+    pub id: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtistTrackCursorResponse {
+    pub album_title_sort: String,
+    pub disc_no: i32,
+    pub track_no: i32,
+    pub title_sort: String,
+    pub id: i64,
+}
+
+#[tauri::command]
+pub fn cmd_library_list_artist_tracks_page(
+    state: State<'_, LibraryState>,
+    request: ListArtistTracksPageRequest,
+) -> Result<Page<TrackRow, ArtistTrackCursorResponse>, String> {
+    let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
+    apply_migrations(&conn).map_err(|e| e.to_string())?;
+
+    let cursor = request.cursor.as_ref().map(|c| {
+        (
+            c.album_title_sort.as_str(),
+            c.disc_no,
+            c.track_no,
+            c.title_sort.as_str(),
+            c.id,
+        )
+    });
+
+    let result = list_artist_tracks_page(&conn, &request.artist_sort, request.limit, cursor)
+        .map_err(|e| e.to_string())?;
+
+    Ok(Page {
+        items: result.items,
+        next_cursor: result
+            .next_cursor
+            .map(|(a, d, t, ts, id)| ArtistTrackCursorResponse {
+                album_title_sort: a,
+                disc_no: d,
+                track_no: t,
+                title_sort: ts,
+                id,
+            }),
+    })
+}
+
+// ============================================================================
+// Search Commands (Milestone 04)
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchSuggestRequest {
+    pub query: String,
+    pub limit: Option<i64>,
+}
+
+#[tauri::command]
+pub fn cmd_library_search_suggest(
+    state: State<'_, LibraryState>,
+    request: SearchSuggestRequest,
+) -> Result<SearchSuggestResponse, String> {
+    let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
+    apply_migrations(&conn).map_err(|e| e.to_string())?;
+    let limit = request.limit.unwrap_or(12);
+    search_suggest(&conn, &request.query, limit).map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchTracksPageRequest {
+    pub query: String,
+    pub sort_by: String,
+    pub direction: String,
+    pub limit: i64,
+    pub cursor: Option<OffsetCursor>,
+}
+
+#[tauri::command]
+pub fn cmd_library_search_tracks_page(
+    state: State<'_, LibraryState>,
+    request: SearchTracksPageRequest,
+) -> Result<Page<TrackRow, OffsetCursor>, String> {
+    let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
+    apply_migrations(&conn).map_err(|e| e.to_string())?;
+    let offset = request.cursor.map(|c| c.offset).unwrap_or(0);
+    search_tracks_page(
+        &conn,
+        &request.query,
+        &request.sort_by,
+        &request.direction,
+        request.limit,
+        offset,
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchAlbumsPageRequest {
+    pub query: String,
+    pub limit: i64,
+    pub cursor: Option<AlbumCursor>,
+}
+
+#[tauri::command]
+pub fn cmd_library_search_albums_page(
+    state: State<'_, LibraryState>,
+    request: SearchAlbumsPageRequest,
+) -> Result<Page<AlbumListItem, AlbumCursor>, String> {
+    let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
+    apply_migrations(&conn).map_err(|e| e.to_string())?;
+    search_albums_page(
+        &conn,
+        &request.query,
+        request.limit,
+        request.cursor.as_ref(),
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchArtistsPageRequest {
+    pub query: String,
+    pub limit: i64,
+    pub cursor: Option<ArtistCursor>,
+}
+
+#[tauri::command]
+pub fn cmd_library_search_artists_page(
+    state: State<'_, LibraryState>,
+    request: SearchArtistsPageRequest,
+) -> Result<Page<ArtistListItem, ArtistCursor>, String> {
+    let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
+    apply_migrations(&conn).map_err(|e| e.to_string())?;
+    search_artists_page(
+        &conn,
+        &request.query,
+        request.limit,
+        request.cursor.as_ref(),
+    )
+    .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Stats Command (Milestone 04)
+// ============================================================================
+
+#[tauri::command]
+pub fn cmd_library_get_stats(state: State<'_, LibraryState>) -> Result<LibraryStats, String> {
+    let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
+    apply_migrations(&conn).map_err(|e| e.to_string())?;
+    get_library_stats(&conn, &state.db_path).map_err(|e| e.to_string())
 }

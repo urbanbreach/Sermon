@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "pnpm -C ui dev",
-    "ui:snapshots": "pwsh ./scripts/snapshot.ps1 -Milestone 00"
+    "ui:snapshots": "node ./scripts/ui-snapshots.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

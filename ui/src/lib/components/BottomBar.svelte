@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { currentRoute } from '../state/route';
+  import { navigate } from '../state/route';
   import { 
     currentTrack, playbackState, togglePlayPause, next, previous, 
     volume, setVolume, playbackError, switchToDefault, progress, audioDebug 
@@ -8,7 +8,7 @@
   $: isUnity = $audioDebug?.policy === 'strict' && $audioDebug?.output_mode === 'exclusive';
 
   function openNowPlaying() {
-    currentRoute.set('now-playing');
+    navigate({ name: 'now-playing' });
   }
 
   function handleKey(e: KeyboardEvent) {
