@@ -356,21 +356,22 @@ impl AudioPlayback {
         // Get decoder format
         let sample_rate = decoder.sample_rate();
         let channels = decoder.channels() as u16;
-        let bit_depth = decoder.bit_depth() as u16;
+        let bit_depth = decoder.bit_depth().map(|b| b as u16);
 
         info!(
             path = %track_path.display(),
             sample_rate = sample_rate,
             channels = channels,
-            bit_depth = bit_depth,
+            bit_depth = ?bit_depth,
             "Starting playback"
         );
 
         self.decoder = Some(decoder);
         self.end_of_track = false;
 
-        // Open output with decoder's format
-        self.open_output_for_format(sample_rate, channels, bit_depth, track.bit_depth)?;
+        // Open output with decoder's format (use track metadata bit_depth if decoder doesn't know)
+        let output_bit_depth = bit_depth.or(track.bit_depth).unwrap_or(16);
+        self.open_output_for_format(sample_rate, channels, output_bit_depth, track.bit_depth)?;
 
         let output_bit_depth = if let Some(o) = &self.output {
             o.bit_depth()
@@ -941,7 +942,7 @@ fn handle_playback_command(
                     if let Some(decoder) = &playback.decoder {
                         let sr = decoder.sample_rate();
                         let ch = decoder.channels() as u16;
-                        let bd = decoder.bit_depth() as u16;
+                        let decoder_bd = decoder.bit_depth().map(|b| b as u16);
 
                         // Get track bit depth from session
                         let track_bd = engine
@@ -949,6 +950,9 @@ fn handle_playback_command(
                             .session
                             .as_ref()
                             .and_then(|s| s.track.bit_depth);
+
+                        // Use decoder bit depth, fall back to track metadata, then default to 16
+                        let bd = decoder_bd.or(track_bd).unwrap_or(16);
 
                         if let Err(e) = playback.open_output_for_format(sr, ch, bd, track_bd) {
                             error!("Failed to apply output settings: {}", e);
