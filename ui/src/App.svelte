@@ -11,6 +11,7 @@
   import AlbumsView from './lib/views/AlbumsView.svelte';
   import AlbumDetailView from './lib/views/AlbumDetailView.svelte';
   import ArtistsView from './lib/views/ArtistsView.svelte';
+  import ArtistDetailView from './lib/views/ArtistDetailView.svelte';
   import TracksView from './lib/views/TracksView.svelte';
   import SettingsView from './lib/views/SettingsView.svelte';
   import DiagnosticsView from './lib/views/DiagnosticsView.svelte';
@@ -57,13 +58,7 @@
       {:else if $currentRouteName === 'album-detail'}
         <AlbumDetailView />
       {:else if $currentRouteName === 'artist-detail'}
-        <!-- ArtistDetailView will be added in Task 9 -->
-        <div class="placeholder-view">
-          <h2>Artist Detail</h2>
-          {#if $currentRoute.name === 'artist-detail'}
-            <p>Artist: {$currentRoute.artistSort}</p>
-          {/if}
-        </div>
+        <ArtistDetailView />
       {:else if $currentRouteName === 'search-results'}
         <SearchResultsView />
       {/if}
