@@ -36,7 +36,7 @@ pub enum OutputError {
 pub struct WasapiOutput {
     client: AudioClient,
     render_client: AudioRenderClient,
-    event_handle: Handle,
+    event_handle: Option<Handle>, // None for polling mode (no event handle needed)
     // Source format (what we're feeding in)
     sample_rate: u32,
     channels: u16,
@@ -119,7 +119,7 @@ impl WasapiOutput {
         Ok(Self {
             client,
             render_client,
-            event_handle,
+            event_handle: Some(event_handle),
             sample_rate,
             channels,
             bit_depth: 32,
@@ -273,7 +273,14 @@ impl WasapiOutput {
                         continue;
                     }
 
-                    let event_handle = client.set_get_eventhandle().map_err(map_wasapi_error)?;
+                    // Only set event handle for event-driven mode
+                    // Polling mode does NOT use event handles - calling set_get_eventhandle
+                    // would cause AUDCLNT_E_EVENTHANDLE_NOT_EXPECTED (0x88890011)
+                    let event_handle = if timing_mode == "event" {
+                        Some(client.set_get_eventhandle().map_err(map_wasapi_error)?)
+                    } else {
+                        None
+                    };
                     let render_client = client.get_audiorenderclient().map_err(map_wasapi_error)?;
                     let buffer_frames = client.get_buffer_size().map_err(map_wasapi_error)?;
                     let block_align = wave_format.get_blockalign();
@@ -548,13 +555,17 @@ impl WasapiOutput {
         Ok(())
     }
 
-    pub fn event_handle(&self) -> &Handle {
-        &self.event_handle
+    pub fn event_handle(&self) -> Option<&Handle> {
+        self.event_handle.as_ref()
     }
 
     /// Wait for WASAPI to signal it needs more data. Returns false on timeout/error.
+    /// For polling mode (no event handle), always returns true immediately.
     pub fn wait_for_buffer_request(&self, timeout_ms: u32) -> bool {
-        self.event_handle.wait_for_event(timeout_ms).is_ok()
+        match &self.event_handle {
+            Some(handle) => handle.wait_for_event(timeout_ms).is_ok(),
+            None => true, // Polling mode: no wait needed, always ready to check
+        }
     }
 
     /// Get the number of frames available in the buffer for writing.
