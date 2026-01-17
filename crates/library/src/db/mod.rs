@@ -267,6 +267,13 @@ pub fn get_audio_output_fade(conn: &Connection) -> bool {
     }
 }
 
+pub fn get_audio_output_timing(conn: &Connection) -> String {
+    match get_setting(conn, "audio.output.timing") {
+        Ok(Some(v)) => v,
+        _ => "polling".to_string(),
+    }
+}
+
 pub fn get_track_by_id(conn: &Connection, id: i64) -> Result<TrackRow, LibraryError> {
     conn.query_row("SELECT * FROM tracks WHERE id = ?", params![id], map_track)
         .map_err(LibraryError::from)
