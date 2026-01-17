@@ -28,6 +28,7 @@ ehthumbs_vista.db
 .settings/
 *.sublime-workspace
 *.sublime-project
+rust-analyzer.cmd
 
 # Environment
 .env
@@ -70,9 +71,20 @@ playwright-report/
 *.bak
 *.backup
 ~$*
+%TEMP%/
 
 # Screenshots folder (user captures)
 screenshots/
 
 # Session files (AI orchestration debug)
 session-*.md
+
+# AI Orchestration (Sisyphus internal)
+.sisyphus/
+
+# Internal planning docs (not for public repo)
+plans/
+prompts/
+
+# UI test fixtures (large binary files)
+ui/fixtures/
