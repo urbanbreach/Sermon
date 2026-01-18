@@ -8,9 +8,12 @@ use library::models::{
     AlbumCursor, AlbumListItem, ArtistCursor, ArtistListItem, LibraryStats, OffsetCursor, Page,
     SearchSuggestResponse,
 };
+use library::safe_write::WriteStatus;
+use library::tag_edit::{UpdateTagsRequest, update_track_tags};
 use library::{LibraryFolder, TrackRow, apply_migrations, list_tracks, open_db, scan_folder};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tags::{NumberPatch, TagPatch};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tracing::{error, info};
 
@@ -493,4 +496,208 @@ pub fn cmd_library_get_stats(state: State<'_, LibraryState>) -> Result<LibrarySt
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
     apply_migrations(&conn).map_err(|e| e.to_string())?;
     get_library_stats(&conn, &state.db_path).map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Tag Editing Commands (Milestone 05)
+// ============================================================================
+
+/// Patch operation for string fields
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum TagPatchRequest {
+    Leave,
+    Set { value: String },
+    Clear,
+}
+
+impl TagPatchRequest {
+    fn to_tag_patch(self) -> TagPatch {
+        match self {
+            TagPatchRequest::Leave => TagPatch::Leave,
+            TagPatchRequest::Set { value } => TagPatch::Set(value),
+            TagPatchRequest::Clear => TagPatch::Clear,
+        }
+    }
+}
+
+/// Patch operation for numeric fields
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum NumberPatchRequest {
+    Leave,
+    Set { value: u32 },
+    Clear,
+}
+
+impl NumberPatchRequest {
+    fn to_number_patch(self) -> NumberPatch {
+        match self {
+            NumberPatchRequest::Leave => NumberPatch::Leave,
+            NumberPatchRequest::Set { value } => NumberPatch::Set(value),
+            NumberPatchRequest::Clear => NumberPatch::Clear,
+        }
+    }
+}
+
+/// Request to update track tags
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateTrackTagsRequest {
+    pub track_id: i64,
+    pub create_backup: bool,
+    pub title: TagPatchRequest,
+    pub artist: TagPatchRequest,
+    pub album: TagPatchRequest,
+    pub album_artist: TagPatchRequest,
+    pub genre: TagPatchRequest,
+    pub track_no: NumberPatchRequest,
+    pub disc_no: NumberPatchRequest,
+    pub year: NumberPatchRequest,
+}
+
+/// Status event for tag write progress
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagWriteStatusEvent {
+    pub track_id: i64,
+    pub phase: String, // "retry" | "success" | "error"
+    pub attempt: u8,
+    pub max_attempts: u8,
+    pub last_error_code: Option<u32>,
+}
+
+#[tauri::command]
+pub async fn cmd_library_update_track_tags(
+    state: State<'_, LibraryState>,
+    app: AppHandle,
+    request: UpdateTrackTagsRequest,
+) -> Result<TrackRow, String> {
+    let db_path = state.db_path.clone();
+    let track_id = request.track_id;
+
+    // Convert request to internal format
+    let update_request = UpdateTagsRequest {
+        track_id: request.track_id,
+        create_backup: request.create_backup,
+        title: request.title.to_tag_patch(),
+        artist: request.artist.to_tag_patch(),
+        album: request.album.to_tag_patch(),
+        album_artist: request.album_artist.to_tag_patch(),
+        genre: request.genre.to_tag_patch(),
+        track_no: request.track_no.to_number_patch(),
+        disc_no: request.disc_no.to_number_patch(),
+        year: request.year.to_number_patch(),
+    };
+
+    // Run in blocking task since it involves file I/O
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let conn = open_db(&db_path).map_err(|e| e.to_string())?;
+        apply_migrations(&conn).map_err(|e| e.to_string())?;
+
+        // Create status callback for retry events
+        let app_clone = app.clone();
+        let callback = move |status: WriteStatus| {
+            let event = match status {
+                WriteStatus::Retry {
+                    attempt,
+                    max_attempts,
+                    error_code,
+                } => TagWriteStatusEvent {
+                    track_id,
+                    phase: "retry".to_string(),
+                    attempt,
+                    max_attempts,
+                    last_error_code: error_code,
+                },
+                WriteStatus::Success => TagWriteStatusEvent {
+                    track_id,
+                    phase: "success".to_string(),
+                    attempt: 0,
+                    max_attempts: 3,
+                    last_error_code: None,
+                },
+                WriteStatus::Error { error_code, .. } => TagWriteStatusEvent {
+                    track_id,
+                    phase: "error".to_string(),
+                    attempt: 3,
+                    max_attempts: 3,
+                    last_error_code: error_code,
+                },
+            };
+            let _ = app_clone.emit("evt_tag_write_status", event);
+        };
+
+        // Perform the update
+        update_track_tags(&conn, &update_request, Some(callback)).map_err(|e| e.to_string())?;
+
+        // Return updated track
+        library::get_track_by_id(&conn, track_id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    result
+}
+
+// ============================================================================
+// Raw Tags Commands (Milestone 05 - Task 7)
+// ============================================================================
+
+/// A single raw tag item for display
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawTagItemResponse {
+    pub key: String,
+    pub value: String,
+}
+
+/// Raw tags from a single tag type
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawTagsResponse {
+    pub tag_type: String,
+    pub items: Vec<RawTagItemResponse>,
+}
+
+/// All raw tags from a file
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawTagsResultResponse {
+    pub tags: Vec<RawTagsResponse>,
+}
+
+#[tauri::command]
+pub fn cmd_library_get_raw_tags(
+    state: State<'_, LibraryState>,
+    track_id: i64,
+) -> Result<RawTagsResultResponse, String> {
+    let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
+    apply_migrations(&conn).map_err(|e| e.to_string())?;
+
+    // Get track path
+    let track = library::get_track_by_id(&conn, track_id).map_err(|e| e.to_string())?;
+    let path = std::path::Path::new(&track.path);
+
+    // Read raw tags
+    let raw_tags = tags::read_raw_tags(path).map_err(|e| e.to_string())?;
+
+    // Convert to response format
+    let tags = raw_tags
+        .tags
+        .into_iter()
+        .map(|t| RawTagsResponse {
+            tag_type: t.tag_type,
+            items: t
+                .items
+                .into_iter()
+                .map(|i| RawTagItemResponse {
+                    key: i.key,
+                    value: i.value,
+                })
+                .collect(),
+        })
+        .collect();
+
+    Ok(RawTagsResultResponse { tags })
 }
