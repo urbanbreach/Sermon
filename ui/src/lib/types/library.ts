@@ -100,3 +100,81 @@ export interface LibraryStats {
   dbSizeBytes: number;
   lastScanCompletedMs?: number;
 }
+
+// ============================================================================
+// Tag Editing Types (Milestone 05)
+// ============================================================================
+
+/** Patch operation for string tag fields */
+export type TagPatch =
+  | { op: 'leave' }
+  | { op: 'set'; value: string }
+  | { op: 'clear' };
+
+/** Patch operation for numeric tag fields */
+export type NumberPatch =
+  | { op: 'leave' }
+  | { op: 'set'; value: number }
+  | { op: 'clear' };
+
+/** Request to update track tags */
+export interface UpdateTrackTagsRequest {
+  trackId: number;
+  createBackup: boolean;
+  title: TagPatch;
+  artist: TagPatch;
+  album: TagPatch;
+  albumArtist: TagPatch;
+  genre: TagPatch;
+  trackNo: NumberPatch;
+  discNo: NumberPatch;
+  year: NumberPatch;
+}
+
+/** Status event for tag write progress */
+export interface TagWriteStatusEvent {
+  trackId: number;
+  phase: 'retry' | 'success' | 'error';
+  attempt: number;
+  maxAttempts: number;
+  lastErrorCode?: number;
+}
+
+/** Helper to create a "leave" patch */
+export const leavePatch = (): TagPatch => ({ op: 'leave' });
+
+/** Helper to create a "set" patch for strings */
+export const setTagPatch = (value: string): TagPatch => ({ op: 'set', value });
+
+/** Helper to create a "clear" patch */
+export const clearPatch = (): TagPatch => ({ op: 'clear' });
+
+/** Helper to create a "leave" patch for numbers */
+export const leaveNumberPatch = (): NumberPatch => ({ op: 'leave' });
+
+/** Helper to create a "set" patch for numbers */
+export const setNumberPatch = (value: number): NumberPatch => ({ op: 'set', value });
+
+/** Helper to create a "clear" patch for numbers */
+export const clearNumberPatch = (): NumberPatch => ({ op: 'clear' });
+
+// ============================================================================
+// Raw Tags Types (Milestone 05 - Task 7)
+// ============================================================================
+
+/** A single raw tag item */
+export interface RawTagItem {
+  key: string;
+  value: string;
+}
+
+/** Raw tags from a single tag type */
+export interface RawTags {
+  tagType: string;
+  items: RawTagItem[];
+}
+
+/** All raw tags from a file */
+export interface RawTagsResult {
+  tags: RawTags[];
+}

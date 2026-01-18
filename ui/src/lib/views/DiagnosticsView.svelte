@@ -3,16 +3,47 @@
   import { onMount } from 'svelte';
   import { getLibraryStats } from '../api/library';
   import type { LibraryStats } from '../types/library';
+  import Modal from '../components/Modal.svelte';
 
   let debug = $derived($audioDebug);
   let stats: LibraryStats | null = $state(null);
 
-  onMount(async () => {
-    try {
-      stats = await getLibraryStats();
-    } catch (e) {
-      console.error('Failed to load library stats:', e);
+  // Focus trap harness (DEV only)
+  const isDebugMode = import.meta.env.SERMON_DEBUG === '1';
+  let harnessModalOpen = $state(false);
+  let harnessInput = $state('');
+  let harnessCheckbox = $state(false);
+  let openButtonRef: HTMLButtonElement;
+
+  // Track active element for focus debug display
+  let activeElementInfo = $state('');
+  
+  function updateActiveElement() {
+    const el = document.activeElement;
+    if (el) {
+      const tag = el.tagName.toLowerCase();
+      const id = el.id ? `#${el.id}` : '';
+      const testId = el.getAttribute('data-testid') || '';
+      activeElementInfo = `${tag}${id}${testId ? ` [${testId}]` : ''}`;
+    } else {
+      activeElementInfo = 'none';
     }
+  }
+
+  onMount(() => {
+    // Load library stats
+    getLibraryStats()
+      .then((s) => { stats = s; })
+      .catch((e) => { console.error('Failed to load library stats:', e); });
+
+    // Update active element info periodically when harness is open
+    const interval = setInterval(() => {
+      if (harnessModalOpen) {
+        updateActiveElement();
+      }
+    }, 100);
+
+    return () => clearInterval(interval);
   });
 
   function formatBytes(bytes: number): string {
@@ -144,8 +175,87 @@
         <div class="loading">Loading...</div>
       {/if}
     </div>
+
+    <!-- Focus Trap Harness (DEV only) -->
+    {#if isDebugMode}
+      <div class="card full-width">
+        <h2>Focus Trap Harness (DEV)</h2>
+        <p class="harness-note">Test modal focus trap behavior. Run with <code>SERMON_DEBUG=1 cargo tauri dev</code></p>
+        
+        <button 
+          bind:this={openButtonRef}
+          class="harness-btn"
+          onclick={() => harnessModalOpen = true}
+          data-testid="harness-open-btn"
+        >
+          Open Test Modal
+        </button>
+
+        <div class="checklist">
+          <strong>Manual Checklist:</strong>
+          <ol>
+            <li>Open modal → focus moves into modal (first focusable)</li>
+            <li>Tab cycles within modal; does not escape</li>
+            <li>Shift+Tab cycles backwards within modal</li>
+            <li>ESC closes modal</li>
+            <li>Focus returns to the opening button</li>
+            <li>Background elements are not clickable while modal open</li>
+          </ol>
+        </div>
+      </div>
+    {/if}
   </div>
 </div>
+
+<!-- Focus Trap Test Modal (DEV only) -->
+{#if isDebugMode}
+  <Modal open={harnessModalOpen} title="Focus Trap Test" onclose={() => harnessModalOpen = false}>
+    <div class="harness-modal-content">
+      <div class="focus-debug">
+        <strong>Active Element:</strong> <code>{activeElementInfo}</code>
+      </div>
+
+      <div class="harness-field">
+        <label for="harness-input">Test Input</label>
+        <input 
+          id="harness-input" 
+          type="text" 
+          bind:value={harnessInput}
+          placeholder="Type something..."
+          data-testid="harness-input"
+        />
+      </div>
+
+      <div class="harness-field">
+        <label class="checkbox-label">
+          <input 
+            type="checkbox" 
+            bind:checked={harnessCheckbox}
+            data-testid="harness-checkbox"
+          />
+          Test Checkbox
+        </label>
+      </div>
+
+      <div class="harness-actions">
+        <button 
+          class="harness-btn secondary"
+          onclick={() => harnessModalOpen = false}
+          data-testid="harness-cancel-btn"
+        >
+          Cancel
+        </button>
+        <button 
+          class="harness-btn primary"
+          onclick={() => harnessModalOpen = false}
+          data-testid="harness-apply-btn"
+        >
+          Apply
+        </button>
+      </div>
+    </div>
+  </Modal>
+{/if}
 
 <style>
   .view-container {
@@ -280,5 +390,130 @@
   .arrow {
     font-size: 2rem;
     color: #444;
+  }
+
+  /* Focus Trap Harness Styles */
+  .harness-note {
+    font-size: 0.85rem;
+    color: #888;
+    margin-bottom: 1rem;
+  }
+
+  .harness-note code {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+  }
+
+  .harness-btn {
+    background: rgba(68, 170, 255, 0.2);
+    border: 1px solid rgba(68, 170, 255, 0.4);
+    color: #4af;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+  }
+
+  .harness-btn:hover {
+    background: rgba(68, 170, 255, 0.3);
+  }
+
+  .harness-btn.secondary {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--glass-border);
+    color: #ccc;
+  }
+
+  .harness-btn.secondary:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+  }
+
+  .harness-btn.primary {
+    background: rgba(68, 170, 255, 0.2);
+    border-color: rgba(68, 170, 255, 0.4);
+    color: #4af;
+  }
+
+  .checklist {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    font-size: 0.9rem;
+  }
+
+  .checklist ol {
+    margin: 0.5rem 0 0 1.5rem;
+    padding: 0;
+    color: #aaa;
+  }
+
+  .checklist li {
+    margin-bottom: 0.25rem;
+  }
+
+  .harness-modal-content {
+    min-width: 350px;
+  }
+
+  .focus-debug {
+    background: rgba(68, 170, 255, 0.1);
+    border: 1px solid rgba(68, 170, 255, 0.3);
+    border-radius: 6px;
+    padding: 0.75rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+  }
+
+  .focus-debug code {
+    font-family: monospace;
+    color: #4af;
+  }
+
+  .harness-field {
+    margin-bottom: 1rem;
+  }
+
+  .harness-field label {
+    display: block;
+    font-size: 0.85rem;
+    color: #888;
+    margin-bottom: 0.25rem;
+  }
+
+  .harness-field input[type="text"] {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
+    color: #fff;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.95rem;
+    outline: none;
+  }
+
+  .harness-field input[type="text"]:focus {
+    border-color: rgba(68, 170, 255, 0.5);
+  }
+
+  .harness-field .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    color: #ccc;
+  }
+
+  .harness-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--glass-border);
   }
 </style>

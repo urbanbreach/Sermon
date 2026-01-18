@@ -2,7 +2,12 @@
   import { onMount } from 'svelte';
   import { tracks, sortBy, sortDirection, scanStatus, scanProgress, setSortBy, toggleSortDirection, initLibrary } from '../state/library';
   import { playNow, addToQueue } from '../state/playback';
-  import type { SortBy } from '../types/library';
+  import type { SortBy, TrackRow } from '../types/library';
+  import TagEditor from '../components/TagEditor.svelte';
+
+  // Tag editor state
+  let editingTrack = $state<TrackRow | null>(null);
+  let tagEditorOpen = $state(false);
 
   onMount(() => {
     initLibrary();
@@ -26,6 +31,16 @@
   function getSortIndicator(field: SortBy): string {
     if ($sortBy !== field) return '';
     return $sortDirection === 'asc' ? ' ▲' : ' ▼';
+  }
+
+  function openTagEditor(track: TrackRow) {
+    editingTrack = track;
+    tagEditorOpen = true;
+  }
+
+  function closeTagEditor() {
+    tagEditorOpen = false;
+    editingTrack = null;
   }
 </script>
 
@@ -71,6 +86,7 @@
           <td class="actions">
             <button class="icon-btn" title="Play Now" on:click|stopPropagation={() => playNow(track.id)}>▶</button>
             <button class="icon-btn" title="Add to Queue" on:click|stopPropagation={() => addToQueue(track.id)}>+</button>
+            <button class="icon-btn" title="Edit Tags" on:click|stopPropagation={() => openTagEditor(track)}>✎</button>
           </td>
         </tr>
       {:else}
@@ -81,6 +97,8 @@
     </tbody>
   </table>
 </div>
+
+<TagEditor track={editingTrack} open={tagEditorOpen} onclose={closeTagEditor} />
 
 <style>
   .view-container {

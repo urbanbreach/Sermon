@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { TrackRow, LibraryFolder, SortBy, SortDirection, SearchSuggestResponse, AlbumListItem, AlbumCursor, Page, ArtistListItem, ArtistCursor, AlbumTrackCursor, OffsetCursor, LibraryStats } from '../types/library';
+import type { TrackRow, LibraryFolder, SortBy, SortDirection, SearchSuggestResponse, AlbumListItem, AlbumCursor, Page, ArtistListItem, ArtistCursor, AlbumTrackCursor, OffsetCursor, LibraryStats, UpdateTrackTagsRequest, RawTagsResult } from '../types/library';
 
 export async function addFolder(path: string): Promise<LibraryFolder> {
   return invoke('cmd_library_add_folder', { path });
@@ -74,4 +74,29 @@ export async function searchArtistsPage(
 
 export async function getLibraryStats(): Promise<LibraryStats> {
   return invoke('cmd_library_get_stats');
+}
+
+// ============================================================================
+// Tag Editing API (Milestone 05)
+// ============================================================================
+
+/**
+ * Update tags for a track on disk and in the database.
+ * 
+ * @param request - The update request containing track ID, backup preference, and tag patches
+ * @returns The updated track row after successful write
+ * @throws Error if the write fails (file locked, permission denied, etc.)
+ */
+export async function updateTrackTags(request: UpdateTrackTagsRequest): Promise<TrackRow> {
+  return invoke('cmd_library_update_track_tags', { request });
+}
+
+/**
+ * Get all raw tags from a track file for debugging/inspection.
+ * 
+ * @param trackId - The track ID to read raw tags from
+ * @returns All raw tag items from all tag types in the file
+ */
+export async function getRawTags(trackId: number): Promise<RawTagsResult> {
+  return invoke('cmd_library_get_raw_tags', { trackId });
 }
