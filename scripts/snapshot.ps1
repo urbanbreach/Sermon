@@ -11,6 +11,7 @@ $MilestoneMap = @{
     "02" = "02-playback-shared-now-playing"
     "03" = "03-wasapi-exclusive-bit-perfect"
     "04" = "04-library-browse-search-polish"
+    "05" = "05-tagging-safe-write-editor"
 }
 
 # Milestone to expected screenshots mapping
@@ -20,6 +21,7 @@ $ScreenshotMap = @{
     "02" = @("now-playing-idle.png", "now-playing-playing.png", "queue.png")
     "03" = @("settings-audio.png", "diagnostics-playing-44k.png", "diagnostics-playing-96k.png")
     "04" = @("albums-grid.png", "album-detail.png", "artists.png", "search-results.png")
+    "05" = @("tag-editor.png", "tag-editor-dirty.png")
 }
 
 # Set environment variables for snapshot mode

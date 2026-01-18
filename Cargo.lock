@@ -3178,6 +3178,7 @@ dependencies = [
  "parking_lot",
  "serde",
  "serde_json",
+ "tags",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

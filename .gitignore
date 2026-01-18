@@ -84,7 +84,7 @@ session-*.md
 
 # Internal planning docs (not for public repo)
 plans/
-prompts/
+#prompts/
 
 # UI test fixtures (large binary files)
 ui/fixtures/

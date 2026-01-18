@@ -254,8 +254,12 @@ fn collect_eligible_files(
             ".flac".into(),
             ".mp3".into(),
             ".m4a".into(),
+            ".mp4".into(),
             ".wav".into(),
             ".ogg".into(),
+            ".opus".into(),
+            ".aiff".into(),
+            ".aif".into(),
         ]
     } else {
         options
