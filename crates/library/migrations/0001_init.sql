@@ -8,7 +8,7 @@ CREATE TABLE library_folders (
     enabled INTEGER NOT NULL DEFAULT 1,
     status TEXT NOT NULL DEFAULT 'available',
     last_error TEXT,
-    options_json TEXT NOT NULL DEFAULT '{"recursive":true,"include_extensions":[".flac",".mp3",".m4a",".wav",".ogg"],"exclude_patterns":[],"follow_symlinks":false}'
+    options_json TEXT NOT NULL DEFAULT '{"recursive":true,"include_extensions":[".flac",".mp3",".m4a",".mp4",".wav",".ogg",".opus",".aiff",".aif"],"exclude_patterns":[],"follow_symlinks":false}'
 );
 
 -- Core tracks table

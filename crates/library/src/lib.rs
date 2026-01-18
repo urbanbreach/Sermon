@@ -2,7 +2,9 @@ pub mod db;
 pub mod error;
 pub mod identity;
 pub mod models;
+pub mod safe_write;
 pub mod scanner;
+pub mod tag_edit;
 
 pub use db::list_tracks;
 pub use db::migrations::apply_migrations;

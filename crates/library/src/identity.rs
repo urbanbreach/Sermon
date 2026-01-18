@@ -111,9 +111,9 @@ fn get_ntfs_identity(path: &Path) -> Option<(u64, u64)> {
     }
 }
 
-/// Convert Path to wide string with \\?\ prefix for long path support
+/// Convert Path to wide string with \\?\\ prefix for long path support
 #[cfg(windows)]
-fn to_wide_path(path: &Path) -> Vec<u16> {
+pub fn to_wide_path(path: &Path) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
 
     let path_str = path.as_os_str();
