@@ -15,6 +15,10 @@
 | R011 | **Exclusive Mode Device In Use**<br>WASAPI Exclusive mode fails when another application holds exclusive access to the audio device. | Backend Lead | **Clear error + Fallback**: Clear error message. Suggest closing other apps. One-click fallback to Compatibility mode. Auto-fallback in Compatibility policy. | Mitigated |
 | R012 | **Unsupported Format in Strict Mode**<br>Track format not supported by DAC in Exclusive mode with Strict policy. | Backend Lead | **Error details + Fallback**: Clear error with format mismatch details. Offer switch to Compatibility mode. Log negotiation attempts. | Mitigated |
 | R013 | **Silent Quality Degradation**<br>User unaware that audio is not bit-perfect when in Compatibility mode. | UI Lead | **UI Indicators**: Bit-perfect indicator in BottomBar. Diagnostics view details. Reason string explaining why not bit-perfect. | Mitigated |
+| R014 | **Tag Write Data Loss**<br>Writing tags could corrupt or truncate audio files if interrupted mid-write. | Backend Lead | **Safe write strategy**: Temp file + atomic commit. Backup before replace. Post-commit verification. See ADR 0007. | Mitigated - M05 |
+| R015 | **Unknown Tag Field Loss**<br>Editing known fields might destroy unknown/custom tags in the file. | Backend Lead | **In-place tag modification**: Use Lofty's `remove_others(false)`. Modify existing tags rather than replacing. Document per-container preservation policy. | Mitigated - M05 |
+| R016 | **File Lock During Tag Write**<br>Tag write fails when file is locked by another process (media player, indexer). | Backend Lead | **Bounded retry with backoff**: 3 attempts, 75ms/200ms delays. Clear error message with guidance. | Mitigated - M05 |
+| R017 | **Identity Churn After Tag Write**<br>Atomic file replacement may change NTFS File ID, causing duplicate detection. | Backend Lead | **Re-read identity post-commit**: Update DB identity fields in place while keeping track ID stable. Preflight duplication hazard check. | Mitigated - M05 |
 
 ## Milestone 01 Burn-Down Notes
 
@@ -22,3 +26,10 @@
 - **R004 Mitigated**: NTFS File ID (Volume Serial + File Index) used for stable identity. Fallback to path+mtime+size+hash for non-NTFS. Documented in ADR 0004.
 - **R006 Mitigated**: Fallback identity strategy implemented for network shares and non-NTFS volumes.
 - **R007 Mitigated**: Scanner skips unchanged files based on identity matching. Performance baseline to be recorded after real-world testing.
+
+## Milestone 05 Burn-Down Notes
+
+- **R014 Mitigated**: Safe write with temp file + atomic commit implemented in `crates/library/src/safe_write.rs`. Backup enabled by default.
+- **R015 Mitigated**: Lofty's `WriteOptions::remove_others(false)` preserves non-primary tags. In-place tag modification preserves unknown fields. Policy documented in `/docs/tagging.md`.
+- **R016 Mitigated**: Retry logic with 3 attempts and 75ms/200ms backoff handles transient locks. UI shows "Retrying save..." status.
+- **R017 Mitigated**: Post-commit identity re-read updates DB fields in place. Track ID remains stable. Preflight duplication check before commit.
