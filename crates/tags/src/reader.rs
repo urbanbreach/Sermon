@@ -1,6 +1,6 @@
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
-use lofty::tag::Accessor;
+use lofty::tag::{Accessor, ItemKey, TagType};
 use std::path::Path;
 use tracing::warn;
 
@@ -25,16 +25,44 @@ pub struct AudioMetadata {
     pub duration_ms: Option<u64>,
 }
 
+/// A single raw tag item for display
+#[derive(Debug, Clone)]
+pub struct RawTagItem {
+    pub key: String,
+    pub value: String,
+}
+
+/// Raw tags from all tag types in a file
+#[derive(Debug, Clone, Default)]
+pub struct RawTags {
+    pub tag_type: String,
+    pub items: Vec<RawTagItem>,
+}
+
+/// All raw tags from a file (may have multiple tag types)
+#[derive(Debug, Clone, Default)]
+pub struct RawTagsResult {
+    pub tags: Vec<RawTags>,
+}
+
 /// Read metadata from an audio file
 /// Returns partial metadata on parse errors (non-fatal)
 pub fn read_metadata(path: &Path) -> AudioMetadata {
-    match read_metadata_inner(path) {
+    match read_metadata_result(path) {
         Ok(meta) => meta,
         Err(e) => {
             warn!("Failed to read metadata from {:?}: {}", path, e);
             AudioMetadata::default()
         }
     }
+}
+
+/// Read metadata from an audio file, returning errors explicitly
+///
+/// Use this when you need to distinguish between "no tags" and "failed to parse".
+/// This is useful for post-write verification and DB sync.
+pub fn read_metadata_result(path: &Path) -> Result<AudioMetadata, lofty::error::LoftyError> {
+    read_metadata_inner(path)
 }
 
 fn read_metadata_inner(path: &Path) -> Result<AudioMetadata, lofty::error::LoftyError> {
@@ -93,4 +121,36 @@ fn read_metadata_inner(path: &Path) -> Result<AudioMetadata, lofty::error::Lofty
         channels,
         duration_ms,
     })
+}
+
+/// Read all raw tags from a file for debugging/inspection
+///
+/// Returns all tag items from all tag types present in the file.
+/// Useful for audiophiles who want to see exactly what's in their files.
+pub fn read_raw_tags(path: &Path) -> Result<RawTagsResult, lofty::error::LoftyError> {
+    let tagged_file = Probe::open(path)?.read()?;
+
+    let mut result = RawTagsResult::default();
+
+    for tag in tagged_file.tags() {
+        let tag_type_name = format!("{:?}", tag.tag_type());
+        let mut items = Vec::new();
+
+        for item in tag.items() {
+            let key = format!("{:?}", item.key());
+            let value = match item.value() {
+                lofty::tag::ItemValue::Text(s) => s.clone(),
+                lofty::tag::ItemValue::Locator(s) => format!("[URL] {}", s),
+                lofty::tag::ItemValue::Binary(b) => format!("[Binary: {} bytes]", b.len()),
+            };
+            items.push(RawTagItem { key, value });
+        }
+
+        result.tags.push(RawTags {
+            tag_type: tag_type_name,
+            items,
+        });
+    }
+
+    Ok(result)
 }
