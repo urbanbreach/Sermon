@@ -1,5 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import GeneralPrefs from '../components/preferences/GeneralPrefs.svelte';
+  import PlayerPrefs from '../components/preferences/PlayerPrefs.svelte';
+  import NowPlayingPrefs from '../components/preferences/NowPlayingPrefs.svelte';
+  import LibraryPrefs from '../components/preferences/LibraryPrefs.svelte';
+  import TagsPrefs from '../components/preferences/TagsPrefs.svelte';
+  import InternetPrefs from '../components/preferences/InternetPrefs.svelte';
+  import DevicesPrefs from '../components/preferences/DevicesPrefs.svelte';
   
   const isMock = import.meta.env.SERMON_MOCK === '1';
   
@@ -63,19 +70,19 @@
     
     <div class="prefs-body">
       {#if activeCategory === 'general'}
-        <p class="placeholder">General settings will appear here.</p>
+        <GeneralPrefs />
       {:else if activeCategory === 'player'}
-        <p class="placeholder">Player settings will appear here.</p>
+        <PlayerPrefs />
       {:else if activeCategory === 'nowplaying'}
-        <p class="placeholder">Now Playing settings will appear here.</p>
+        <NowPlayingPrefs />
       {:else if activeCategory === 'library'}
-        <p class="placeholder">Library settings will appear here.</p>
+        <LibraryPrefs />
       {:else if activeCategory === 'tags'}
-        <p class="placeholder">Tags settings will appear here.</p>
+        <TagsPrefs />
       {:else if activeCategory === 'internet'}
-        <p class="placeholder">Internet settings will appear here.</p>
+        <InternetPrefs />
       {:else if activeCategory === 'devices'}
-        <p class="placeholder">Devices settings will appear here.</p>
+        <DevicesPrefs />
       {/if}
     </div>
     
@@ -174,16 +181,6 @@
     flex: 1;
     padding: 2rem;
     overflow-y: auto;
-  }
-
-  .placeholder {
-    color: #666;
-    font-style: italic;
-    text-align: center;
-    margin-top: 2rem;
-    padding: 2rem;
-    border: 1px dashed var(--glass-border);
-    border-radius: var(--glass-radius);
   }
 
   .prefs-footer {
