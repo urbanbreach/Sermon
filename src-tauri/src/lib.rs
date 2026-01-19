@@ -10,20 +10,24 @@ use audio_engine::{PlaybackState, TrackInfo};
 use commands::{
     AudioDebugEvent, AudioFormatData, DeviceChangedEvent, NowPlayingEvent, PlaybackErrorEvent,
     PlaybackPositionEvent, PlaybackStateEvent, QueueChangedEvent, QueueItemData, TrackEventData,
-    cmd_library_add_folder, cmd_library_get_raw_tags, cmd_library_get_stats,
-    cmd_library_list_album_tracks_page, cmd_library_list_albums_page,
-    cmd_library_list_artist_tracks_page, cmd_library_list_artists_page, cmd_library_list_folders,
-    cmd_library_list_tracks, cmd_library_list_tracks_page, cmd_library_search_albums_page,
-    cmd_library_search_artists_page, cmd_library_search_suggest, cmd_library_search_tracks_page,
-    cmd_library_update_track_tags, cmd_output_get_settings, cmd_output_list_devices,
-    cmd_output_set_device, cmd_output_set_settings, cmd_playback_next, cmd_playback_pause,
-    cmd_playback_previous, cmd_playback_resume, cmd_playback_seek, cmd_playback_start,
-    cmd_playback_stop, cmd_queue_add, cmd_queue_play_now, cmd_scan_start, cmd_volume_get,
+    cmd_artwork_embed_to_file, cmd_artwork_extract_embedded, cmd_artwork_find_folder,
+    cmd_artwork_get_best_for_album, cmd_artwork_get_best_for_track, cmd_artwork_get_bytes,
+    cmd_artwork_search_candidates, cmd_artwork_select_candidate_for_album, cmd_library_add_folder,
+    cmd_library_get_raw_tags, cmd_library_get_stats, cmd_library_list_album_tracks_page,
+    cmd_library_list_albums_page, cmd_library_list_artist_tracks_page,
+    cmd_library_list_artists_page, cmd_library_list_folders, cmd_library_list_tracks,
+    cmd_library_list_tracks_page, cmd_library_search_albums_page, cmd_library_search_artists_page,
+    cmd_library_search_suggest, cmd_library_search_tracks_page, cmd_library_update_track_tags,
+    cmd_output_get_settings, cmd_output_list_devices, cmd_output_set_device,
+    cmd_output_set_settings, cmd_playback_next, cmd_playback_pause, cmd_playback_previous,
+    cmd_playback_resume, cmd_playback_seek, cmd_playback_start, cmd_playback_stop, cmd_queue_add,
+    cmd_queue_play_now, cmd_scan_start, cmd_settings_get, cmd_settings_get_category,
+    cmd_settings_reset_category, cmd_settings_set, cmd_settings_set_category, cmd_volume_get,
     cmd_volume_set,
 };
 use crossbeam_channel::{Receiver, select, tick, unbounded};
 use parking_lot::Mutex;
-use state::{AudioState, LibraryState, PlaybackCommand};
+use state::{ArtworkCacheState, AudioState, LibraryState, PlaybackCommand};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -42,9 +46,8 @@ pub fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
     let level = if is_debug { Level::DEBUG } else { Level::INFO };
 
     // 2. Determine Log Path
-    // Resolved from the repo root (std::env::current_dir)
-    let cwd = std::env::current_dir().unwrap_or_default();
-    let log_dir = cwd.join("artifacts").join("logs");
+    // Use temp directory to avoid triggering Tauri dev watcher
+    let log_dir = std::env::temp_dir().join("sermon-logs");
 
     if let Err(e) = fs::create_dir_all(&log_dir) {
         eprintln!("Failed to create log directory {:?}: {}", log_dir, e);
@@ -82,7 +85,14 @@ pub fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
 pub fn run() {
     let _guard = init_tracing();
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(debug_assertions)]
+    {
+        builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+    }
+
+    builder
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Register event listener
@@ -102,6 +112,13 @@ pub fn run() {
             let db_path = app_data_dir.join("library.db");
             info!("Database path: {:?}", db_path);
 
+            // Setup artwork cache directory
+            let artwork_cache_dir = app_data_dir.join("artwork-cache");
+            fs::create_dir_all(&artwork_cache_dir)
+                .expect("Failed to create artwork cache directory");
+            info!("Artwork cache path: {:?}", artwork_cache_dir);
+            app.manage(ArtworkCacheState::new(artwork_cache_dir));
+
             // Initialize database
             let conn = library::open_db(&db_path).expect("Failed to open database");
             library::apply_migrations(&conn).expect("Failed to apply migrations");
@@ -109,6 +126,37 @@ pub fn run() {
 
             // Register state
             app.manage(LibraryState::new(db_path.clone()));
+
+            // Run quick scan on startup to detect added/removed files
+            // Use a small delay to ensure the app is fully initialized
+            let db_path_clone = db_path.clone();
+            let app_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                // Small delay to let the app fully initialize
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                
+                match library::quick_scan(&db_path_clone) {
+                    Ok(summary) => {
+                        info!(
+                            "Startup quick scan complete: {} folders, {} files checked, {} added, {} missing, {} restored in {}ms",
+                            summary.folders_checked,
+                            summary.files_checked,
+                            summary.files_added,
+                            summary.files_marked_missing,
+                            summary.files_restored,
+                            summary.elapsed_ms
+                        );
+                        
+                        // Emit event if any changes were made
+                        if summary.files_added > 0 || summary.files_marked_missing > 0 || summary.files_restored > 0 {
+                            let _ = app_handle.emit("evt_quick_scan_complete", &summary);
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Startup quick scan failed: {}", e);
+                    }
+                }
+            });
 
             // Audio state + command loop
             let engine = Arc::new(Mutex::new(audio_engine::EngineState::new()));
@@ -154,6 +202,19 @@ pub fn run() {
             cmd_output_set_settings,
             cmd_volume_get,
             cmd_volume_set,
+            cmd_artwork_get_bytes,
+            cmd_artwork_search_candidates,
+            cmd_artwork_select_candidate_for_album,
+            cmd_artwork_get_best_for_album,
+            cmd_artwork_get_best_for_track,
+            cmd_artwork_embed_to_file,
+            cmd_artwork_extract_embedded,
+            cmd_artwork_find_folder,
+            cmd_settings_get,
+            cmd_settings_set,
+            cmd_settings_get_category,
+            cmd_settings_set_category,
+            cmd_settings_reset_category,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
