@@ -19,6 +19,13 @@
 | R015 | **Unknown Tag Field Loss**<br>Editing known fields might destroy unknown/custom tags in the file. | Backend Lead | **In-place tag modification**: Use Lofty's `remove_others(false)`. Modify existing tags rather than replacing. Document per-container preservation policy. | Mitigated - M05 |
 | R016 | **File Lock During Tag Write**<br>Tag write fails when file is locked by another process (media player, indexer). | Backend Lead | **Bounded retry with backoff**: 3 attempts, 75ms/200ms delays. Clear error message with guidance. | Mitigated - M05 |
 | R017 | **Identity Churn After Tag Write**<br>Atomic file replacement may change NTFS File ID, causing duplicate detection. | Backend Lead | **Re-read identity post-commit**: Update DB identity fields in place while keeping track ID stable. Preflight duplication hazard check. | Mitigated - M05 |
+| R018 | **Provider Rate Limits**<br>iTunes/Deezer APIs may rate-limit or block requests if fetched too frequently. | Backend Lead | **Aggressive caching**: Never re-fetch same album. Cache persists across sessions. Eviction by LRU, not expiry. | Mitigated - M06 |
+| R019 | **Provider Unavailability**<br>External artwork providers may be temporarily or permanently unavailable. | Backend Lead | **Graceful fallback**: Embedded artwork preferred. UI shows placeholder if no art. Multiple providers for redundancy. | Mitigated - M06 |
+| R020 | **Non-deterministic Theme Colors**<br>Dynamic theme extraction could produce different colors on different runs, breaking snapshot tests. | UI Lead | **Fixed algorithm**: Deterministic sampling grid (48×48, 3px step). Exact math (no floating-point variance). Snapshot mode uses fixture artwork. | Mitigated - M06 |
+| R021 | **Settings Migration Data Loss**<br>Future settings migrations could inadvertently reset or lose user preferences. | Backend Lead | **Forward-only migrations**: Never delete existing settings. New keys use INSERT OR IGNORE. user_version PRAGMA tracks schema version. | Mitigated - M07 |
+| R022 | **Buffer Size Change Without Restart**<br>User changes buffer size but doesn't restart, leading to confusion about why it's not applied. | UI Lead | **Clear UX**: Warning banner in PlayerPrefs.svelte persists until restart. Hint text explains restart requirement. | Mitigated - M07 |
+| R023 | **Scan-on-Startup User Confusion**<br>User disables scan-on-startup but doesn't understand why new files aren't appearing. | UI Lead | **Documentation**: Settings documentation explains behavior. Future: Add manual scan button to Library category. | Open - M07 |
+| R024 | **Export Diagnostics Privacy**<br>Diagnostics export could contain sensitive information (file paths, device names). | Backend Lead | **Minimal data**: Export only settings and system info needed for debugging. No track data, no file paths beyond device names. User controls when/where to save. | Mitigated - M07 |
 
 ## Milestone 01 Burn-Down Notes
 
@@ -33,3 +40,16 @@
 - **R015 Mitigated**: Lofty's `WriteOptions::remove_others(false)` preserves non-primary tags. In-place tag modification preserves unknown fields. Policy documented in `/docs/tagging.md`.
 - **R016 Mitigated**: Retry logic with 3 attempts and 75ms/200ms backoff handles transient locks. UI shows "Retrying save..." status.
 - **R017 Mitigated**: Post-commit identity re-read updates DB fields in place. Track ID remains stable. Preflight duplication check before commit.
+
+## Milestone 06 Burn-Down Notes
+
+- **R018 Mitigated**: Artwork cache persists across sessions with 256MB limit. Cache key is deterministic based on album identity + provider. No re-fetching of already-cached artwork.
+- **R019 Mitigated**: Embedded artwork is preferred source. Multiple providers (iTunes, Deezer) provide redundancy. UI shows placeholder gracefully when no artwork available.
+- **R020 Mitigated**: Theme extraction uses fixed 48×48 canvas, 3px sampling grid, exact integer math. Snapshot mode uses solid-color fixture artwork for reproducible theme colors.
+
+## Milestone 07 Burn-Down Notes
+
+- **R021 Mitigated**: Forward-only migrations with INSERT OR IGNORE pattern. user_version PRAGMA tracks schema at v5. No existing settings modified.
+- **R022 Mitigated**: PlayerPrefs.svelte displays persistent warning banner when buffer size changes. Clear restart instruction provided.
+- **R023 Open**: Scan-on-startup toggle works but users may not understand implications. Future milestone should add manual scan button.
+- **R024 Mitigated**: Export diagnostics contains only system info, audio device, and settings keys/values. No file paths or track data included.
