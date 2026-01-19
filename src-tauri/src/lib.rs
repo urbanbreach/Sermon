@@ -135,6 +135,19 @@ pub fn run() {
                 // Small delay to let the app fully initialize
                 std::thread::sleep(std::time::Duration::from_millis(500));
                 
+                // Check if scan_on_startup is enabled (default: true if setting missing)
+                let scan_enabled = library::open_db(&db_path_clone)
+                    .ok()
+                    .and_then(|conn| library::db::get_setting(&conn, "library.scan_on_startup").ok())
+                    .flatten()
+                    .map(|v| v == "on")
+                    .unwrap_or(true); // Default: scan if setting missing
+                
+                if !scan_enabled {
+                    info!("Startup scan disabled by user preference");
+                    return;
+                }
+                
                 match library::quick_scan(&db_path_clone) {
                     Ok(summary) => {
                         info!(
@@ -236,6 +249,7 @@ struct AudioPlayback {
     fade_enabled: bool,
     fade_state: Option<FadeState>,
     timing_mode: String, // "event" or "polling"
+    buffer_size_ms: u32, // Ring buffer size in milliseconds (from preferences)
 }
 
 struct FadeState {
@@ -267,6 +281,7 @@ impl AudioPlayback {
             fade_enabled: true, // Default to true
             fade_state: None,
             timing_mode: "polling".to_string(), // Default to polling for USB compatibility
+            buffer_size_ms: 500, // Default buffer size, will be overwritten from settings
         }
     }
 
@@ -468,12 +483,12 @@ impl AudioPlayback {
             "Format negotiation result"
         );
 
-        // Create ring buffer sized for ~500ms of audio
+        // Create ring buffer sized for configured buffer duration
         // Use output_channels because fill_ring_buffer converts to output channels before pushing
         self.ring_buffer = Some(AudioRingBuffer::new(
             sample_rate,
             self.output_channels as usize,
-            500,
+            self.buffer_size_ms,
         ));
 
         // Start the output stream
@@ -649,6 +664,13 @@ fn spawn_audio_thread(
             }
             if let Ok(Some(fade)) = library::get_setting(&conn, "audio.output.fade") {
                 playback.fade_enabled = fade == "on";
+            }
+            // Load buffer size from preferences (default 500ms)
+            if let Ok(Some(buffer_str)) = library::get_setting(&conn, "player.buffer_size_ms") {
+                if let Ok(buffer_ms) = buffer_str.parse::<u32>() {
+                    // Clamp to valid range: 100-2000ms
+                    playback.buffer_size_ms = buffer_ms.clamp(100, 2000);
+                }
             }
             // Set gain_mode based on output_mode and policy
             if playback.output_mode == "exclusive" && playback.policy == "strict" {
@@ -1047,7 +1069,7 @@ fn handle_playback_command(
                             playback.ring_buffer = Some(AudioRingBuffer::new(
                                 sr, // decoder's sample rate
                                 playback.output_channels as usize,
-                                500,
+                                playback.buffer_size_ms,
                             ));
                             // Start output if needed
                             if let Some(output) = &mut playback.output {
