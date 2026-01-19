@@ -1,7 +1,8 @@
 use crate::state::LibraryState;
+use chrono::Utc;
 use library::db::{get_setting, set_setting};
 use library::{apply_migrations, open_db};
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use tauri::State;
 
@@ -161,6 +162,65 @@ pub async fn cmd_settings_reset_category(
         }
 
         Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Export diagnostics JSON for debugging and support
+#[tauri::command]
+pub async fn cmd_settings_export_diagnostics(
+    state: State<'_, LibraryState>,
+) -> Result<String, String> {
+    let db_path = state.db_path.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = open_db(&db_path).map_err(|e| e.to_string())?;
+        apply_migrations(&conn).map_err(|e| e.to_string())?;
+
+        // Collect all settings
+        let mut settings = serde_json::Map::new();
+
+        // Get all category settings
+        for category in VALID_CATEGORIES {
+            let keys = get_category_keys(category);
+            let defaults = get_category_defaults(category);
+            for key in keys {
+                let value = get_setting(&conn, key)
+                    .map_err(|e| e.to_string())?
+                    .unwrap_or_else(|| defaults.get(key).unwrap_or(&"").to_string());
+                settings.insert(key.to_string(), Value::String(value));
+            }
+        }
+
+        // Get audio settings
+        let audio_device = get_setting(&conn, "audio.device.preference")
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "default".to_string());
+        let output_mode = get_setting(&conn, "audio.output.mode")
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "exclusive".to_string());
+
+        // Build diagnostics JSON
+        let diagnostics = json!({
+            "version": "0.1.0",
+            "timestamp": Utc::now().to_rfc3339(),
+            "system": {
+                "os": std::env::consts::OS,
+                "tauri_version": tauri::VERSION,
+                "app_version": "0.1.0"
+            },
+            "audio": {
+                "current_device": audio_device,
+                "output_mode": output_mode,
+                "wasapi_available": true
+            },
+            "settings": Value::Object(settings)
+        });
+
+        serde_json::to_string_pretty(&diagnostics).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?

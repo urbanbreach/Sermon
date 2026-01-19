@@ -21,9 +21,9 @@ use commands::{
     cmd_output_get_settings, cmd_output_list_devices, cmd_output_set_device,
     cmd_output_set_settings, cmd_playback_next, cmd_playback_pause, cmd_playback_previous,
     cmd_playback_resume, cmd_playback_seek, cmd_playback_start, cmd_playback_stop, cmd_queue_add,
-    cmd_queue_play_now, cmd_scan_start, cmd_settings_get, cmd_settings_get_category,
-    cmd_settings_reset_category, cmd_settings_set, cmd_settings_set_category, cmd_volume_get,
-    cmd_volume_set,
+    cmd_queue_play_now, cmd_scan_start, cmd_settings_export_diagnostics, cmd_settings_get,
+    cmd_settings_get_category, cmd_settings_reset_category, cmd_settings_set,
+    cmd_settings_set_category, cmd_volume_get, cmd_volume_set,
 };
 use crossbeam_channel::{Receiver, select, tick, unbounded};
 use parking_lot::Mutex;
@@ -94,6 +94,7 @@ pub fn run() {
 
     builder
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             // Register event listener
             app.listen("sermon://first-interactive", |_event| {
@@ -228,6 +229,7 @@ pub fn run() {
             cmd_settings_get_category,
             cmd_settings_set_category,
             cmd_settings_reset_category,
+            cmd_settings_export_diagnostics,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

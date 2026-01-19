@@ -23,6 +23,7 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.9.5", features = [] }
 tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
 tracing = "0.1.44"
 tracing-appender = "0.2.4"
 tracing-subscriber = { version = "0.3.22", features = ["fmt", "std", "env-filter"] }
@@ -31,3 +32,10 @@ audio-engine = { path = "../crates/audio-engine" }
 tags = { path = "../crates/tags" }
 parking_lot = "0.12"
 crossbeam-channel = "0.5"
+blake3 = "1"
+base64 = "0.22"
+reqwest = { version = "0.12", features = ["blocking", "rustls-tls", "json"], default-features = false }
+urlencoding = "2"
+rusqlite = "0.32"
+chrono = { version = "0.4", features = ["serde"] }
+tauri-plugin-mcp-bridge = "0.8"

@@ -1,5 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { invoke } from '@tauri-apps/api/core';
+  import { save } from '@tauri-apps/plugin-dialog';
+  import { writeTextFile } from '@tauri-apps/plugin-fs';
   import GeneralPrefs from '../components/preferences/GeneralPrefs.svelte';
   import PlayerPrefs from '../components/preferences/PlayerPrefs.svelte';
   import NowPlayingPrefs from '../components/preferences/NowPlayingPrefs.svelte';
@@ -7,6 +10,7 @@
   import TagsPrefs from '../components/preferences/TagsPrefs.svelte';
   import InternetPrefs from '../components/preferences/InternetPrefs.svelte';
   import DevicesPrefs from '../components/preferences/DevicesPrefs.svelte';
+  import { resetCategoryToDefaults } from '../state/preferences';
   
   const isMock = import.meta.env.SERMON_MOCK === '1';
   
@@ -31,16 +35,40 @@
   
   async function handleResetToDefaults() {
     if (isMock) return;
-    // TODO: Call resetCategoryToDefaults(activeCategory)
-    statusMessage = '✓ Reset complete';
-    setTimeout(() => { statusMessage = ''; }, 3000);
+    try {
+      await resetCategoryToDefaults(activeCategory);
+      statusMessage = '✓ Reset complete';
+      setTimeout(() => { statusMessage = ''; }, 3000);
+    } catch (e) {
+      statusMessage = '✗ Reset failed';
+      setTimeout(() => { statusMessage = ''; }, 3000);
+    }
   }
   
   async function handleExportDiagnostics() {
     if (isMock) return;
-    // TODO: Implement in Task 9
-    statusMessage = 'Export not implemented yet';
-    setTimeout(() => { statusMessage = ''; }, 3000);
+    try {
+      // Get diagnostics JSON from backend
+      const diagnosticsJson = await invoke<string>('cmd_settings_export_diagnostics');
+      
+      // Open save dialog
+      const filePath = await save({
+        defaultPath: 'sermon-diagnostics.json',
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      });
+      
+      if (filePath) {
+        // Write file
+        await writeTextFile(filePath, diagnosticsJson);
+        const filename = filePath.split(/[\\/]/).pop() || 'file';
+        statusMessage = `✓ Saved to ${filename}`;
+        setTimeout(() => { statusMessage = ''; }, 3000);
+      }
+    } catch (e) {
+      console.error('Export failed:', e);
+      statusMessage = '✗ Export failed';
+      setTimeout(() => { statusMessage = ''; }, 3000);
+    }
   }
 </script>
 
