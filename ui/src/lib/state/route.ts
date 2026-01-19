@@ -8,6 +8,7 @@ export type Route =
   | { name: 'settings' }
   | { name: 'diagnostics' }
   | { name: 'now-playing' }
+  | { name: 'preferences' }
   | { name: 'album-detail'; albumArtistSort: string; albumTitleSort: string }
   | { name: 'artist-detail'; artistSort: string }
   | { name: 'search-results'; query: string };
@@ -89,6 +90,6 @@ function routesEqual(a: Route, b: Route): boolean {
 }
 
 // Legacy compatibility - set route by name
-export function setRoute(name: 'albums' | 'artists' | 'tracks' | 'settings' | 'diagnostics' | 'now-playing'): void {
+export function setRoute(name: 'albums' | 'artists' | 'tracks' | 'settings' | 'diagnostics' | 'now-playing' | 'preferences'): void {
   navigate({ name });
 }

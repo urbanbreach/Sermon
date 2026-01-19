@@ -15,6 +15,7 @@
   import TracksView from './lib/views/TracksView.svelte';
   import SettingsView from './lib/views/SettingsView.svelte';
   import DiagnosticsView from './lib/views/DiagnosticsView.svelte';
+  import PreferencesView from './lib/views/PreferencesView.svelte';
   import NowPlayingView from './lib/views/NowPlayingView.svelte';
   import SearchResultsView from './lib/views/SearchResultsView.svelte';
 
@@ -55,6 +56,8 @@
         <SettingsView />
       {:else if $currentRouteName === 'diagnostics'}
         <DiagnosticsView />
+      {:else if $currentRouteName === 'preferences'}
+        <PreferencesView />
       {:else if $currentRouteName === 'album-detail'}
         <AlbumDetailView />
       {:else if $currentRouteName === 'artist-detail'}
@@ -94,15 +97,5 @@
     position: relative; /* For NowPlaying overlay if needed */
     background: var(--glass-bg); /* Use glass bg for consistency, or keep opaque if intended */
     overflow: hidden;
-  }
-
-  .placeholder-view {
-    padding: 2rem;
-    color: #888;
-  }
-  
-  .placeholder-view h2 {
-    color: #fff;
-    margin-bottom: 1rem;
   }
 </style>

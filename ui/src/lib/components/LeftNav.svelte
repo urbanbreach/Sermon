@@ -1,7 +1,7 @@
 <script lang="ts">
   import { currentRoute, currentRouteName, navigate } from '../state/route';
 
-  type SimpleRouteName = 'albums' | 'artists' | 'tracks' | 'settings' | 'diagnostics';
+  type SimpleRouteName = 'albums' | 'artists' | 'tracks' | 'settings' | 'diagnostics' | 'preferences';
 
   const navItems: { label: string; routeName: SimpleRouteName }[] = [
     { label: 'Albums', routeName: 'albums' },
@@ -19,7 +19,7 @@
     {#each navItems as item}
       <button 
         class:active={$currentRouteName === item.routeName}
-        on:click={() => handleNavigate(item.routeName)}
+        onclick={() => handleNavigate(item.routeName)}
       >
         {item.label}
       </button>
@@ -29,15 +29,21 @@
   <div class="nav-section settings">
     <button 
       class:active={$currentRouteName === 'settings'}
-      on:click={() => handleNavigate('settings')}
+      onclick={() => handleNavigate('settings')}
     >
       Settings
     </button>
     <button 
       class:active={$currentRouteName === 'diagnostics'}
-      on:click={() => handleNavigate('diagnostics')}
+      onclick={() => handleNavigate('diagnostics')}
     >
       Diagnostics
+    </button>
+    <button 
+      class:active={$currentRouteName === 'preferences'}
+      onclick={() => handleNavigate('preferences')}
+    >
+      Preferences
     </button>
   </div>
 </nav>
