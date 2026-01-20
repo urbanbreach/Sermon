@@ -7,6 +7,8 @@
 
 export interface ThemeColors {
   accent: [number, number, number];
+  accent2: [number, number, number];
+  accent3: [number, number, number];
   bg0: [number, number, number];
   bg1: [number, number, number];
 }
@@ -14,9 +16,59 @@ export interface ThemeColors {
 // Default fallback theme (used when no pixels remain after filtering)
 const FALLBACK_THEME: ThemeColors = {
   accent: [74, 175, 255],
+  accent2: [100, 180, 255],
+  accent3: [50, 150, 230],
   bg0: [24, 32, 44],
   bg1: [10, 10, 10],
 };
+
+/**
+ * RGB to HSL conversion
+ */
+function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0;
+  const l = (max + min) / 2;
+  
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+      case g: h = ((b - r) / d + 2) / 6; break;
+      case b: h = ((r - g) / d + 4) / 6; break;
+    }
+  }
+  return { h: h * 360, s: s * 100, l: l * 100 };
+}
+
+/**
+ * HSL to RGB conversion
+ */
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  h /= 360; s /= 100; l /= 100;
+  let r, g, b;
+  
+  if (s === 0) {
+    r = g = b = l;
+  } else {
+    const hue2rgb = (p: number, q: number, t: number) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
 
 /**
  * RGB to HSV conversion (exact algorithm per spec)
@@ -206,6 +258,23 @@ export async function computeThemeFromImageSrc(src: string): Promise<ThemeColors
     [accentR, accentG, accentB] = hsvToRgb(accentHsv.h, 0.85, accentHsv.v);
   }
 
+  // Calculate secondary and tertiary accents
+  const primaryHsl = rgbToHsl(accentR, accentG, accentB);
+  
+  // Secondary: hue +25, sat -15, light +10 (clamped 0-100)
+  const accent2 = hslToRgb(
+    (primaryHsl.h + 25) % 360,
+    Math.max(0, Math.min(100, primaryHsl.s - 15)),
+    Math.max(0, Math.min(100, primaryHsl.l + 10))
+  );
+
+  // Tertiary: hue -25, sat -10, light -10 (clamped 0-100)
+  const accent3 = hslToRgb(
+    (primaryHsl.h - 25 + 360) % 360,
+    Math.max(0, Math.min(100, primaryHsl.s - 10)),
+    Math.max(0, Math.min(100, primaryHsl.l - 10))
+  );
+
   // Gradient stops: multiply RGB bytes by factors
   const bg0: [number, number, number] = [
     Math.round(accentR * 0.65),
@@ -221,6 +290,8 @@ export async function computeThemeFromImageSrc(src: string): Promise<ThemeColors
 
   return {
     accent: [accentR, accentG, accentB],
+    accent2,
+    accent3,
     bg0,
     bg1,
   };
@@ -233,6 +304,8 @@ export function applyThemeToDocument(theme: ThemeColors): void {
   const root = document.documentElement;
   
   root.style.setProperty('--theme-accent', `rgb(${theme.accent.join(',')})`);
+  root.style.setProperty('--theme-accent-2', `rgb(${theme.accent2.join(',')})`);
+  root.style.setProperty('--theme-accent-3', `rgb(${theme.accent3.join(',')})`);
   root.style.setProperty('--theme-bg-0', `rgb(${theme.bg0.join(',')})`);
   root.style.setProperty('--theme-bg-1', `rgb(${theme.bg1.join(',')})`);
   
@@ -240,6 +313,14 @@ export function applyThemeToDocument(theme: ThemeColors): void {
   root.style.setProperty('--theme-accent-r', String(theme.accent[0]));
   root.style.setProperty('--theme-accent-g', String(theme.accent[1]));
   root.style.setProperty('--theme-accent-b', String(theme.accent[2]));
+  
+  root.style.setProperty('--theme-accent-2-r', String(theme.accent2[0]));
+  root.style.setProperty('--theme-accent-2-g', String(theme.accent2[1]));
+  root.style.setProperty('--theme-accent-2-b', String(theme.accent2[2]));
+  
+  root.style.setProperty('--theme-accent-3-r', String(theme.accent3[0]));
+  root.style.setProperty('--theme-accent-3-g', String(theme.accent3[1]));
+  root.style.setProperty('--theme-accent-3-b', String(theme.accent3[2]));
 }
 
 /**

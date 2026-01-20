@@ -43,7 +43,20 @@ export interface DevicesSettings {
   'devices.dsd_dop_enabled': string;
 }
 
-export type PreferenceCategory = 'general' | 'player' | 'nowplaying' | 'library' | 'tags' | 'internet' | 'devices';
+export interface AppearanceSettings {
+  'ui.reduce_effects': string;
+  'ui.theme.blur': string;
+  'ui.theme.glow': string;
+  'ui.theme.border_highlight': string;
+  'ui.theme.blur_px': string;
+  'ui.theme.glow_strength': string;
+  'ui.theme.border_strength': string;
+  'ui.background.intensity': string;
+  'ui.background.noise_opacity': string;
+  'ui.background.crossfade_ms': string;
+}
+
+export type PreferenceCategory = 'general' | 'player' | 'nowplaying' | 'library' | 'tags' | 'internet' | 'devices' | 'appearance';
 
 export type CategorySettings = 
   | GeneralSettings 
@@ -52,7 +65,8 @@ export type CategorySettings =
   | LibrarySettings 
   | TagsSettings 
   | InternetSettings 
-  | DevicesSettings;
+  | DevicesSettings
+  | AppearanceSettings;
 
 // Stores for each category
 export const generalSettings = writable<GeneralSettings | null>(null);
@@ -62,6 +76,7 @@ export const librarySettings = writable<LibrarySettings | null>(null);
 export const tagsSettings = writable<TagsSettings | null>(null);
 export const internetSettings = writable<InternetSettings | null>(null);
 export const devicesSettings = writable<DevicesSettings | null>(null);
+export const appearanceSettings = writable<AppearanceSettings | null>(null);
 
 // Loading state
 export const preferencesLoading = writable<boolean>(false);
@@ -107,6 +122,9 @@ export async function loadCategorySettings(category: PreferenceCategory): Promis
       case 'devices':
         devicesSettings.set(settings as unknown as DevicesSettings);
         break;
+      case 'appearance':
+        appearanceSettings.set(settings as unknown as AppearanceSettings);
+        break;
     }
   } catch (e) {
     console.error(`Failed to load ${category} settings:`, e);
@@ -151,7 +169,7 @@ export async function resetCategoryToDefaults(category: PreferenceCategory): Pro
 // Load all categories at once (for initial load)
 export async function loadAllPreferences(): Promise<void> {
   const categories: PreferenceCategory[] = [
-    'general', 'player', 'nowplaying', 'library', 'tags', 'internet', 'devices'
+    'general', 'player', 'nowplaying', 'library', 'tags', 'internet', 'devices', 'appearance'
   ];
   
   await Promise.all(categories.map(cat => loadCategorySettings(cat)));
