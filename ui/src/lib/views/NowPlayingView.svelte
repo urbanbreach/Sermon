@@ -5,12 +5,9 @@
     positionMs, durationMs, seek, audioDebug, isPlaying, playNow
   } from '../state/playback';
   import { Fixtures } from '../data/fixtures';
-  import { getArtworkBestForTrack, getArtworkBytes } from '../api/artwork';
-  import { computeThemeFromImageSrc, applyThemeToDocument, resetTheme } from '../theme/dynamicTheme';
+  import { currentArtworkUrl } from '../state/artwork';
   
   let isDebugging = false;
-  let artworkUrl: string | null = $state(null);
-  let lastTrackId: number | null = $state(null);
 
   function handleGoBack() {
     goBack();
@@ -33,77 +30,6 @@
   function toggleDebug() {
     isDebugging = !isDebugging;
   }
-
-  async function loadArtwork(track: typeof $currentTrack) {
-    if (!track) {
-      artworkUrl = null;
-      lastTrackId = null;
-      return;
-    }
-
-    // Skip if same track
-    if (track.id === lastTrackId && artworkUrl) return;
-    lastTrackId = track.id;
-
-    // Mock/Snapshot mode: use fixtures
-    if (import.meta.env.SERMON_MOCK === '1') {
-      const fixtureAlbums = Fixtures.getAlbums();
-      const fixtureArtists = Fixtures.getArtists();
-
-      // Derive album key from current track
-      const albumTitleSort = (track.album?.trim().toLowerCase()) || 'unknown album';
-      const albumArtistSort = (track.artist?.trim().toLowerCase()) || 'unknown artist';
-
-      for (const fixtureAlbum of fixtureAlbums) {
-        const artist = fixtureArtists.find(a => a.id === fixtureAlbum.artistId);
-        const artistSort = (artist?.name?.trim().toLowerCase()) || 'unknown artist';
-        const titleSort = (fixtureAlbum.title?.trim().toLowerCase()) || 'unknown album';
-
-        if (artistSort === albumArtistSort && titleSort === albumTitleSort) {
-          const url = Fixtures.getArtworkPath(fixtureAlbum.artworkFile);
-          if (url) {
-            artworkUrl = url;
-          }
-          return;
-        }
-      }
-      artworkUrl = null;
-      return;
-    }
-
-    // Runtime mode: use IPC
-    try {
-      const best = await getArtworkBestForTrack(track.id);
-      if (best.source !== 'none' && best.cacheKey && best.mime) {
-        const bytes = await getArtworkBytes(best.cacheKey, best.mime);
-        artworkUrl = `data:${bytes.mime};base64,${bytes.bytesBase64}`;
-      } else {
-        artworkUrl = null;
-      }
-    } catch (e) {
-      console.error('Failed to load track artwork:', e);
-      artworkUrl = null;
-    }
-  }
-
-  // React to track changes
-  $effect(() => {
-    loadArtwork($currentTrack);
-  });
-
-  // React to artwork changes - compute and apply theme
-  $effect(() => {
-    if (artworkUrl) {
-      computeThemeFromImageSrc(artworkUrl)
-        .then(theme => applyThemeToDocument(theme))
-        .catch(err => {
-          console.error('Failed to compute theme:', err);
-          resetTheme();
-        });
-    } else {
-      resetTheme();
-    }
-  });
 </script>
 
 <div class="now-playing-view">
@@ -117,8 +43,8 @@
   <div class="main-layout">
     <div class="track-area">
       <div class="art-large">
-        {#if artworkUrl}
-          <img src={artworkUrl} alt="Album artwork" class="art-image" />
+        {#if $currentArtworkUrl}
+          <img src={$currentArtworkUrl} alt="Album artwork" class="art-image" />
         {:else}
           <div class="art-placeholder"></div>
         {/if}
@@ -144,31 +70,6 @@
           value={$progress} 
           onchange={handleSeek}
         />
-      </div>
-    </div>
-
-    <div class="queue-area">
-      <h3>Queue</h3>
-      <div class="queue-list">
-        {#each $queue as item, i}
-          <div 
-            class="queue-item" 
-            class:active={i === $currentIndex}
-            role="button"
-            tabindex="0"
-            ondblclick={() => playNow(item.track_id)}
-            onkeydown={(e) => e.key === 'Enter' && playNow(item.track_id)}
-          >
-            <span class="q-index">{i + 1}</span>
-            <div class="q-info">
-              <span class="q-title">{item.title}</span>
-              <span class="q-artist">{item.artist}</span>
-            </div>
-            <span class="q-time">{formatDuration(item.duration_ms || 0)}</span>
-          </div>
-        {:else}
-          <div class="empty-queue">Queue is empty</div>
-        {/each}
       </div>
     </div>
   </div>
@@ -208,7 +109,7 @@
     bottom: 0; /* Cover everything including bottom bar if needed? No, bottom bar is persistent */
     /* Adjust to fit within content-area */
     height: 100%;
-    background: #0a0a0a;
+    background: transparent;
     z-index: 100;
     padding: 2rem;
     display: flex;
@@ -225,10 +126,12 @@
   }
 
   .back-btn, .debug-btn {
-    background: none;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
     border: 1px solid var(--glass-border);
     padding: 0.5rem 1rem;
-    color: #888;
+    color: #ccc;
     cursor: pointer;
     border-radius: 4px;
     transition: all 0.2s;
@@ -236,7 +139,8 @@
   .back-btn:hover, .debug-btn:hover {
     color: #fff;
     border-color: #fff;
-    background: rgba(255,255,255,0.1);
+    background: var(--glass-border);
+    transform: scale(1.02);
   }
   .debug-btn.active {
     background: #4af;
@@ -246,13 +150,14 @@
 
   .main-layout {
     display: flex;
-    gap: 4rem;
+    justify-content: center;
     height: 100%;
     overflow: hidden;
   }
 
   .track-area {
-    flex: 1;
+    width: 100%;
+    max-width: 800px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -260,58 +165,7 @@
     gap: 2rem;
   }
 
-  .queue-area {
-    width: 350px;
-    display: flex;
-    flex-direction: column;
-    background: var(--glass-bg);
-    border-radius: 12px;
-    padding: 1rem;
-    border: 1px solid var(--glass-border);
-  }
-
-  .queue-area h3 {
-    margin: 0 0 1rem 0;
-    font-size: 1.2rem;
-    color: #ccc;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--glass-border);
-  }
-
-  .queue-list {
-    flex: 1;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .queue-item {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.5rem;
-    border-radius: 4px;
-    cursor: default;
-    transition: background 0.1s;
-  }
-  .queue-item:hover {
-    background: rgba(255,255,255,0.05);
-  }
-  .queue-item.active {
-    background: rgba(74, 175, 255, 0.1);
-    border-left: 3px solid #4af;
-  }
-  .queue-item.active .q-title {
-    color: #4af;
-  }
-
-  .q-index { color: #555; font-size: 0.8rem; width: 20px; }
-  .q-info { flex: 1; overflow: hidden; }
-  .q-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .q-artist { display: block; font-size: 0.8rem; color: #888; }
-  .q-time { color: #666; font-size: 0.8rem; }
-  .empty-queue { color: #555; text-align: center; padding: 2rem; }
+/* Queue styles removed as queue has moved to RightRail */
 
   .art-large {
     width: 350px;
@@ -340,9 +194,9 @@
   .info-large {
     text-align: center;
   }
-  .info-large h1 { font-size: 2.5rem; margin: 0 0 0.5rem 0; letter-spacing: -1px; }
-  .info-large h2 { font-size: 1.5rem; color: #aaa; margin: 0 0 0.5rem 0; font-weight: normal; }
-  .info-large h3 { font-size: 1.1rem; color: #666; margin: 0; font-weight: normal; }
+  .info-large h1 { font-size: 2.5rem; margin: 0 0 0.5rem 0; letter-spacing: -1px; text-shadow: 0 4px 12px rgba(0,0,0,0.5); font-weight: 700; }
+  .info-large h2 { font-size: 1.5rem; color: rgba(255,255,255,0.8); margin: 0 0 0.5rem 0; font-weight: normal; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+  .info-large h3 { font-size: 1.1rem; color: rgba(255,255,255,0.6); margin: 0; font-weight: normal; }
 
   .scrubber-area {
     width: 100%;
@@ -360,7 +214,7 @@
   .scrubber {
     width: 100%;
     height: 6px;
-    background: #333;
+    background: rgba(255,255,255,0.2);
     border-radius: 3px;
     appearance: none;
     cursor: pointer;
@@ -372,6 +226,10 @@
     background: #fff;
     border-radius: 50%;
     box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    transition: transform 0.1s;
+  }
+  .scrubber::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
   }
 
   .debug-overlay {
@@ -379,18 +237,20 @@
     top: 80px;
     left: 2rem;
     width: 300px;
-    background: rgba(0,0,0,0.9);
-    border: 1px solid #333;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
     padding: 1rem;
     border-radius: 8px;
     font-family: monospace;
     font-size: 0.85rem;
-    pointer-events: none; /* Let clicks pass through? No, might want to copy text */
     pointer-events: auto;
+    box-shadow: var(--glass-shadow);
   }
-  .debug-overlay h4 { color: #4af; margin: 0 0 1rem 0; border-bottom: 1px solid #333; padding-bottom: 0.5rem; }
+  .debug-overlay h4 { color: #4af; margin: 0 0 1rem 0; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.5rem; }
   .debug-row { display: flex; justify-content: space-between; margin-bottom: 0.5rem; }
-  .debug-row label { color: #888; }
-  .debug-section { margin-top: 1rem; border-top: 1px dashed #333; padding-top: 0.5rem; }
+  .debug-row label { color: #aaa; }
+  .debug-section { margin-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 0.5rem; }
   .debug-section h5 { margin: 0 0 0.5rem 0; color: #aaa; }
 </style>

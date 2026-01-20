@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import type {
   PlaybackStateEvent, NowPlayingEvent, PlaybackPositionEvent,
   QueueChangedEvent, DeviceChangedEvent, AudioDebugEvent, PlaybackErrorEvent,
-  TrackEventData, QueueItemData, TrackMarkedMissingEvent
+  TrackEventData, QueueItemData, TrackMarkedMissingEvent, AudioLevelsEvent
 } from '../types/playback';
 import * as api from '../api/playback';
 import type { AudioOutputSettings } from '../api/playback';
@@ -32,6 +32,14 @@ export const audioDebug = writable<AudioDebugEvent | null>(null);
 
 // Error state
 export const playbackError = writable<PlaybackErrorEvent | null>(null);
+
+// Audio levels for visualization (512 FFT bands + peak/RMS)
+export const audioLevels = writable<AudioLevelsEvent>({
+  peak: 0,
+  rms: 0,
+  bands: new Array(512).fill(0),
+  timestamp_ms: 0,
+});
 
 // Derived
 export const isPlaying = derived(playbackState, $s => $s === 'playing');
@@ -157,6 +165,16 @@ export function initPlaybackListeners(): void {
   listen<PlaybackStateEvent>('evt_playback_state', (event) => {
     playbackState.set(event.payload.state as 'playing' | 'paused' | 'stopped');
     playId.set(event.payload.play_id);
+    
+    // Reset audio levels when stopped
+    if (event.payload.state === 'stopped') {
+      audioLevels.set({
+        peak: 0,
+        rms: 0,
+        bands: new Array(512).fill(0),
+        timestamp_ms: 0,
+      });
+    }
   });
 
   listen<NowPlayingEvent>('evt_now_playing', (event) => {
@@ -199,6 +217,11 @@ export function initPlaybackListeners(): void {
     window.dispatchEvent(new CustomEvent('sermon:track-marked-missing', { 
       detail: event.payload 
     }));
+  });
+
+  // Listen for audio levels (FFT analysis for visualization)
+  listen<AudioLevelsEvent>('evt_audio_levels', (event) => {
+    audioLevels.set(event.payload);
   });
 
   // Load initial volume

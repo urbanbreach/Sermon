@@ -90,3 +90,10 @@ export interface TrackMarkedMissingEvent {
   track_id: number;
   path: string;
 }
+
+export interface AudioLevelsEvent {
+  peak: number;
+  rms: number;
+  bands: number[];  // 512 elements
+  timestamp_ms: number;
+}
