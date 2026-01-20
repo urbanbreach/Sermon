@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { navigate } from '../state/route';
+  import { navigate, canGoBack, canGoForward, goBack, goForward } from '../state/route';
+  import { toggleRail } from '../state/rightRail';
   import { searchSuggest } from '../api/library';
   import type { SearchHit } from '../types/library';
+  import { ChevronLeft, ChevronRight, Music, Disc, User, PanelRight, Minus, Square, X } from '@lucide/svelte';
 
   let query = $state('');
   let results = $state<SearchHit[]>([]);
@@ -107,7 +109,16 @@
   }
 </script>
 
-<div class="top-bar">
+<div class="top-bar" data-testid="glass-panel">
+  <div class="nav-controls">
+    <button class="nav-btn" onclick={goBack} disabled={!$canGoBack}>
+      <ChevronLeft size={20} />
+    </button>
+    <button class="nav-btn" onclick={goForward} disabled={!$canGoForward}>
+      <ChevronRight size={20} />
+    </button>
+  </div>
+
   <div class="search-container">
     <input 
       bind:this={inputElement}
@@ -133,13 +144,13 @@
             onclick={() => selectResult(hit)}
           >
             {#if hit.type === 'track'}
-              <span class="icon">🎵</span>
+              <span class="icon"><Music size={16} /></span>
               <span class="text">{hit.title} - {hit.artist}</span>
             {:else if hit.type === 'album'}
-              <span class="icon">💿</span>
+              <span class="icon"><Disc size={16} /></span>
               <span class="text">{hit.albumTitleDisplay} - {hit.albumArtistDisplay}</span>
             {:else if hit.type === 'artist'}
-              <span class="icon">👤</span>
+              <span class="icon"><User size={16} /></span>
               <span class="text">{hit.artistDisplay}</span>
             {/if}
           </div>
@@ -149,27 +160,60 @@
   </div>
 
   <div class="window-controls">
+    <button class="nav-btn rail-toggle" onclick={toggleRail} title="Toggle Queue">
+      <PanelRight size={20} />
+    </button>
     <!-- Window controls placeholder -->
-    <span>_</span>
-    <span>□</span>
-    <span>×</span>
+    <span><Minus size={16} /></span>
+    <span><Square size={14} /></span>
+    <span><X size={16} /></span>
   </div>
 </div>
 
 <style>
   .top-bar {
-    height: 40px;
+    height: var(--layout-header-height);
     background: var(--glass-bg);
     backdrop-filter: blur(var(--glass-blur));
     border-bottom: 1px solid var(--glass-border);
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 0 1rem;
+    gap: 16px;
+    padding: 0 16px;
     -webkit-app-region: drag;
     user-select: none;
     z-index: 100; /* Ensure dropdown is above content */
     position: relative;
+  }
+
+  .nav-controls {
+    display: flex;
+    gap: 8px;
+    -webkit-app-region: no-drag;
+  }
+
+  .nav-btn {
+    background: transparent;
+    border: none;
+    color: #fff;
+    opacity: 0.7;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border-radius: 4px;
+    transition: opacity 0.2s, background 0.2s;
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
   }
 
   .search-container {
@@ -230,6 +274,8 @@
 
   .icon {
     opacity: 0.7;
+    display: flex;
+    align-items: center;
   }
 
   .text {
@@ -243,6 +289,7 @@
     gap: 1rem;
     color: #888;
     -webkit-app-region: no-drag;
+    margin-left: auto;
   }
   
   span {

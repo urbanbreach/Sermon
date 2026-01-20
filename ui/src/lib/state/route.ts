@@ -5,16 +5,19 @@ export type Route =
   | { name: 'albums' }
   | { name: 'artists' }
   | { name: 'tracks' }
-  | { name: 'settings' }
   | { name: 'diagnostics' }
   | { name: 'now-playing' }
   | { name: 'preferences' }
+  | { name: 'lyrics-fullscreen' }
   | { name: 'album-detail'; albumArtistSort: string; albumTitleSort: string }
   | { name: 'artist-detail'; artistSort: string }
   | { name: 'search-results'; query: string };
 
 // Route stack for back navigation
 const routeStack = writable<Route[]>([{ name: 'albums' }]);
+
+// Forward stack for forward navigation
+export const forwardStack = writable<Route[]>([]);
 
 // Current route is the top of the stack
 export const currentRoute = derived(routeStack, ($stack) => 
@@ -26,6 +29,7 @@ export const currentRouteName = derived(currentRoute, ($route) => $route.name);
 
 // Navigate to a new route (push to stack)
 export function navigate(route: Route): void {
+  forwardStack.set([]); // Clear forward history on new navigation
   routeStack.update((stack) => {
     // Don't push duplicate routes
     const current = stack[stack.length - 1];
@@ -45,17 +49,35 @@ export function navigate(route: Route): void {
 export function goBack(): void {
   routeStack.update((stack) => {
     if (stack.length > 1) {
+      const current = stack[stack.length - 1];
+      forwardStack.update(fs => [...fs, current]);
       return stack.slice(0, -1);
     }
     return stack;
   });
 }
 
+// Go forward to next route
+export function goForward(): void {
+  forwardStack.update(fStack => {
+    if (fStack.length > 0) {
+      const route = fStack[fStack.length - 1];
+      routeStack.update(rStack => [...rStack, route]);
+      return fStack.slice(0, -1);
+    }
+    return fStack;
+  });
+}
+
 // Check if we can go back
 export const canGoBack = derived(routeStack, ($stack) => $stack.length > 1);
 
+// Check if we can go forward
+export const canGoForward = derived(forwardStack, ($stack) => $stack.length > 0);
+
 // Replace current route (doesn't add to history)
 export function replaceRoute(route: Route): void {
+  forwardStack.set([]);
   routeStack.update((stack) => {
     if (stack.length === 0) {
       return [route];
@@ -66,6 +88,7 @@ export function replaceRoute(route: Route): void {
 
 // Clear stack and set single route
 export function resetTo(route: Route): void {
+  forwardStack.set([]);
   routeStack.set([route]);
 }
 
@@ -90,6 +113,6 @@ function routesEqual(a: Route, b: Route): boolean {
 }
 
 // Legacy compatibility - set route by name
-export function setRoute(name: 'albums' | 'artists' | 'tracks' | 'settings' | 'diagnostics' | 'now-playing' | 'preferences'): void {
+export function setRoute(name: 'albums' | 'artists' | 'tracks' | 'diagnostics' | 'now-playing' | 'preferences'): void {
   navigate({ name });
 }

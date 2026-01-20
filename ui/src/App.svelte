@@ -1,10 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { emit } from '@tauri-apps/api/event';
-  import { currentRoute, currentRouteName } from './lib/state/route';
+  import { currentRouteName } from './lib/state/route';
   import { initPlaybackListeners } from './lib/state/playback';
+  import { initArtworkStore } from './lib/state/artwork';
+  import { initRailResponsive } from './lib/state/rightRail';
   
   import TopBar from './lib/components/TopBar.svelte';
+  import BackgroundLayer from './lib/components/BackgroundLayer.svelte';
   import LeftNav from './lib/components/LeftNav.svelte';
   import BottomBar from './lib/components/BottomBar.svelte';
   
@@ -13,14 +16,19 @@
   import ArtistsView from './lib/views/ArtistsView.svelte';
   import ArtistDetailView from './lib/views/ArtistDetailView.svelte';
   import TracksView from './lib/views/TracksView.svelte';
-  import SettingsView from './lib/views/SettingsView.svelte';
+  
   import DiagnosticsView from './lib/views/DiagnosticsView.svelte';
   import PreferencesView from './lib/views/PreferencesView.svelte';
   import NowPlayingView from './lib/views/NowPlayingView.svelte';
   import SearchResultsView from './lib/views/SearchResultsView.svelte';
+  import LyricsView from './lib/views/LyricsView.svelte';
+
+  import RightRail from './lib/components/RightRail.svelte';
 
   onMount(async () => {
     initPlaybackListeners();
+    initArtworkStore();
+    initRailResponsive();
 
     // Snapshot mode: disable transitions
     if (import.meta.env.SERMON_SNAPSHOT === '1') {
@@ -40,39 +48,50 @@
 </script>
 
 <div class="app-shell">
-  <TopBar />
+  <BackgroundLayer />
   
-  <div class="main-body">
-    <LeftNav />
-    
-    <main class="content-area">
-      {#if $currentRouteName === 'albums'}
-        <AlbumsView />
-      {:else if $currentRouteName === 'artists'}
-        <ArtistsView />
-      {:else if $currentRouteName === 'tracks'}
-        <TracksView />
-      {:else if $currentRouteName === 'settings'}
-        <SettingsView />
-      {:else if $currentRouteName === 'diagnostics'}
-        <DiagnosticsView />
-      {:else if $currentRouteName === 'preferences'}
-        <PreferencesView />
-      {:else if $currentRouteName === 'album-detail'}
-        <AlbumDetailView />
-      {:else if $currentRouteName === 'artist-detail'}
-        <ArtistDetailView />
-      {:else if $currentRouteName === 'search-results'}
-        <SearchResultsView />
-      {/if}
+  <!-- Fullscreen Lyrics (renders above everything when active) -->
+  {#if $currentRouteName === 'lyrics-fullscreen'}
+    <LyricsView />
+  {:else}
+    <div class="main-body">
+      <LeftNav />
       
-      {#if $currentRouteName === 'now-playing'}
-        <NowPlayingView />
-      {/if}
-    </main>
-  </div>
-  
-  <BottomBar />
+      <main class="content-area">
+        <TopBar />
+        
+        <div class="content-row">
+          <div class="view-viewport">
+            {#if $currentRouteName === 'albums'}
+              <AlbumsView />
+            {:else if $currentRouteName === 'artists'}
+              <ArtistsView />
+            {:else if $currentRouteName === 'tracks'}
+              <TracksView />
+            {:else if $currentRouteName === 'diagnostics'}
+              <DiagnosticsView />
+            {:else if $currentRouteName === 'preferences'}
+              <PreferencesView />
+            {:else if $currentRouteName === 'album-detail'}
+              <AlbumDetailView />
+            {:else if $currentRouteName === 'artist-detail'}
+              <ArtistDetailView />
+            {:else if $currentRouteName === 'search-results'}
+              <SearchResultsView />
+            {/if}
+            
+            {#if $currentRouteName === 'now-playing'}
+              <NowPlayingView />
+            {/if}
+          </div>
+
+          <RightRail />
+        </div>
+      </main>
+    </div>
+    
+    <BottomBar />
+  {/if}
 </div>
 
 <style>
@@ -81,21 +100,45 @@
     flex-direction: column;
     height: 100vh;
     width: 100vw;
-    background: #0a0a0a;
+    background: transparent;
     color: #fff;
     overflow: hidden;
+    position: relative; /* Ensure stacking context */
+    z-index: 1;
+    font-family: 'Inter Variable', Inter, sans-serif;
   }
 
   .main-body {
     display: flex;
     flex: 1;
     overflow: hidden;
+    position: relative;
+    z-index: 1;
   }
 
   .content-area {
     flex: 1;
-    position: relative; /* For NowPlaying overlay if needed */
-    background: var(--glass-bg); /* Use glass bg for consistency, or keep opaque if intended */
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    background: transparent;
     overflow: hidden;
   }
+
+  .content-row {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .view-viewport {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+
 </style>

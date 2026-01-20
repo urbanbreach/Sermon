@@ -4,40 +4,10 @@
     currentTrack, playbackState, togglePlayPause, next, previous, 
     volume, setVolume, playbackError, switchToDefault, progress, audioDebug 
   } from '../state/playback';
-  import { getArtworkBestForTrack, getArtworkBytes } from '../api/artwork';
+  import { currentArtworkUrl } from '../state/artwork';
+  import { SkipBack, Pause, Play, SkipForward, Volume2 } from '@lucide/svelte';
 
-  let artworkUrl: string | null = $state(null);
-  let lastTrackId: number | null = $state(null);
   let isUnity = $derived($audioDebug?.policy === 'strict' && $audioDebug?.output_mode === 'exclusive');
-
-  async function loadArtwork(track: typeof $currentTrack) {
-    if (!track) {
-      artworkUrl = null;
-      lastTrackId = null;
-      return;
-    }
-
-    // Skip if same track
-    if (track.id === lastTrackId && artworkUrl) return;
-    lastTrackId = track.id;
-
-    try {
-      const best = await getArtworkBestForTrack(track.id);
-      if (best.source !== 'none' && best.cacheKey && best.mime) {
-        const bytes = await getArtworkBytes(best.cacheKey, best.mime);
-        artworkUrl = `data:${bytes.mime};base64,${bytes.bytesBase64}`;
-      } else {
-        artworkUrl = null;
-      }
-    } catch (e) {
-      console.error('Failed to load track artwork:', e);
-      artworkUrl = null;
-    }
-  }
-
-  $effect(() => {
-    loadArtwork($currentTrack);
-  });
 
   function openNowPlaying() {
     navigate({ name: 'now-playing' });
@@ -59,14 +29,14 @@
   </div>
 {/if}
 
-<div class="bottom-bar" onclick={openNowPlaying} role="button" tabindex="0" onkeypress={handleKey}>
+<div class="bottom-bar" onclick={openNowPlaying} role="button" tabindex="0" onkeypress={handleKey} data-testid="glass-panel">
   <div class="progress-bar-container">
     <div class="progress-bar-fill" style="width: {$progress * 100}%"></div>
   </div>
 
   <div class="now-playing-info">
-    {#if artworkUrl}
-      <img src={artworkUrl} alt="" class="artwork" />
+    {#if $currentArtworkUrl}
+      <img src={$currentArtworkUrl} alt="" class="artwork" />
     {:else}
       <div class="placeholder-art"></div>
     {/if}
@@ -85,18 +55,26 @@
   </div>
 
   <div class="controls" onclick={(e) => e.stopPropagation()}>
-    <button class="control-btn" onclick={previous}>⏮</button>
-    <button class="control-btn play" onclick={togglePlayPause}>
-      {#if $playbackState === 'playing'} ⏸ {:else} ▶ {/if}
+    <button class="control-btn" onclick={previous}>
+      <SkipBack size={24} fill="currentColor" />
     </button>
-    <button class="control-btn" onclick={next}>⏭</button>
+    <button class="control-btn play" onclick={togglePlayPause}>
+      {#if $playbackState === 'playing'} 
+        <Pause size={32} fill="currentColor" /> 
+      {:else} 
+        <Play size={32} fill="currentColor" /> 
+      {/if}
+    </button>
+    <button class="control-btn" onclick={next}>
+      <SkipForward size={24} fill="currentColor" />
+    </button>
   </div>
 
   <div class="volume" onclick={(e) => e.stopPropagation()}>
     {#if isUnity}
       <span class="vol-label-unity">Unity</span>
     {:else}
-      <span class="vol-icon">🔊</span>
+      <span class="vol-icon"><Volume2 size={20} /></span>
     {/if}
     <input 
       type="range" 
@@ -133,7 +111,7 @@
   }
 
   .bottom-bar {
-    height: 80px;
+    height: var(--layout-player-height);
     background: var(--glass-bg);
     backdrop-filter: blur(var(--glass-blur));
     border-top: 1px solid var(--glass-border);
@@ -235,7 +213,6 @@
   }
 
   .play {
-    font-size: 1.8rem;
     width: 40px;
     height: 40px;
   }
@@ -249,7 +226,8 @@
   }
   
   .vol-icon {
-    font-size: 1.2rem;
+    display: flex;
+    align-items: center;
   }
 
   input[type=range] {

@@ -1,8 +1,76 @@
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+  font-family: 'Inter Variable', Inter, system-ui, sans-serif;
+  font-feature-settings: 'tnum' 1; /* tabular numerals */
+  
+  /* Layout tokens */
+  --layout-sidebar-width: 240px;
+  --layout-rail-width: 300px;
+  --layout-header-height: 44px;
+  --layout-player-height: 84px;
+  --layout-content-pad-x: 32px;
+  --layout-content-pad-y: 24px;
+  
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 48px;
+  --space-10: 64px;
+  
+  /* Radii */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+  
+  /* Glass (updated) */
+  --glass-blur: 18px;
+  --glass-bg: rgba(14, 14, 18, 0.32);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-highlight: rgba(255, 255, 255, 0.12);
+  --glass-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  
+  /* Typography scale */
+  --text-meta: 12px;
+  --text-table-header: 13px;
+  --text-body: 14px;
+  --text-label: 16px;
+  --text-section: 18px;
+  --text-view-title: 22px;
+  --text-album-title: 28px;
+  --text-now-playing: 36px;
+  --text-lyric-active: 44px;
+  --text-lyric-context: 22px;
+  
+  /* Icon sizes */
+  --icon-sm: 16px;
+  --icon-md: 20px;
+  --icon-lg: 24px;
+  --icon-xl: 32px;
+  --icon-2xl: 40px;
+  
+  /* Table tokens */
+  --table-header-height: 28px;
+  --table-row-height: 36px;
+  --table-cell-gap: 12px;
+  
+  /* Background tokens */
+  --bg-intensity: 0.35;
+  --bg-noise-opacity: 0.18;
+  --bg-crossfade-ms: 1200;
+  
+  /* Scrollbar tokens */
+  --scrollbar-track: rgba(255, 255, 255, 0.06);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.18);
 
+  /* Color scheme */
   color-scheme: dark;
   color: rgba(255, 255, 255, 0.87);
   background-color: #0a0a0a;
@@ -12,14 +80,6 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  /* Liquid-glass tokens */
-  --glass-bg: rgba(18, 20, 24, 0.60);
-  --glass-border: rgba(255, 255, 255, 0.12);
-  --glass-highlight: rgba(255, 255, 255, 0.08);
-  --glass-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
-  --glass-blur: 16px;
-  --glass-radius: 12px;
-
   /* Dynamic theme tokens (defaults - overridden by dynamicTheme.ts) */
   --theme-accent: rgb(74, 175, 255);
   --theme-bg-0: rgb(24, 32, 44);
@@ -27,6 +87,21 @@
   --theme-accent-r: 74;
   --theme-accent-g: 175;
   --theme-accent-b: 255;
+}
+
+/* Font face */
+@font-face {
+  font-family: 'Inter Variable';
+  src: url('/fonts/InterVariable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Inter Variable';
+  src: url('/fonts/InterVariable-Italic.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
 }
 
 body {
@@ -59,14 +134,38 @@ body {
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #111; 
-}
-::-webkit-scrollbar-thumb {
-  background: #333; 
+  background: var(--scrollbar-track, rgba(255, 255, 255, 0.06));
   border-radius: 4px;
 }
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, rgba(255, 255, 255, 0.18));
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
 ::-webkit-scrollbar-thumb:hover {
-  background: #444; 
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* Focus styles */
+:focus-visible {
+  outline: 2px solid rgba(74, 175, 255, 0.6);
+  outline-offset: 2px;
+}
+
+/* Button base hover/press states */
+button {
+  transition: all 0.15s ease;
+}
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Reduce motion mode */
+.reduce-effects,
+.reduce-effects * {
+  transition-duration: 0.01ms !important;
+  animation-duration: 0.01ms !important;
 }
