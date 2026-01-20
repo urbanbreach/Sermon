@@ -42,7 +42,33 @@ fn test_in_memory_migration() {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 3);
+    assert_eq!(version, 4);
+}
+
+#[test]
+fn test_artwork_cache_tables_exist() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    apply_migrations(&conn).unwrap();
+
+    // Verify artwork_cache_map_album table exists
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='artwork_cache_map_album'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
+
+    // Verify artwork_cache_map_track table exists
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='artwork_cache_map_track'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
 }
 
 #[test]
