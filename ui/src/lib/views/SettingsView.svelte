@@ -3,12 +3,16 @@
   import { onMount } from 'svelte';
   import { folders, selectedFolderId, scanStatus, scanProgress, scanError, addFolder, startScan } from '../state/library';
   import { devices, currentDevice, loadDevices, selectDevice, outputSettings, loadOutputSettings, saveOutputSettings } from '../state/playback';
+  import { reduceEffects, themeBlur, themeGlow, themeBorderHighlight, providerItunes, providerDeezer, loadEffectsSettings, setReduceEffects, setThemeBlur, setThemeGlow, setThemeBorderHighlight, setProviderItunes, setProviderDeezer } from '../state/effects';
 
   const isMock = import.meta.env.SERMON_MOCK === '1';
 
   onMount(() => {
     loadDevices();
     loadOutputSettings();
+    if (!isMock) {
+      loadEffectsSettings();
+    }
   });
 
   async function handleAddFolder() {
@@ -42,7 +46,10 @@
         <div 
           class="folder-item" 
           class:selected={$selectedFolderId === folder.id}
-          on:click={() => selectedFolderId.set(folder.id)}
+          onclick={() => selectedFolderId.set(folder.id)}
+          role="button"
+          tabindex="0"
+          onkeydown={(e) => e.key === 'Enter' && selectedFolderId.set(folder.id)}
         >
           <span class="folder-path">{folder.path}</span>
           <span class="folder-status">{folder.enabled ? '✓' : '○'}</span>
@@ -53,12 +60,12 @@
     </div>
 
     <div class="folder-actions">
-      <button class="btn" on:click={handleAddFolder} disabled={isMock}>
+      <button class="btn" onclick={handleAddFolder} disabled={isMock}>
         Add Folder
       </button>
       <button 
         class="btn" 
-        on:click={handleRescan} 
+        onclick={handleRescan} 
         disabled={isMock || $scanStatus === 'scanning' || $folders.length === 0}
       >
         {$scanStatus === 'scanning' ? 'Scanning...' : 'Rescan'}
@@ -95,10 +102,11 @@
   <div class="section">
     <h2>Audio</h2>
     <div class="setting">
-      <label>Output Device</label>
+      <label for="output-device">Output Device</label>
       <select 
+        id="output-device"
         value={$currentDevice?.id || 'default'} 
-        on:change={(e) => selectDevice(e.currentTarget.value)}
+        onchange={(e) => selectDevice(e.currentTarget.value)}
       >
         <option value="default">Default Output</option>
         {#each $devices as device}
@@ -112,10 +120,11 @@
 
     {#if $outputSettings}
       <div class="setting">
-        <label>Output Mode</label>
+        <label for="output-mode">Output Mode</label>
         <select 
+          id="output-mode"
           value={$outputSettings.mode} 
-          on:change={(e) => saveOutputSettings({ ...$outputSettings!, mode: e.currentTarget.value as 'exclusive' | 'shared' })}
+          onchange={(e) => saveOutputSettings({ ...$outputSettings!, mode: e.currentTarget.value as 'exclusive' | 'shared' })}
         >
           <option value="shared">Shared (Windows Mixer)</option>
           <option value="exclusive">Exclusive (Bit-Perfect)</option>
@@ -123,10 +132,11 @@
       </div>
 
       <div class="setting">
-        <label>Policy</label>
+        <label for="output-policy">Policy</label>
         <select 
+          id="output-policy"
           value={$outputSettings.policy} 
-          on:change={(e) => saveOutputSettings({ ...$outputSettings!, policy: e.currentTarget.value as 'strict' | 'compatibility' })}
+          onchange={(e) => saveOutputSettings({ ...$outputSettings!, policy: e.currentTarget.value as 'strict' | 'compatibility' })}
         >
           <option value="strict">Strict (Exact Match)</option>
           <option value="compatibility">Compatibility (Allow Conversion)</option>
@@ -134,10 +144,11 @@
       </div>
 
       <div class="setting">
-        <label>Timing Mode</label>
+        <label for="timing-mode">Timing Mode</label>
         <select 
+          id="timing-mode"
           value={$outputSettings.timing} 
-          on:change={(e) => saveOutputSettings({ ...$outputSettings!, timing: e.currentTarget.value as 'event' | 'polling' })}
+          onchange={(e) => saveOutputSettings({ ...$outputSettings!, timing: e.currentTarget.value as 'event' | 'polling' })}
         >
           <option value="polling">Polling (USB Compatible)</option>
           <option value="event">Event-Driven</option>
@@ -149,7 +160,7 @@
           <input 
             type="checkbox" 
             checked={$outputSettings.fade} 
-            on:change={(e) => saveOutputSettings({ ...$outputSettings!, fade: e.currentTarget.checked })}
+            onchange={(e) => saveOutputSettings({ ...$outputSettings!, fade: e.currentTarget.checked })}
           />
           Enable fade on format switch
         </label>
@@ -160,10 +171,90 @@
   <div class="section">
     <h2>Theme</h2>
     <div class="setting">
-      <label>Mode</label>
-      <select disabled>
+      <label for="theme-mode">Mode</label>
+      <select id="theme-mode" disabled>
         <option>Dark (Default)</option>
       </select>
+    </div>
+
+    <div class="setting">
+      <label>
+        <input 
+          type="checkbox" 
+          checked={$reduceEffects}
+          onchange={(e) => setReduceEffects(e.currentTarget.checked)}
+          disabled={isMock}
+        />
+        Reduce Motion / Reduce Transparency
+      </label>
+      <span class="setting-hint">Disables blur, glow, and animation effects for better performance</span>
+    </div>
+
+    {#if !$reduceEffects}
+      <div class="setting sub-setting">
+        <label>
+          <input 
+            type="checkbox" 
+            checked={$themeBlur}
+            onchange={(e) => setThemeBlur(e.currentTarget.checked)}
+            disabled={isMock}
+          />
+          Glass Blur Effect
+        </label>
+      </div>
+
+      <div class="setting sub-setting">
+        <label>
+          <input 
+            type="checkbox" 
+            checked={$themeGlow}
+            onchange={(e) => setThemeGlow(e.currentTarget.checked)}
+            disabled={isMock}
+          />
+          Theme Glow Effect
+        </label>
+      </div>
+
+      <div class="setting sub-setting">
+        <label>
+          <input 
+            type="checkbox" 
+            checked={$themeBorderHighlight}
+            onchange={(e) => setThemeBorderHighlight(e.currentTarget.checked)}
+            disabled={isMock}
+          />
+          Border Highlight Effect
+        </label>
+      </div>
+    {/if}
+  </div>
+
+  <div class="section">
+    <h2>Artwork Providers</h2>
+    <span class="setting-hint section-hint">Enable or disable artwork sources. Disabling providers can help if you experience rate limiting.</span>
+    
+    <div class="setting">
+      <label>
+        <input 
+          type="checkbox" 
+          checked={$providerItunes}
+          onchange={(e) => setProviderItunes(e.currentTarget.checked)}
+          disabled={isMock}
+        />
+        iTunes Search API
+      </label>
+    </div>
+
+    <div class="setting">
+      <label>
+        <input 
+          type="checkbox" 
+          checked={$providerDeezer}
+          onchange={(e) => setProviderDeezer(e.currentTarget.checked)}
+          disabled={isMock}
+        />
+        Deezer API
+      </label>
     </div>
   </div>
 </div>
@@ -283,5 +374,16 @@
     border-radius: 4px;
     color: #f88;
     font-size: 0.85rem;
+  }
+  .setting-hint {
+    font-size: 0.8rem;
+    color: #888;
+  }
+  .section-hint {
+    display: block;
+    margin-bottom: 1rem;
+  }
+  .sub-setting {
+    margin-left: 1.5rem;
   }
 </style>

@@ -58,13 +58,13 @@
     <thead>
       <tr>
         <th>#</th>
-        <th class="sortable" on:click={() => handleSort('title')}>
+        <th class="sortable" onclick={() => handleSort('title')}>
           Title{getSortIndicator('title')}
         </th>
-        <th class="sortable" on:click={() => handleSort('artist')}>
+        <th class="sortable" onclick={() => handleSort('artist')}>
           Artist{getSortIndicator('artist')}
         </th>
-        <th class="sortable" on:click={() => handleSort('album')}>
+        <th class="sortable" onclick={() => handleSort('album')}>
           Album{getSortIndicator('album')}
         </th>
         <th>Duration</th>
@@ -75,7 +75,7 @@
     </thead>
     <tbody>
       {#each $tracks as track, i}
-        <tr class:missing={track.is_missing} on:dblclick={() => !track.is_missing && playNow(track.id)}>
+        <tr class:missing={track.is_missing} ondblclick={() => !track.is_missing && playNow(track.id)}>
           <td>{i + 1}</td>
           <td>{track.title || 'Unknown'}</td>
           <td>{track.artist || 'Unknown'}</td>
@@ -84,9 +84,9 @@
           <td>{track.sample_rate ? `${track.sample_rate / 1000}kHz` : '--'}</td>
           <td>{track.bit_depth ? `${track.bit_depth}-bit` : '--'}</td>
           <td class="actions">
-            <button class="icon-btn" title="Play Now" on:click|stopPropagation={() => playNow(track.id)}>▶</button>
-            <button class="icon-btn" title="Add to Queue" on:click|stopPropagation={() => addToQueue(track.id)}>+</button>
-            <button class="icon-btn" title="Edit Tags" on:click|stopPropagation={() => openTagEditor(track)}>✎</button>
+            <button class="icon-btn" title="Play Now" onclick={(e) => { e.stopPropagation(); playNow(track.id); }}>▶</button>
+            <button class="icon-btn" title="Add to Queue" onclick={(e) => { e.stopPropagation(); addToQueue(track.id); }}>+</button>
+            <button class="icon-btn" title="Edit Tags" onclick={(e) => { e.stopPropagation(); openTagEditor(track); }}>✎</button>
           </td>
         </tr>
       {:else}
