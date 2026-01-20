@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { TrackRow, LibraryFolder, SortBy, SortDirection, SearchSuggestResponse, AlbumListItem, AlbumCursor, Page, ArtistListItem, ArtistCursor, AlbumTrackCursor, OffsetCursor, LibraryStats, UpdateTrackTagsRequest, RawTagsResult } from '../types/library';
+import { Fixtures } from '../data/fixtures';
 
 export async function addFolder(path: string): Promise<LibraryFolder> {
   return invoke('cmd_library_add_folder', { path });
@@ -22,6 +23,55 @@ export async function searchSuggest(query: string, limit?: number): Promise<Sear
 }
 
 export async function listAlbumsPage(limit: number, cursor?: AlbumCursor): Promise<Page<AlbumListItem, AlbumCursor>> {
+  // Mock mode: return fixture-derived data
+  if (import.meta.env.SERMON_MOCK === '1') {
+    const albums = Fixtures.getAlbums();
+    const artists = Fixtures.getArtists();
+    
+    // Map albums to AlbumListItem with proper sorting fields
+    const items: AlbumListItem[] = albums.map(album => {
+      const artist = artists.find(a => a.id === album.artistId);
+      const albumTitleDisplay = (album.title && album.title.trim()) || 'Unknown Album';
+      const albumArtistDisplay = (artist?.name && artist.name.trim()) || 'Unknown Artist';
+      const albumTitleSort = (album.title && album.title.trim().toLowerCase()) || 'unknown album';
+      const albumArtistSort = (artist?.name && artist.name.trim().toLowerCase()) || 'unknown artist';
+      
+      return {
+        albumTitleDisplay,
+        albumArtistDisplay,
+        albumTitleSort,
+        albumArtistSort,
+        year: album.year === 0 ? undefined : album.year,
+        trackCount: album.trackIds.length,
+      };
+    });
+    
+    // Sort by (albumArtistSort, albumTitleSort)
+    items.sort((a, b) => {
+      const artistCmp = a.albumArtistSort.localeCompare(b.albumArtistSort);
+      if (artistCmp !== 0) return artistCmp;
+      return a.albumTitleSort.localeCompare(b.albumTitleSort);
+    });
+    
+    // Apply cursor logic
+    let startIndex = 0;
+    if (cursor) {
+      startIndex = items.findIndex(item => 
+        item.albumArtistSort > cursor.albumArtistSort ||
+        (item.albumArtistSort === cursor.albumArtistSort && item.albumTitleSort > cursor.albumTitleSort)
+      );
+      if (startIndex === -1) startIndex = items.length;
+    }
+    
+    const pageItems = items.slice(startIndex, startIndex + limit);
+    const hasMore = startIndex + limit < items.length;
+    const nextCursor: AlbumCursor | undefined = hasMore && pageItems.length > 0
+      ? { albumArtistSort: pageItems[pageItems.length - 1].albumArtistSort, albumTitleSort: pageItems[pageItems.length - 1].albumTitleSort }
+      : undefined;
+    
+    return { items: pageItems, nextCursor };
+  }
+  
   return invoke('cmd_library_list_albums_page', { request: { limit, cursor } });
 }
 

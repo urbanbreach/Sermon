@@ -1,6 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import { listen } from '@tauri-apps/api/event';
-import type { TrackRow, LibraryFolder, ScanProgress, ScanComplete, SortBy, SortDirection } from '../types/library';
+import type { TrackRow, LibraryFolder, ScanProgress, ScanComplete, QuickScanComplete, SortBy, SortDirection } from '../types/library';
 import * as api from '../api/library';
 import { Fixtures } from '../data/fixtures';
 
@@ -137,6 +137,21 @@ export function initEventListeners(): void {
     
     // Reload tracks after scan
     loadTracks();
+  });
+
+  // Listen for quick scan completion (startup scan)
+  listen<QuickScanComplete>('evt_quick_scan_complete', (event) => {
+    const { filesAdded, filesMarkedMissing, filesRestored } = event.payload;
+    console.log(`Quick scan complete: +${filesAdded} added, -${filesMarkedMissing} missing, ↺${filesRestored} restored`);
+    
+    // Reload library data if any changes were detected
+    if (filesAdded > 0 || filesMarkedMissing > 0 || filesRestored > 0) {
+      loadTracks();
+      // Dispatch event for views to refresh
+      window.dispatchEvent(new CustomEvent('sermon:library-changed', { 
+        detail: event.payload 
+      }));
+    }
   });
 }
 

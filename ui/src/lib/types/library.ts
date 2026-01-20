@@ -40,6 +40,15 @@ export interface ScanComplete {
   elapsed_ms: number;
 }
 
+export interface QuickScanComplete {
+  foldersChecked: number;
+  filesChecked: number;
+  filesAdded: number;
+  filesMarkedMissing: number;
+  filesRestored: number;
+  elapsedMs: number;
+}
+
 export type SortBy = 'title' | 'artist' | 'album';
 export type SortDirection = 'asc' | 'desc';
 
