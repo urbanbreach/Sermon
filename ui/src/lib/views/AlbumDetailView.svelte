@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { currentRoute, goBack, canGoBack } from '../state/route';
+  import { onMount, onDestroy } from 'svelte';
+  import { currentRoute, goBack, canGoBack, navigate } from '../state/route';
   import { playNow, addToQueue } from '../state/playback';
   import { listAlbumTracksPage } from '../api/library';
+  import { getArtworkBestForAlbum, getArtworkBytes } from '../api/artwork';
   import type { TrackRow, AlbumTrackCursor } from '../types/library';
 
   let tracks = $state<TrackRow[]>([]);
@@ -10,6 +11,7 @@
   let loadError = $state<string | null>(null);
   let nextCursor = $state<AlbumTrackCursor | undefined>(undefined);
   let hasLoaded = $state(false);
+  let artworkUrl: string | null = $state(null);
   
   // Get route params once on mount to avoid reactive loops
   let albumArtistSort = '';
@@ -22,6 +24,17 @@
   let totalTracks = $derived(tracks.length);
   let totalDuration = $derived(tracks.reduce((acc, t) => acc + (t.duration_ms || 0), 0));
 
+  // Handler for track marked missing event
+  function handleTrackMarkedMissing(event: CustomEvent) {
+    const { track_id } = event.detail;
+    // Check if the missing track is in our current list
+    const trackIndex = tracks.findIndex(t => t.id === track_id);
+    if (trackIndex !== -1) {
+      // Reload tracks - the backend will filter out missing tracks
+      loadTracks();
+    }
+  }
+
   onMount(() => {
     // Extract route params on mount only
     const route = $currentRoute;
@@ -29,8 +42,33 @@
       albumArtistSort = route.albumArtistSort;
       albumTitleSort = route.albumTitleSort;
       loadTracks();
+      loadArtwork();
     }
+    
+    // Listen for track marked missing events
+    window.addEventListener('sermon:track-marked-missing', handleTrackMarkedMissing as EventListener);
   });
+
+  onDestroy(() => {
+    window.removeEventListener('sermon:track-marked-missing', handleTrackMarkedMissing as EventListener);
+  });
+
+  async function loadArtwork() {
+    if (!albumArtistSort || !albumTitleSort) return;
+
+    try {
+      const best = await getArtworkBestForAlbum(albumArtistSort, albumTitleSort);
+      if (best.source !== 'none' && best.cacheKey && best.mime) {
+        const bytes = await getArtworkBytes(best.cacheKey, best.mime);
+        artworkUrl = `data:${bytes.mime};base64,${bytes.bytesBase64}`;
+      } else {
+        artworkUrl = null;
+      }
+    } catch (e) {
+      console.error('Failed to load album artwork:', e);
+      artworkUrl = null;
+    }
+  }
 
   async function loadTracks() {
     if (!albumArtistSort || !albumTitleSort) return;
@@ -49,6 +87,11 @@
       tracks = page.items;
       nextCursor = page.nextCursor;
       hasLoaded = true;
+      
+      // If no tracks remain (all marked missing), navigate back to albums
+      if (tracks.length === 0 && hasLoaded) {
+        navigate({ name: 'albums' });
+      }
     } catch (e) {
       console.error('Failed to load album tracks:', e);
       loadError = e instanceof Error ? e.message : 'Failed to load tracks';
@@ -97,12 +140,18 @@
   </div>
 
   <div class="album-header">
-    <div class="artwork-placeholder">
-      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <circle cx="12" cy="12" r="10"/>
-        <circle cx="12" cy="12" r="3"/>
-      </svg>
-    </div>
+    {#if artworkUrl}
+      <div class="artwork">
+        <img src={artworkUrl} alt="Album artwork" />
+      </div>
+    {:else}
+      <div class="artwork-placeholder">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </div>
+    {/if}
     <div class="album-info">
       <h1>{albumDisplay}</h1>
       <div class="meta">
@@ -213,6 +262,21 @@
     display: flex;
     gap: 2rem;
     align-items: flex-end;
+  }
+  
+  .artwork {
+    width: 200px;
+    height: 200px;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  
+  .artwork img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
   
   .artwork-placeholder {
