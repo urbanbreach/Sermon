@@ -3,10 +3,11 @@ import { listen } from '@tauri-apps/api/event';
 import type {
   PlaybackStateEvent, NowPlayingEvent, PlaybackPositionEvent,
   QueueChangedEvent, DeviceChangedEvent, AudioDebugEvent, PlaybackErrorEvent,
-  TrackEventData, QueueItemData
+  TrackEventData, QueueItemData, TrackMarkedMissingEvent
 } from '../types/playback';
 import * as api from '../api/playback';
 import type { AudioOutputSettings } from '../api/playback';
+import { Fixtures } from '../data/fixtures';
 
 // Core state
 export const playbackState = writable<'playing' | 'paused' | 'stopped'>('stopped');
@@ -131,6 +132,28 @@ export async function saveOutputSettings(settings: AudioOutputSettings) {
 
 // Event listeners
 export function initPlaybackListeners(): void {
+  // Snapshot mode: seed stores deterministically and return immediately
+  if (import.meta.env.SERMON_MOCK === '1' && import.meta.env.SERMON_SNAPSHOT === '1') {
+    const fixtureTrack = Fixtures.getTracks()[0];
+    const artist = Fixtures.getArtist(fixtureTrack.artistId);
+    const album = Fixtures.getAlbum(fixtureTrack.albumId);
+    
+    currentTrack.set({
+      id: 0, // 0-based fixture index
+      title: fixtureTrack.title,
+      artist: artist?.name ?? '',
+      album: album?.title ?? '',
+      duration_ms: fixtureTrack.durationMs,
+    });
+    playbackState.set('playing');
+    durationMs.set(fixtureTrack.durationMs);
+    positionMs.set(0);
+    queue.set([]);
+    currentIndex.set(null);
+    
+    return; // No listeners, no API calls
+  }
+
   listen<PlaybackStateEvent>('evt_playback_state', (event) => {
     playbackState.set(event.payload.state as 'playing' | 'paused' | 'stopped');
     playId.set(event.payload.play_id);
@@ -167,6 +190,15 @@ export function initPlaybackListeners(): void {
 
   listen<PlaybackErrorEvent>('evt_playback_error', (event) => {
     playbackError.set(event.payload);
+  });
+
+  // Listen for tracks marked as missing - triggers library refresh
+  listen<TrackMarkedMissingEvent>('evt_track_marked_missing', (event) => {
+    console.warn(`Track marked missing: ${event.payload.path} (ID: ${event.payload.track_id})`);
+    // Dispatch custom event that views can listen to for refresh
+    window.dispatchEvent(new CustomEvent('sermon:track-marked-missing', { 
+      detail: event.payload 
+    }));
   });
 
   // Load initial volume

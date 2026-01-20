@@ -85,3 +85,8 @@ export interface PlaybackErrorEvent {
   recoverable: boolean;
   action?: PlaybackErrorAction;
 }
+
+export interface TrackMarkedMissingEvent {
+  track_id: number;
+  path: string;
+}
