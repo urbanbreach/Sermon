@@ -16,5 +16,5 @@ pub use db::{
     get_audio_output_policy, get_audio_output_timing, get_audio_volume, get_setting,
     get_track_by_id, set_setting,
 };
-pub use models::{LibraryFolder, TrackRow};
-pub use scanner::scan_folder;
+pub use models::{LibraryFolder, QuickScanSummary, TrackRow};
+pub use scanner::{quick_scan, scan_folder};

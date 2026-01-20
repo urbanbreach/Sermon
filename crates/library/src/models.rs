@@ -190,6 +190,18 @@ pub struct LibraryStats {
     pub last_scan_completed_ms: Option<i64>,
 }
 
+/// Quick scan summary (startup scan)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickScanSummary {
+    pub folders_checked: u32,
+    pub files_checked: u32,
+    pub files_added: u32,
+    pub files_marked_missing: u32,
+    pub files_restored: u32,
+    pub elapsed_ms: u64,
+}
+
 // ============================================================================
 // Search DTOs (Milestone 04)
 // ============================================================================
