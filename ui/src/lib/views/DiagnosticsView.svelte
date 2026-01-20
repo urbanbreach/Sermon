@@ -13,7 +13,7 @@
   let harnessModalOpen = $state(false);
   let harnessInput = $state('');
   let harnessCheckbox = $state(false);
-  let openButtonRef: HTMLButtonElement;
+  let openButtonRef = $state<HTMLButtonElement | null>(null);
 
   // Track active element for focus debug display
   let activeElementInfo = $state('');
