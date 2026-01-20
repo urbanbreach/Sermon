@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, type Snippet } from 'svelte';
+  import { X } from '@lucide/svelte';
 
   interface Props {
     open: boolean;
@@ -114,7 +115,7 @@
       <div class="modal-header">
         <h2 id={titleId}>{title}</h2>
         {#if !preventClose}
-          <button class="close-btn" onclick={onclose} aria-label="Close">×</button>
+          <button class="close-btn" onclick={onclose} aria-label="Close"><X size={18} /></button>
         {/if}
       </div>
       <div class="modal-body">

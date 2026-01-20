@@ -4,6 +4,7 @@
   import { playNow, addToQueue } from '../state/playback';
   import { searchTracksPage, searchAlbumsPage, searchArtistsPage } from '../api/library';
   import type { TrackRow, AlbumListItem, ArtistListItem, OffsetCursor, AlbumCursor, ArtistCursor } from '../types/library';
+  import { ArrowLeft } from '@lucide/svelte';
 
   let query = $derived(
     $currentRoute.name === 'search-results' ? $currentRoute.query : ''
@@ -169,7 +170,7 @@
   }
 
   function formatTime(ms?: number) {
-    if (!ms) return '--:--';
+    if (!ms) return '—';
     const seconds = Math.floor(ms / 1000);
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -179,7 +180,7 @@
 
 <div class="search-results-view">
   <header>
-    <button class="back-btn" onclick={goBack} aria-label="Go back">←</button>
+    <button class="back-btn" onclick={goBack} aria-label="Go back"><ArrowLeft size={18} /></button>
     <h1>Results for "{query}"</h1>
   </header>
 
@@ -286,7 +287,7 @@
     overflow-y: auto;
     padding: 2rem;
     box-sizing: border-box;
-    background: var(--bg-color, #0a0a0a);
+    background: transparent;
     color: #fff;
   }
 
@@ -298,31 +299,39 @@
   }
 
   .back-btn {
-    background: none;
-    border: none;
-    color: #fff;
-    font-size: 1.5rem;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    color: #ccc;
+    font-size: 1rem;
     cursor: pointer;
-    padding: 0.5rem;
-    border-radius: 50%;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    transition: all 0.2s;
+    box-shadow: var(--glass-shadow);
   }
 
   .back-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--glass-border);
+    color: #fff;
+    transform: translateX(-2px);
   }
 
   h1 {
-    font-size: 1.8rem;
+    font-size: 24px;
+    font-weight: 600;
     margin: 0;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
   }
 
   h2 {
-    font-size: 1.2rem;
-    color: #888;
+    font-size: 14px;
+    color: #aaa;
     margin-bottom: 1rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--glass-border);
     padding-bottom: 0.5rem;
   }
 
@@ -357,7 +366,10 @@
     width: 120px;
     height: 120px;
     border-radius: 50%;
-    background: #333;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -365,16 +377,18 @@
     font-weight: bold;
     color: #555;
     overflow: hidden;
+    box-shadow: var(--glass-shadow);
   }
 
   .artist-name {
     text-align: center;
     font-weight: 500;
-    font-size: 0.95rem;
+    font-size: 14px;
     width: 100%;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
   }
 
   /* Albums - Grid */
@@ -385,15 +399,20 @@
   }
 
   .album-card {
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 8px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border-radius: var(--glass-radius);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
     overflow: hidden;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), border-color 0.2s;
   }
 
   .album-card:hover {
-    background: rgba(255, 255, 255, 0.08);
+    transform: translateY(-4px);
+    border-color: rgba(255,255,255,0.3);
   }
 
   .album-art {
@@ -412,6 +431,8 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    font-size: 14px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
   }
 
   .album-artist {
@@ -439,14 +460,18 @@
     display: flex;
     align-items: center;
     padding: 0.8rem;
-    background: rgba(255, 255, 255, 0.02);
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
     border-radius: 6px;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background 0.2s, border-color 0.2s;
   }
 
   .track-row:hover {
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--glass-highlight);
+    border-color: rgba(255,255,255,0.3);
   }
 
   .track-main {
@@ -460,6 +485,8 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    font-size: 14px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
   }
 
   .track-details {
@@ -484,7 +511,7 @@
   }
 
   .queue-btn {
-    background: none;
+    background: transparent;
     border: 1px solid rgba(255, 255, 255, 0.2);
     color: #fff;
     width: 28px;

@@ -6,6 +6,7 @@
   import { updateTrackTags } from '../api/library';
   import { loadTracks } from '../state/library';
   import type { TrackRow, TagPatch, NumberPatch, TagWriteStatusEvent } from '../types/library';
+  import { X } from '@lucide/svelte';
 
   interface Props {
     track: TrackRow | null;
@@ -267,7 +268,7 @@
               onclick={() => clearField('title')}
               disabled={saving || clearedFields.has('title')}
               title="Clear field"
-            >×</button>
+            ><X size={14} /></button>
           </div>
         </div>
 
@@ -289,7 +290,7 @@
               onclick={() => clearField('artist')}
               disabled={saving || clearedFields.has('artist')}
               title="Clear field"
-            >×</button>
+            ><X size={14} /></button>
           </div>
         </div>
 
@@ -311,7 +312,7 @@
               onclick={() => clearField('album')}
               disabled={saving || clearedFields.has('album')}
               title="Clear field"
-            >×</button>
+            ><X size={14} /></button>
           </div>
         </div>
 
@@ -333,7 +334,7 @@
               onclick={() => clearField('albumArtist')}
               disabled={saving || clearedFields.has('albumArtist')}
               title="Clear field"
-            >×</button>
+            ><X size={14} /></button>
           </div>
         </div>
 
@@ -355,7 +356,7 @@
               onclick={() => clearField('genre')}
               disabled={saving || clearedFields.has('genre')}
               title="Clear field"
-            >×</button>
+            ><X size={14} /></button>
           </div>
         </div>
 
@@ -378,7 +379,7 @@
               onclick={() => clearField('trackNo')}
               disabled={saving || clearedFields.has('trackNo')}
               title="Clear field"
-            >×</button>
+            ><X size={14} /></button>
           </div>
         </div>
 
@@ -401,7 +402,7 @@
               onclick={() => clearField('discNo')}
               disabled={saving || clearedFields.has('discNo')}
               title="Clear field"
-            >×</button>
+            ><X size={14} /></button>
           </div>
         </div>
 
@@ -424,7 +425,7 @@
               onclick={() => clearField('year')}
               disabled={saving || clearedFields.has('year')}
               title="Clear field"
-            >×</button>
+            ><X size={14} /></button>
           </div>
         </div>
       </div>
