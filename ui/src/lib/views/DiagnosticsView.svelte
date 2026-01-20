@@ -4,6 +4,7 @@
   import { getLibraryStats } from '../api/library';
   import type { LibraryStats } from '../types/library';
   import Modal from '../components/Modal.svelte';
+  import { Activity, Settings, Cpu, ArrowRight, Database, CheckCircle, AlertTriangle, XCircle } from '@lucide/svelte';
 
   let debug = $derived($audioDebug);
   let stats: LibraryStats | null = $state(null);
@@ -59,12 +60,12 @@
 </script>
 
 <div class="view-container">
-  <h1>Audio Diagnostics</h1>
+  <h1><Activity size={24} /> Audio Diagnostics</h1>
 
   <div class="grid">
     <!-- Status Card -->
     <div class="card status-card">
-      <h2>Playback Status</h2>
+      <h2><CheckCircle size={16} /> Playback Status</h2>
       <div class="status-indicator" class:bit-perfect={debug?.bit_perfect === 'yes'}>
         <div class="dot"></div>
         <span class="label">Bit-Perfect:</span>
@@ -72,6 +73,7 @@
       </div>
       {#if debug?.bit_perfect === 'no'}
         <div class="reason">
+          <AlertTriangle size={14} />
           Reason: {debug?.bit_perfect_reason || 'Unknown'}
         </div>
       {/if}
@@ -79,14 +81,14 @@
 
     <!-- Configuration -->
     <div class="card">
-      <h2>Configuration</h2>
+      <h2><Settings size={16} /> Configuration</h2>
       <div class="row">
         <span class="label">Output Mode</span>
-        <span class="value">{debug?.output_mode || '-'}</span>
+        <span class="value">{debug?.output_mode || '—'}</span>
       </div>
       <div class="row">
         <span class="label">Policy</span>
-        <span class="value">{debug?.policy || '-'}</span>
+        <span class="value">{debug?.policy || '—'}</span>
       </div>
       <div class="row">
         <span class="label">Exclusive Active</span>
@@ -96,7 +98,7 @@
 
     <!-- Processing -->
     <div class="card">
-      <h2>Processing</h2>
+      <h2><Cpu size={16} /> Processing</h2>
       <div class="row">
         <span class="label">Conversion</span>
         <span class="value" class:warn={debug?.conversion !== 'none'}>
@@ -105,7 +107,7 @@
       </div>
       <div class="row">
         <span class="label">Gain Mode</span>
-        <span class="value">{debug?.gain_mode || '-'}</span>
+        <span class="value">{debug?.gain_mode || '—'}</span>
       </div>
       <div class="row">
         <span class="label">Fade Enabled</span>
@@ -115,7 +117,7 @@
 
     <!-- Formats -->
     <div class="card full-width">
-      <h2>Format Pipeline</h2>
+      <h2><Activity size={16} /> Format Pipeline</h2>
       <div class="pipeline">
         <div class="stage">
           <h3>Source</h3>
@@ -123,11 +125,11 @@
             <div>{debug?.decode_format?.sample_rate || 0} Hz</div>
             <div>{debug?.decode_format?.bit_depth || 0}-bit</div>
             <div>{debug?.decode_format?.channels || 0} ch</div>
-            <div class="sub">{debug?.decode_format?.codec || '-'}</div>
+            <div class="sub">{debug?.decode_format?.codec || '—'}</div>
           </div>
         </div>
 
-        <div class="arrow">→</div>
+        <div class="arrow"><ArrowRight size={24} /></div>
 
         <div class="stage">
           <h3>Output</h3>
@@ -149,7 +151,7 @@
 
     <!-- Library Stats -->
     <div class="card">
-      <h2>Library Stats</h2>
+      <h2><Database size={16} /> Library Stats</h2>
       {#if stats}
         <div class="row">
           <span class="label">Tracks</span>
@@ -263,19 +265,29 @@
     color: #fff;
     height: 100%;
     overflow-y: auto;
+    background: transparent;
   }
 
   h1 {
     margin-bottom: 2rem;
-    font-size: 1.5rem;
+    font-size: var(--text-view-title, 22px);
+    font-weight: 600;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    gap: var(--space-3, 12px);
   }
 
   h2 {
-    font-size: 1rem;
-    color: #888;
-    margin-bottom: 1rem;
-    border-bottom: 1px solid #333;
-    padding-bottom: 0.5rem;
+    font-size: var(--text-body, 14px);
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+    margin-bottom: var(--space-4, 16px);
+    border-bottom: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+    padding-bottom: var(--space-2, 8px);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2, 8px);
   }
 
   .grid {
@@ -286,9 +298,12 @@
 
   .card {
     background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
     border: 1px solid var(--glass-border);
     border-radius: 8px;
     padding: 1.5rem;
+    box-shadow: var(--glass-shadow);
   }
 
   .full-width {
@@ -343,53 +358,58 @@
   }
 
   .reason {
-    font-size: 0.85rem;
+    font-size: var(--text-meta, 12px);
     color: #fa4;
-    margin-top: 0.5rem;
-    padding: 0.5rem;
+    margin-top: var(--space-2, 8px);
+    padding: var(--space-2, 8px) var(--space-3, 12px);
     background: rgba(255, 170, 68, 0.1);
-    border-radius: 4px;
+    border-radius: var(--radius-sm, 8px);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2, 8px);
   }
 
   .pipeline {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 2rem;
-    padding: 1rem 0;
+    gap: var(--space-6, 24px);
+    padding: var(--space-4, 16px) 0;
   }
 
   .stage {
     text-align: center;
     background: rgba(255, 255, 255, 0.05);
-    padding: 1rem 2rem;
-    border-radius: 8px;
+    padding: var(--space-4, 16px) var(--space-6, 24px);
+    border-radius: var(--radius-md, 12px);
     min-width: 120px;
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
   }
 
   .stage h3 {
-    font-size: 0.9rem;
-    color: #888;
-    margin-bottom: 0.5rem;
+    font-size: var(--text-meta, 12px);
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: var(--space-2, 8px);
     text-transform: uppercase;
     letter-spacing: 1px;
+    font-weight: 500;
   }
 
   .details {
-    font-family: monospace;
-    font-size: 1.1rem;
-    line-height: 1.4;
+    font-family: 'Inter Variable', monospace;
+    font-size: var(--text-body, 14px);
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
   }
 
   .sub {
-    font-size: 0.8rem;
-    color: #666;
-    margin-top: 0.25rem;
+    font-size: var(--text-meta, 12px);
+    color: rgba(255, 255, 255, 0.4);
+    margin-top: var(--space-1, 4px);
   }
 
   .arrow {
-    font-size: 2rem;
-    color: #444;
+    color: rgba(255, 255, 255, 0.3);
   }
 
   /* Focus Trap Harness Styles */
@@ -415,6 +435,7 @@
     cursor: pointer;
     font-size: 0.9rem;
     transition: all 0.2s;
+    backdrop-filter: blur(var(--glass-blur));
   }
 
   .harness-btn:hover {

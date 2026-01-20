@@ -4,6 +4,7 @@
   import { folders, selectedFolderId, scanStatus, scanProgress, scanError, addFolder, startScan } from '../state/library';
   import { devices, currentDevice, loadDevices, selectDevice, outputSettings, loadOutputSettings, saveOutputSettings } from '../state/playback';
   import { reduceEffects, themeBlur, themeGlow, themeBorderHighlight, providerItunes, providerDeezer, loadEffectsSettings, setReduceEffects, setThemeBlur, setThemeGlow, setThemeBorderHighlight, setProviderItunes, setProviderDeezer } from '../state/effects';
+  import { Check, Circle } from '@lucide/svelte';
 
   const isMock = import.meta.env.SERMON_MOCK === '1';
 
@@ -52,7 +53,7 @@
           onkeydown={(e) => e.key === 'Enter' && selectedFolderId.set(folder.id)}
         >
           <span class="folder-path">{folder.path}</span>
-          <span class="folder-status">{folder.enabled ? '✓' : '○'}</span>
+          <span class="folder-status">{#if folder.enabled}<Check size={14} />{:else}<Circle size={14} />{/if}</span>
         </div>
       {:else}
         <div class="empty-folders">No library folders configured</div>
