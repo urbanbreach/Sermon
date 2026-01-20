@@ -4,8 +4,40 @@
     currentTrack, playbackState, togglePlayPause, next, previous, 
     volume, setVolume, playbackError, switchToDefault, progress, audioDebug 
   } from '../state/playback';
+  import { getArtworkBestForTrack, getArtworkBytes } from '../api/artwork';
 
-  $: isUnity = $audioDebug?.policy === 'strict' && $audioDebug?.output_mode === 'exclusive';
+  let artworkUrl: string | null = $state(null);
+  let lastTrackId: number | null = $state(null);
+  let isUnity = $derived($audioDebug?.policy === 'strict' && $audioDebug?.output_mode === 'exclusive');
+
+  async function loadArtwork(track: typeof $currentTrack) {
+    if (!track) {
+      artworkUrl = null;
+      lastTrackId = null;
+      return;
+    }
+
+    // Skip if same track
+    if (track.id === lastTrackId && artworkUrl) return;
+    lastTrackId = track.id;
+
+    try {
+      const best = await getArtworkBestForTrack(track.id);
+      if (best.source !== 'none' && best.cacheKey && best.mime) {
+        const bytes = await getArtworkBytes(best.cacheKey, best.mime);
+        artworkUrl = `data:${bytes.mime};base64,${bytes.bytesBase64}`;
+      } else {
+        artworkUrl = null;
+      }
+    } catch (e) {
+      console.error('Failed to load track artwork:', e);
+      artworkUrl = null;
+    }
+  }
+
+  $effect(() => {
+    loadArtwork($currentTrack);
+  });
 
   function openNowPlaying() {
     navigate({ name: 'now-playing' });
@@ -22,19 +54,22 @@
   <div class="error-banner">
      <span>Error: {$playbackError.message}</span>
      {#if $playbackError.action === 'switch_to_default'}
-        <button on:click={switchToDefault}>Switch to Default Device</button>
+        <button onclick={switchToDefault}>Switch to Default Device</button>
      {/if}
   </div>
 {/if}
 
-<!-- svelte-ignore a11y-click-events-have-key-events -->
-<div class="bottom-bar" on:click={openNowPlaying} role="button" tabindex="0" on:keypress={handleKey}>
+<div class="bottom-bar" onclick={openNowPlaying} role="button" tabindex="0" onkeypress={handleKey}>
   <div class="progress-bar-container">
     <div class="progress-bar-fill" style="width: {$progress * 100}%"></div>
   </div>
 
   <div class="now-playing-info">
-    <div class="placeholder-art"></div>
+    {#if artworkUrl}
+      <img src={artworkUrl} alt="" class="artwork" />
+    {:else}
+      <div class="placeholder-art"></div>
+    {/if}
     <div class="track-details">
       <div class="title">{$currentTrack?.title || 'Nothing Playing'}</div>
       <div class="artist">{$currentTrack?.artist || 'Select a track'}</div>
@@ -49,19 +84,15 @@
     </div>
   </div>
 
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="controls" on:click|stopPropagation>
-    <button class="control-btn" on:click={previous}>⏮</button>
-    <button class="control-btn play" on:click={togglePlayPause}>
+  <div class="controls" onclick={(e) => e.stopPropagation()}>
+    <button class="control-btn" onclick={previous}>⏮</button>
+    <button class="control-btn play" onclick={togglePlayPause}>
       {#if $playbackState === 'playing'} ⏸ {:else} ▶ {/if}
     </button>
-    <button class="control-btn" on:click={next}>⏭</button>
+    <button class="control-btn" onclick={next}>⏭</button>
   </div>
 
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="volume" on:click|stopPropagation>
+  <div class="volume" onclick={(e) => e.stopPropagation()}>
     {#if isUnity}
       <span class="vol-label-unity">Unity</span>
     {:else}
@@ -74,7 +105,7 @@
       step="0.01" 
       value={isUnity ? 1.0 : $volume} 
       disabled={isUnity}
-      on:input={(e) => setVolume(e.currentTarget.valueAsNumber)} 
+      oninput={(e) => setVolume(e.currentTarget.valueAsNumber)} 
     />
   </div>
 </div>
@@ -138,6 +169,14 @@
     align-items: center;
     gap: 1rem;
     width: 250px;
+  }
+
+  .artwork {
+    width: 50px;
+    height: 50px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    object-fit: cover;
   }
 
   .placeholder-art {

@@ -4,8 +4,13 @@
     currentTrack, playbackState, queue, currentIndex, progress, 
     positionMs, durationMs, seek, audioDebug, isPlaying, playNow
   } from '../state/playback';
+  import { Fixtures } from '../data/fixtures';
+  import { getArtworkBestForTrack, getArtworkBytes } from '../api/artwork';
+  import { computeThemeFromImageSrc, applyThemeToDocument, resetTheme } from '../theme/dynamicTheme';
   
   let isDebugging = false;
+  let artworkUrl: string | null = $state(null);
+  let lastTrackId: number | null = $state(null);
 
   function handleGoBack() {
     goBack();
@@ -28,12 +33,83 @@
   function toggleDebug() {
     isDebugging = !isDebugging;
   }
+
+  async function loadArtwork(track: typeof $currentTrack) {
+    if (!track) {
+      artworkUrl = null;
+      lastTrackId = null;
+      return;
+    }
+
+    // Skip if same track
+    if (track.id === lastTrackId && artworkUrl) return;
+    lastTrackId = track.id;
+
+    // Mock/Snapshot mode: use fixtures
+    if (import.meta.env.SERMON_MOCK === '1') {
+      const fixtureAlbums = Fixtures.getAlbums();
+      const fixtureArtists = Fixtures.getArtists();
+
+      // Derive album key from current track
+      const albumTitleSort = (track.album?.trim().toLowerCase()) || 'unknown album';
+      const albumArtistSort = (track.artist?.trim().toLowerCase()) || 'unknown artist';
+
+      for (const fixtureAlbum of fixtureAlbums) {
+        const artist = fixtureArtists.find(a => a.id === fixtureAlbum.artistId);
+        const artistSort = (artist?.name?.trim().toLowerCase()) || 'unknown artist';
+        const titleSort = (fixtureAlbum.title?.trim().toLowerCase()) || 'unknown album';
+
+        if (artistSort === albumArtistSort && titleSort === albumTitleSort) {
+          const url = Fixtures.getArtworkPath(fixtureAlbum.artworkFile);
+          if (url) {
+            artworkUrl = url;
+          }
+          return;
+        }
+      }
+      artworkUrl = null;
+      return;
+    }
+
+    // Runtime mode: use IPC
+    try {
+      const best = await getArtworkBestForTrack(track.id);
+      if (best.source !== 'none' && best.cacheKey && best.mime) {
+        const bytes = await getArtworkBytes(best.cacheKey, best.mime);
+        artworkUrl = `data:${bytes.mime};base64,${bytes.bytesBase64}`;
+      } else {
+        artworkUrl = null;
+      }
+    } catch (e) {
+      console.error('Failed to load track artwork:', e);
+      artworkUrl = null;
+    }
+  }
+
+  // React to track changes
+  $effect(() => {
+    loadArtwork($currentTrack);
+  });
+
+  // React to artwork changes - compute and apply theme
+  $effect(() => {
+    if (artworkUrl) {
+      computeThemeFromImageSrc(artworkUrl)
+        .then(theme => applyThemeToDocument(theme))
+        .catch(err => {
+          console.error('Failed to compute theme:', err);
+          resetTheme();
+        });
+    } else {
+      resetTheme();
+    }
+  });
 </script>
 
 <div class="now-playing-view">
   <div class="top-nav">
-    <button class="back-btn" on:click={handleGoBack}>&larr; Back</button>
-    <button class="debug-btn" class:active={isDebugging} on:click={toggleDebug}>
+    <button class="back-btn" onclick={handleGoBack}>&larr; Back</button>
+    <button class="debug-btn" class:active={isDebugging} onclick={toggleDebug}>
       Wait what? (Debug)
     </button>
   </div>
@@ -41,7 +117,11 @@
   <div class="main-layout">
     <div class="track-area">
       <div class="art-large">
-        <div class="art-placeholder"></div>
+        {#if artworkUrl}
+          <img src={artworkUrl} alt="Album artwork" class="art-image" />
+        {:else}
+          <div class="art-placeholder"></div>
+        {/if}
       </div>
       
       <div class="info-large">
@@ -62,7 +142,7 @@
           max="1" 
           step="0.001" 
           value={$progress} 
-          on:change={handleSeek}
+          onchange={handleSeek}
         />
       </div>
     </div>
@@ -71,12 +151,13 @@
       <h3>Queue</h3>
       <div class="queue-list">
         {#each $queue as item, i}
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
-          <!-- svelte-ignore a11y-no-static-element-interactions -->
           <div 
             class="queue-item" 
             class:active={i === $currentIndex}
-            on:dblclick={() => playNow(item.track_id)}
+            role="button"
+            tabindex="0"
+            ondblclick={() => playNow(item.track_id)}
+            onkeydown={(e) => e.key === 'Enter' && playNow(item.track_id)}
           >
             <span class="q-index">{i + 1}</span>
             <div class="q-info">
@@ -246,6 +327,13 @@
     width: 100%;
     height: 100%;
     background: linear-gradient(45deg, #222, #333);
+    border-radius: 12px;
+  }
+
+  .art-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
     border-radius: 12px;
   }
 
