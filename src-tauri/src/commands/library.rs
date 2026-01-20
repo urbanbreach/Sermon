@@ -701,3 +701,60 @@ pub fn cmd_library_get_raw_tags(
 
     Ok(RawTagsResultResponse { tags })
 }
+
+// ============================================================================
+// UI Settings Commands (Milestone 06)
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetSettingRequest {
+    pub key: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetSettingResponse {
+    pub value: Option<String>,
+}
+
+#[tauri::command]
+pub async fn cmd_settings_get(
+    request: GetSettingRequest,
+    state: State<'_, LibraryState>,
+) -> Result<GetSettingResponse, String> {
+    let db_path = state.db_path.clone();
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let conn = open_db(&db_path).map_err(|e| e.to_string())?;
+        library::db::get_setting(&conn, &request.key).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    Ok(GetSettingResponse { value: result })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetSettingRequest {
+    pub key: String,
+    pub value: String,
+}
+
+#[tauri::command]
+pub async fn cmd_settings_set(
+    request: SetSettingRequest,
+    state: State<'_, LibraryState>,
+) -> Result<(), String> {
+    let db_path = state.db_path.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = open_db(&db_path).map_err(|e| e.to_string())?;
+        library::db::set_setting(&conn, &request.key, &request.value).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    Ok(())
+}
