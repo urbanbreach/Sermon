@@ -4,6 +4,7 @@
 
 use lofty::config::WriteOptions;
 use lofty::file::TaggedFileExt;
+use lofty::picture::{MimeType, Picture, PictureType};
 use lofty::probe::Probe;
 use lofty::tag::{Accessor, ItemKey, Tag, TagExt};
 use std::fs::OpenOptions;
@@ -43,6 +44,28 @@ impl Default for NumberPatch {
     }
 }
 
+/// Patch operation for cover art picture
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PicturePatch {
+    /// Leave pictures unchanged
+    Leave,
+    /// Set cover art (replaces existing front cover if any)
+    SetCover {
+        /// Raw image bytes
+        bytes: Vec<u8>,
+        /// MIME type (e.g., "image/jpeg", "image/png")
+        mime: String,
+    },
+    /// Remove all pictures
+    ClearAll,
+}
+
+impl Default for PicturePatch {
+    fn default() -> Self {
+        PicturePatch::Leave
+    }
+}
+
 /// Collection of patches to apply to a track's tags
 #[derive(Debug, Clone, Default)]
 pub struct TagPatches {
@@ -54,6 +77,7 @@ pub struct TagPatches {
     pub track_no: NumberPatch,
     pub disc_no: NumberPatch,
     pub year: NumberPatch,
+    pub picture: PicturePatch,
 }
 
 /// Options for tag writing (reserved for future use)
@@ -167,6 +191,40 @@ pub fn write_tags(
             |t, v| t.set_year(v),
             |t| t.remove_year(),
         );
+
+        // Apply picture patch
+        match &patches.picture {
+            PicturePatch::Leave => {}
+            PicturePatch::SetCover { bytes, mime } => {
+                // Remove existing front cover pictures first
+                tag.remove_picture_type(PictureType::CoverFront);
+
+                // Parse MIME type
+                let mime_type = match mime.as_str() {
+                    "image/jpeg" => MimeType::Jpeg,
+                    "image/png" => MimeType::Png,
+                    "image/gif" => MimeType::Gif,
+                    "image/bmp" => MimeType::Bmp,
+                    "image/tiff" => MimeType::Tiff,
+                    _ => MimeType::Unknown(mime.clone()),
+                };
+
+                // Create and add the new picture
+                let picture = Picture::new_unchecked(
+                    PictureType::CoverFront,
+                    Some(mime_type),
+                    None, // No description
+                    bytes.clone(),
+                );
+                tag.push_picture(picture);
+            }
+            PicturePatch::ClearAll => {
+                // Remove all pictures
+                while tag.picture_count() > 0 {
+                    tag.remove_picture(0);
+                }
+            }
+        }
 
         // Clone the tag so we can drop tagged_file (which holds the file handle)
         (tag.clone(), file_type)

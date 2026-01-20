@@ -1,6 +1,6 @@
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
-use lofty::tag::{Accessor, ItemKey, TagType};
+use lofty::tag::Accessor;
 use std::path::Path;
 use tracing::warn;
 
@@ -43,6 +43,17 @@ pub struct RawTags {
 #[derive(Debug, Clone, Default)]
 pub struct RawTagsResult {
     pub tags: Vec<RawTags>,
+}
+
+/// Embedded artwork picture from audio file tags
+#[derive(Debug, Clone)]
+pub struct ArtworkPicture {
+    /// MIME type (e.g., "image/jpeg", "image/png")
+    pub mime: Option<String>,
+    /// Picture type (e.g., "CoverFront", "Other")
+    pub picture_type: String,
+    /// Raw image bytes
+    pub bytes: Vec<u8>,
 }
 
 /// Read metadata from an audio file
@@ -153,4 +164,31 @@ pub fn read_raw_tags(path: &Path) -> Result<RawTagsResult, lofty::error::LoftyEr
     }
 
     Ok(result)
+}
+
+/// Read embedded pictures from an audio file
+///
+/// Returns all embedded pictures found in the file's tags.
+/// Picture selection (which to use as album art) is done by the caller.
+pub fn read_embedded_pictures(
+    path: &Path,
+) -> Result<Vec<ArtworkPicture>, lofty::error::LoftyError> {
+    let tagged_file = Probe::open(path)?.read()?;
+    let mut pictures = Vec::new();
+
+    for tag in tagged_file.tags() {
+        for picture in tag.pictures() {
+            let mime = picture.mime_type().map(|m| m.to_string());
+            let picture_type = format!("{:?}", picture.pic_type());
+            let bytes = picture.data().to_vec();
+
+            pictures.push(ArtworkPicture {
+                mime,
+                picture_type,
+                bytes,
+            });
+        }
+    }
+
+    Ok(pictures)
 }
