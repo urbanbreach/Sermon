@@ -2,10 +2,11 @@ use crate::state::{AudioState, LibraryState, PlaybackCommand};
 use audio_engine::device::list_devices;
 use library::{
     apply_migrations, get_audio_output_fade, get_audio_output_mode, get_audio_output_policy,
-    get_audio_output_timing, get_track_by_id, open_db, set_setting,
+    get_audio_output_timing, get_track_by_id, open_db, set_missing, set_setting,
 };
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use std::path::Path;
+use tauri::{Emitter, State};
 
 // -----------------
 // Event payloads
@@ -105,6 +106,12 @@ pub struct PlaybackErrorEvent {
     pub action: Option<String>, // "switch_to_default"
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct TrackMarkedMissingEvent {
+    pub track_id: i64,
+    pub path: String,
+}
+
 // -----------------
 // Command payloads
 // -----------------
@@ -122,6 +129,7 @@ pub struct AudioDeviceInfoResponse {
 
 #[tauri::command]
 pub fn cmd_playback_start(
+    app: tauri::AppHandle,
     audio_state: State<'_, AudioState>,
     library_state: State<'_, LibraryState>,
     track_id: i64,
@@ -133,6 +141,23 @@ pub fn cmd_playback_start(
 
     if track.is_missing {
         return Err("track is missing".to_string());
+    }
+
+    // Check if file actually exists on disk
+    if !Path::new(&track.path).exists() {
+        // Mark as missing in database
+        set_missing(&conn, track_id, true).map_err(|e| e.to_string())?;
+
+        // Emit event so UI can refresh
+        let _ = app.emit(
+            "evt_track_marked_missing",
+            TrackMarkedMissingEvent {
+                track_id,
+                path: track.path.clone(),
+            },
+        );
+
+        return Err(format!("File not found: {}", track.path));
     }
 
     audio_state
@@ -202,6 +227,7 @@ pub fn cmd_playback_previous(audio_state: State<'_, AudioState>) -> Result<(), S
 
 #[tauri::command]
 pub fn cmd_queue_play_now(
+    app: tauri::AppHandle,
     audio_state: State<'_, AudioState>,
     library_state: State<'_, LibraryState>,
     track_id: i64,
@@ -215,6 +241,23 @@ pub fn cmd_queue_play_now(
         return Err("track is missing".to_string());
     }
 
+    // Check if file actually exists on disk
+    if !Path::new(&track.path).exists() {
+        // Mark as missing in database
+        set_missing(&conn, track_id, true).map_err(|e| e.to_string())?;
+
+        // Emit event so UI can refresh
+        let _ = app.emit(
+            "evt_track_marked_missing",
+            TrackMarkedMissingEvent {
+                track_id,
+                path: track.path.clone(),
+            },
+        );
+
+        return Err(format!("File not found: {}", track.path));
+    }
+
     audio_state
         .command_tx
         .send(PlaybackCommand::PlayNow { track_id })
@@ -225,6 +268,7 @@ pub fn cmd_queue_play_now(
 
 #[tauri::command]
 pub fn cmd_queue_add(
+    app: tauri::AppHandle,
     audio_state: State<'_, AudioState>,
     library_state: State<'_, LibraryState>,
     track_id: i64,
@@ -235,6 +279,23 @@ pub fn cmd_queue_add(
 
     if track.is_missing {
         return Err("track is missing".to_string());
+    }
+
+    // Check if file actually exists on disk
+    if !Path::new(&track.path).exists() {
+        // Mark as missing in database
+        set_missing(&conn, track_id, true).map_err(|e| e.to_string())?;
+
+        // Emit event so UI can refresh
+        let _ = app.emit(
+            "evt_track_marked_missing",
+            TrackMarkedMissingEvent {
+                track_id,
+                path: track.path.clone(),
+            },
+        );
+
+        return Err(format!("File not found: {}", track.path));
     }
 
     audio_state
