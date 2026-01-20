@@ -5,6 +5,7 @@
   import { listAlbumTracksPage } from '../api/library';
   import { getArtworkBestForAlbum, getArtworkBytes } from '../api/artwork';
   import type { TrackRow, AlbumTrackCursor } from '../types/library';
+  import { ChevronLeft, Play, Plus } from '@lucide/svelte';
 
   let tracks = $state<TrackRow[]>([]);
   let loading = $state(true);
@@ -101,7 +102,7 @@
   }
 
   function formatDuration(ms?: number): string {
-    if (!ms) return '--:--';
+    if (!ms) return '—';
     const minutes = Math.floor(ms / 60000);
     const seconds = ((ms % 60000) / 1000).toFixed(0);
     return minutes + ":" + (Number(seconds) < 10 ? '0' : '') + seconds;
@@ -135,7 +136,7 @@
 <div class="view-container">
   <div class="top-bar">
     <button class="back-btn" onclick={goBack} disabled={!$canGoBack}>
-      ← Back
+      <ChevronLeft size={16} /> Back
     </button>
   </div>
 
@@ -145,12 +146,7 @@
         <img src={artworkUrl} alt="Album artwork" />
       </div>
     {:else}
-      <div class="artwork-placeholder">
-        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="12" cy="12" r="10"/>
-          <circle cx="12" cy="12" r="3"/>
-        </svg>
-      </div>
+      <div class="artwork-placeholder"></div>
     {/if}
     <div class="album-info">
       <h1>{albumDisplay}</h1>
@@ -203,7 +199,7 @@
               <td class="col-num">{track.track_no || '-'}</td>
               <td class="col-title">
                   <div class="title-cell">
-                      {track.title || 'Unknown Title'}
+                      {track.title || '—'}
                       {#if track.artist && track.artist !== artistDisplay}
                           <span class="track-artist">{track.artist}</span>
                       {/if}
@@ -212,8 +208,12 @@
               <td class="col-duration">{formatDuration(track.duration_ms)}</td>
               <td class="col-actions">
                  <div class="row-actions">
-                   <button class="icon-btn" title="Play Now" onclick={(e) => { e.stopPropagation(); if (track.id) playNow(track.id); }}>▶</button>
-                   <button class="icon-btn" title="Add to Queue" onclick={(e) => { e.stopPropagation(); if (track.id) addToQueue(track.id); }}>+</button>
+                   <button class="icon-btn" title="Play Now" onclick={(e) => { e.stopPropagation(); if (track.id) playNow(track.id); }}>
+                     <Play size={14} fill="currentColor" />
+                   </button>
+                   <button class="icon-btn" title="Add to Queue" onclick={(e) => { e.stopPropagation(); if (track.id) addToQueue(track.id); }}>
+                     <Plus size={14} />
+                   </button>
                  </div>
               </td>
             </tr>
@@ -233,6 +233,7 @@
     display: flex;
     flex-direction: column;
     gap: 2rem;
+    background: transparent;
   }
   
   .top-bar {
@@ -240,17 +241,26 @@
   }
   
   .back-btn {
-    background: transparent;
-    border: none;
-    color: #888;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    color: #ccc;
     cursor: pointer;
-    font-size: 1rem;
-    padding: 0;
-    transition: color 0.2s;
+    font-size: 0.9rem;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    transition: all 0.2s;
+    box-shadow: var(--glass-shadow);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
   
   .back-btn:hover {
     color: #fff;
+    background: var(--glass-border);
+    transform: translateX(-2px);
   }
   
   .back-btn:disabled {
@@ -265,10 +275,10 @@
   }
   
   .artwork {
-    width: 200px;
-    height: 200px;
-    border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    width: 220px;
+    height: 220px;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
     flex-shrink: 0;
     overflow: hidden;
   }
@@ -280,14 +290,14 @@
   }
   
   .artwork-placeholder {
-    width: 200px;
-    height: 200px;
-    background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
-    border-radius: 8px;
+    width: 220px;
+    height: 220px;
+    background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
     flex-shrink: 0;
     color: #444;
   }
@@ -301,10 +311,11 @@
   }
   
   h1 {
-    font-size: 2.5rem;
+    font-size: var(--text-album-title, 28px);
     font-weight: 700;
     margin: 0;
     line-height: 1.1;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.6);
   }
   
   .meta {
@@ -312,12 +323,14 @@
     align-items: center;
     gap: 0.5rem;
     color: #aaa;
-    font-size: 1rem;
+    font-size: var(--text-body, 14px);
   }
   
   .artist {
     color: #fff;
     font-weight: 600;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    font-size: var(--text-section, 18px);
   }
   
   .bullet {
@@ -339,11 +352,13 @@
     font-weight: 600;
     font-size: 1rem;
     cursor: pointer;
-    transition: transform 0.1s;
+    transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.2s;
+    box-shadow: 0 4px 12px rgba(255,255,255,0.2);
   }
   
   .primary-btn:hover:not(:disabled) {
     transform: scale(1.05);
+    box-shadow: 0 6px 16px rgba(255,255,255,0.3);
   }
   
   .primary-btn:active:not(:disabled) {
@@ -356,20 +371,23 @@
   }
 
   .secondary-btn {
-    background: transparent;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
     color: #fff;
-    border: 1px solid rgba(255,255,255,0.3);
+    border: 1px solid var(--glass-border);
     padding: 0.8rem 2rem;
     border-radius: 30px;
     font-weight: 600;
     font-size: 1rem;
     cursor: pointer;
-    transition: background-color 0.2s, border-color 0.2s;
+    transition: background 0.2s, border-color 0.2s, transform 0.2s;
   }
 
   .secondary-btn:hover:not(:disabled) {
-    background: rgba(255,255,255,0.1);
+    background: var(--glass-border);
     border-color: rgba(255,255,255,0.5);
+    transform: scale(1.05);
   }
 
   .tracks-list {
@@ -379,25 +397,29 @@
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.95rem;
+    font-size: var(--text-body, 14px);
   }
   
   th {
     text-align: left;
-    color: #888;
-    font-weight: normal;
-    padding: 0.8rem;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
+    color: #aaa;
+    font-weight: 500;
+    padding: 0 var(--table-cell-gap, 12px);
+    height: var(--table-header-height, 28px);
+    font-size: var(--text-table-header, 13px);
+    border-bottom: 1px solid var(--glass-border);
   }
   
   td {
-    padding: 0.8rem;
+    padding: 0 var(--table-cell-gap, 12px);
+    height: var(--table-row-height, 36px);
     border-bottom: 1px solid rgba(255,255,255,0.05);
     color: #ddd;
+    vertical-align: middle;
   }
   
   tr:hover {
-    background: rgba(255,255,255,0.05);
+    background: var(--glass-highlight);
   }
   
   tr.missing {
@@ -417,10 +439,12 @@
   .title-cell {
     display: flex;
     flex-direction: column;
+    justify-content: center;
+    line-height: 1.2;
   }
   
   .track-artist {
-    font-size: 0.8em;
+    font-size: 0.85em;
     color: #888;
   }
 
@@ -441,6 +465,8 @@
     gap: 0.5rem;
     opacity: 0;
     transition: opacity 0.2s;
+    align-items: center;
+    height: 100%;
   }
   
   tr:hover .row-actions {
@@ -459,11 +485,13 @@
     justify-content: center;
     cursor: pointer;
     font-size: 0.8rem;
+    transition: all 0.2s;
   }
   
   .icon-btn:hover {
     background: rgba(255,255,255,0.1);
     border-color: #fff;
+    transform: scale(1.1);
   }
   
   .loading-state, .empty-state, .error-state {

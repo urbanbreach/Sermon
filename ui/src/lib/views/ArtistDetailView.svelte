@@ -5,6 +5,7 @@
   import { listArtistsPage } from '../api/library';
   import { invoke } from '@tauri-apps/api/core';
   import type { TrackRow, ArtistCursor } from '../types/library';
+  import { ArrowLeft } from '@lucide/svelte';
 
   interface ArtistAlbum {
     albumTitleDisplay: string;
@@ -117,7 +118,7 @@
   }
 
   function formatDuration(ms?: number): string {
-    if (!ms) return '--:--';
+    if (!ms) return '—';
     const minutes = Math.floor(ms / 60000);
     const seconds = ((ms % 60000) / 1000).toFixed(0);
     return minutes + ":" + (Number(seconds) < 10 ? '0' : '') + seconds;
@@ -127,7 +128,7 @@
 <div class="view-container">
   <div class="top-bar">
     <button class="back-btn" onclick={goBack} disabled={!$canGoBack}>
-      ← Back
+      <ArrowLeft size={16} /> Back
     </button>
   </div>
 
@@ -206,6 +207,7 @@
     display: flex;
     flex-direction: column;
     gap: 2rem;
+    background: transparent;
   }
 
   .top-bar {
@@ -213,17 +215,23 @@
   }
 
   .back-btn {
-    background: transparent;
-    border: none;
-    color: #888;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    color: #ccc;
     cursor: pointer;
-    font-size: 1rem;
-    padding: 0;
-    transition: color 0.2s;
+    font-size: 0.9rem;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    transition: all 0.2s;
+    box-shadow: var(--glass-shadow);
   }
 
   .back-btn:hover {
     color: #fff;
+    background: var(--glass-border);
+    transform: translateX(-2px);
   }
 
   .back-btn:disabled {
@@ -240,13 +248,17 @@
   .artist-icon {
     width: 150px;
     height: 150px;
-    background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #444;
     flex-shrink: 0;
+    box-shadow: var(--glass-shadow);
   }
 
   .artist-info {
@@ -261,6 +273,7 @@
     font-weight: 700;
     margin: 0;
     line-height: 1.1;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.6);
   }
 
   h2 {
@@ -295,11 +308,13 @@
     font-weight: 600;
     font-size: 1rem;
     cursor: pointer;
-    transition: transform 0.1s;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 4px 12px rgba(255,255,255,0.2);
   }
 
   .primary-btn:hover:not(:disabled) {
     transform: scale(1.05);
+    box-shadow: 0 6px 16px rgba(255,255,255,0.3);
   }
 
   .primary-btn:disabled {
@@ -318,17 +333,20 @@
   }
 
   .album-card {
-    background: var(--glass-highlight);
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
     border-radius: var(--glass-radius);
     border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
     overflow: hidden;
     cursor: pointer;
-    transition: transform 0.2s, background-color 0.2s;
+    transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), border-color 0.2s;
   }
 
   .album-card:hover {
-    transform: translateY(-4px);
-    background: var(--glass-border);
+    transform: scale(1.02);
+    border-color: rgba(255,255,255,0.3);
   }
 
   .album-artwork {
@@ -350,13 +368,14 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     margin-bottom: 0.25rem;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
   }
 
   .album-meta {
     font-size: 0.8rem;
-    color: #888;
+    color: #aaa;
     display: flex;
     gap: 0.5rem;
   }

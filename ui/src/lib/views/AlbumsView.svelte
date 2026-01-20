@@ -6,6 +6,7 @@
   import { Fixtures } from '../data/fixtures';
   import { getArtworkBestForAlbum, getArtworkBytes } from '../api/artwork';
   import ArtworkPickerModal from '../components/ArtworkPickerModal.svelte';
+  import { ImagePlus } from '@lucide/svelte';
 
   let albums: AlbumListItem[] = $state([]);
   let loading = $state(false);
@@ -157,12 +158,7 @@
               <img src={artworkUrl} alt="" loading="lazy" />
             </div>
           {:else}
-            <div class="artwork-placeholder">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <circle cx="12" cy="12" r="10"/>
-                <circle cx="12" cy="12" r="3"/>
-              </svg>
-            </div>
+            <div class="artwork-placeholder"></div>
           {/if}
           <div class="info">
             <div class="title" title={album.albumTitleDisplay}>{album.albumTitleDisplay}</div>
@@ -174,11 +170,7 @@
             onclick={(e) => openArtworkPicker(album, e)}
             title="Choose Artwork"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="3" width="18" height="18" rx="2"/>
-              <circle cx="8.5" cy="8.5" r="1.5"/>
-              <path d="M21 15l-5-5L5 21"/>
-            </svg>
+            <ImagePlus size={16} />
           </button>
         </div>
       {/each}
@@ -207,33 +199,43 @@
     height: 100%;
     overflow-y: auto;
     box-sizing: border-box;
+    background: transparent;
+    min-height: 100%;
   }
 
   h1 {
     margin-bottom: 1.5rem;
+    font-size: var(--text-view-title, 22px);
+    font-weight: 600;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
   }
 
   .albums-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 1.5rem;
+    gap: var(--space-6, 24px);
   }
 
   .card {
-    background: var(--glass-highlight);
-    border-radius: var(--glass-radius);
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border-radius: var(--radius-md, 12px);
     border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    transition: transform 0.2s, background-color 0.2s;
+    transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), border-color 0.2s;
     cursor: pointer;
     position: relative;
   }
 
   .card:hover {
-    transform: translateY(-4px);
-    background: var(--glass-border);
+    transform: scale(1.02) translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.4);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 20px rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.1);
   }
 
   .card:hover .choose-artwork-btn {
@@ -268,7 +270,7 @@
   .artwork-placeholder {
     width: 100%;
     aspect-ratio: 1;
-    background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+    background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -288,25 +290,26 @@
   }
 
   .info {
-    padding: 0.75rem;
+    padding: var(--space-3, 12px);
     min-height: 70px;
     display: flex;
     flex-direction: column;
   }
 
   .title {
-    font-weight: 600;
+    font-weight: 500;
     margin-bottom: 0.25rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: 0.9rem;
+    font-size: 14px;
     line-height: 1.2;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
   }
 
   .artist {
-    font-size: 0.8rem;
-    color: #aaa;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.7);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -314,8 +317,8 @@
   }
 
   .year {
-    font-size: 0.75rem;
-    color: #666;
+    font-size: var(--text-meta, 12px);
+    color: #888;
     margin-top: auto;
     padding-top: 0.25rem;
   }
