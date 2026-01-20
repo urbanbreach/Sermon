@@ -1,0 +1,127 @@
+{
+  "artists": [
+    { "id": "art_1", "name": "Lunar Echoes" },
+    { "id": "art_2", "name": "Neon Void" },
+    { "id": "art_3", "name": "Glass Horizons" },
+    { "id": "art_4", "name": "Velvet Noise" },
+    { "id": "art_5", "name": "Chrome Dust" },
+    { "id": "art_6", "name": "Silent Prism" }
+  ],
+  "albums": [
+    {
+      "id": "alb_1",
+      "title": "Midnight Reflections",
+      "artistId": "art_1",
+      "year": 2023,
+      "trackIds": ["t_1_01", "t_1_02", "t_1_03", "t_1_04", "t_1_05", "t_1_06", "t_1_07", "t_1_08", "t_1_09", "t_1_10"],
+      "artworkFile": "solid-red.png"
+    },
+    {
+      "id": "alb_2",
+      "title": "Static Dreams",
+      "artistId": "art_2",
+      "year": 2024,
+      "trackIds": ["t_2_01", "t_2_02", "t_2_03", "t_2_04", "t_2_05", "t_2_06", "t_2_07", "t_2_08", "t_2_09", "t_2_10"],
+      "artworkFile": "solid-blue.png"
+    },
+    {
+      "id": "alb_3",
+      "title": "Transparent Soul",
+      "artistId": "art_3",
+      "year": 2022,
+      "trackIds": ["t_3_01", "t_3_02", "t_3_03", "t_3_04", "t_3_05", "t_3_06", "t_3_07", "t_3_08", "t_3_09", "t_3_10"],
+      "artworkFile": "album3.jpg"
+    },
+    {
+      "id": "alb_4",
+      "title": "Soft Crash",
+      "artistId": "art_4",
+      "year": 2023,
+      "trackIds": ["t_4_01", "t_4_02", "t_4_03", "t_4_04", "t_4_05", "t_4_06", "t_4_07", "t_4_08", "t_4_09", "t_4_10"],
+      "artworkFile": "album4.jpg"
+    },
+    {
+      "id": "alb_5",
+      "title": "Metallic Taste",
+      "artistId": "art_5",
+      "year": 2021,
+      "trackIds": ["t_5_01", "t_5_02", "t_5_03", "t_5_04", "t_5_05", "t_5_06", "t_5_07", "t_5_08", "t_5_09", "t_5_10"],
+      "artworkFile": "album5.jpg"
+    },
+    {
+      "id": "alb_6",
+      "title": "Refracted Light",
+      "artistId": "art_6",
+      "year": 2025,
+      "trackIds": ["t_6_01", "t_6_02", "t_6_03", "t_6_04", "t_6_05", "t_6_06", "t_6_07", "t_6_08", "t_6_09", "t_6_10"],
+      "artworkFile": "album6.jpg"
+    }
+  ],
+  "tracks": [
+    { "id": "t_1_01", "title": "Intro", "albumId": "alb_1", "artistId": "art_1", "durationMs": 120000, "trackNumber": 1, "discNumber": 1 },
+    { "id": "t_1_02", "title": "Moonlight", "albumId": "alb_1", "artistId": "art_1", "durationMs": 210000, "trackNumber": 2, "discNumber": 1 },
+    { "id": "t_1_03", "title": "Shadows", "albumId": "alb_1", "artistId": "art_1", "durationMs": 195000, "trackNumber": 3, "discNumber": 1 },
+    { "id": "t_1_04", "title": "Glass Walls", "albumId": "alb_1", "artistId": "art_1", "durationMs": 240000, "trackNumber": 4, "discNumber": 1 },
+    { "id": "t_1_05", "title": "Reflection", "albumId": "alb_1", "artistId": "art_1", "durationMs": 180000, "trackNumber": 5, "discNumber": 1 },
+    { "id": "t_1_06", "title": "Night Drive", "albumId": "alb_1", "artistId": "art_1", "durationMs": 200000, "trackNumber": 6, "discNumber": 1 },
+    { "id": "t_1_07", "title": "Street Lights", "albumId": "alb_1", "artistId": "art_1", "durationMs": 220000, "trackNumber": 7, "discNumber": 1 },
+    { "id": "t_1_08", "title": "Rain", "albumId": "alb_1", "artistId": "art_1", "durationMs": 190000, "trackNumber": 8, "discNumber": 1 },
+    { "id": "t_1_09", "title": "Silence", "albumId": "alb_1", "artistId": "art_1", "durationMs": 150000, "trackNumber": 9, "discNumber": 1 },
+    { "id": "t_1_10", "title": "Outro", "albumId": "alb_1", "artistId": "art_1", "durationMs": 130000, "trackNumber": 10, "discNumber": 1 },
+
+    { "id": "t_2_01", "title": "Start Up", "albumId": "alb_2", "artistId": "art_2", "durationMs": 90000, "trackNumber": 1, "discNumber": 1 },
+    { "id": "t_2_02", "title": "Neon City", "albumId": "alb_2", "artistId": "art_2", "durationMs": 230000, "trackNumber": 2, "discNumber": 1 },
+    { "id": "t_2_03", "title": "Digital Love", "albumId": "alb_2", "artistId": "art_2", "durationMs": 210000, "trackNumber": 3, "discNumber": 1 },
+    { "id": "t_2_04", "title": "Cyber Heart", "albumId": "alb_2", "artistId": "art_2", "durationMs": 250000, "trackNumber": 4, "discNumber": 1 },
+    { "id": "t_2_05", "title": "Glitch", "albumId": "alb_2", "artistId": "art_2", "durationMs": 185000, "trackNumber": 5, "discNumber": 1 },
+    { "id": "t_2_06", "title": "System Failure", "albumId": "alb_2", "artistId": "art_2", "durationMs": 205000, "trackNumber": 6, "discNumber": 1 },
+    { "id": "t_2_07", "title": "Reboot", "albumId": "alb_2", "artistId": "art_2", "durationMs": 195000, "trackNumber": 7, "discNumber": 1 },
+    { "id": "t_2_08", "title": "Connection", "albumId": "alb_2", "artistId": "art_2", "durationMs": 215000, "trackNumber": 8, "discNumber": 1 },
+    { "id": "t_2_09", "title": "Upload", "albumId": "alb_2", "artistId": "art_2", "durationMs": 175000, "trackNumber": 9, "discNumber": 1 },
+    { "id": "t_2_10", "title": "Shutdown", "albumId": "alb_2", "artistId": "art_2", "durationMs": 110000, "trackNumber": 10, "discNumber": 1 },
+
+    { "id": "t_3_01", "title": "Clear", "albumId": "alb_3", "artistId": "art_3", "durationMs": 180000, "trackNumber": 1, "discNumber": 1 },
+    { "id": "t_3_02", "title": "See Through", "albumId": "alb_3", "artistId": "art_3", "durationMs": 200000, "trackNumber": 2, "discNumber": 1 },
+    { "id": "t_3_03", "title": "Windows", "albumId": "alb_3", "artistId": "art_3", "durationMs": 220000, "trackNumber": 3, "discNumber": 1 },
+    { "id": "t_3_04", "title": "Fragile", "albumId": "alb_3", "artistId": "art_3", "durationMs": 240000, "trackNumber": 4, "discNumber": 1 },
+    { "id": "t_3_05", "title": "Shards", "albumId": "alb_3", "artistId": "art_3", "durationMs": 190000, "trackNumber": 5, "discNumber": 1 },
+    { "id": "t_3_06", "title": "Prism", "albumId": "alb_3", "artistId": "art_3", "durationMs": 210000, "trackNumber": 6, "discNumber": 1 },
+    { "id": "t_3_07", "title": "Light", "albumId": "alb_3", "artistId": "art_3", "durationMs": 230000, "trackNumber": 7, "discNumber": 1 },
+    { "id": "t_3_08", "title": "Refract", "albumId": "alb_3", "artistId": "art_3", "durationMs": 185000, "trackNumber": 8, "discNumber": 1 },
+    { "id": "t_3_09", "title": "Spectrum", "albumId": "alb_3", "artistId": "art_3", "durationMs": 205000, "trackNumber": 9, "discNumber": 1 },
+    { "id": "t_3_10", "title": "Vision", "albumId": "alb_3", "artistId": "art_3", "durationMs": 195000, "trackNumber": 10, "discNumber": 1 },
+
+    { "id": "t_4_01", "title": "Velvet", "albumId": "alb_4", "artistId": "art_4", "durationMs": 200000, "trackNumber": 1, "discNumber": 1 },
+    { "id": "t_4_02", "title": "Smooth", "albumId": "alb_4", "artistId": "art_4", "durationMs": 220000, "trackNumber": 2, "discNumber": 1 },
+    { "id": "t_4_03", "title": "Hush", "albumId": "alb_4", "artistId": "art_4", "durationMs": 240000, "trackNumber": 3, "discNumber": 1 },
+    { "id": "t_4_04", "title": "Whisper", "albumId": "alb_4", "artistId": "art_4", "durationMs": 180000, "trackNumber": 4, "discNumber": 1 },
+    { "id": "t_4_05", "title": "Quiet", "albumId": "alb_4", "artistId": "art_4", "durationMs": 210000, "trackNumber": 5, "discNumber": 1 },
+    { "id": "t_4_06", "title": "Soft", "albumId": "alb_4", "artistId": "art_4", "durationMs": 230000, "trackNumber": 6, "discNumber": 1 },
+    { "id": "t_4_07", "title": "Gentle", "albumId": "alb_4", "artistId": "art_4", "durationMs": 190000, "trackNumber": 7, "discNumber": 1 },
+    { "id": "t_4_08", "title": "Calm", "albumId": "alb_4", "artistId": "art_4", "durationMs": 205000, "trackNumber": 8, "discNumber": 1 },
+    { "id": "t_4_09", "title": "Peace", "albumId": "alb_4", "artistId": "art_4", "durationMs": 225000, "trackNumber": 9, "discNumber": 1 },
+    { "id": "t_4_10", "title": "Rest", "albumId": "alb_4", "artistId": "art_4", "durationMs": 195000, "trackNumber": 10, "discNumber": 1 },
+
+    { "id": "t_5_01", "title": "Steel", "albumId": "alb_5", "artistId": "art_5", "durationMs": 190000, "trackNumber": 1, "discNumber": 1 },
+    { "id": "t_5_02", "title": "Iron", "albumId": "alb_5", "artistId": "art_5", "durationMs": 210000, "trackNumber": 2, "discNumber": 1 },
+    { "id": "t_5_03", "title": "Rust", "albumId": "alb_5", "artistId": "art_5", "durationMs": 230000, "trackNumber": 3, "discNumber": 1 },
+    { "id": "t_5_04", "title": "Alloy", "albumId": "alb_5", "artistId": "art_5", "durationMs": 185000, "trackNumber": 4, "discNumber": 1 },
+    { "id": "t_5_05", "title": "Forge", "albumId": "alb_5", "artistId": "art_5", "durationMs": 205000, "trackNumber": 5, "discNumber": 1 },
+    { "id": "t_5_06", "title": "Anvil", "albumId": "alb_5", "artistId": "art_5", "durationMs": 225000, "trackNumber": 6, "discNumber": 1 },
+    { "id": "t_5_07", "title": "Hammer", "albumId": "alb_5", "artistId": "art_5", "durationMs": 195000, "trackNumber": 7, "discNumber": 1 },
+    { "id": "t_5_08", "title": "Spark", "albumId": "alb_5", "artistId": "art_5", "durationMs": 215000, "trackNumber": 8, "discNumber": 1 },
+    { "id": "t_5_09", "title": "Flame", "albumId": "alb_5", "artistId": "art_5", "durationMs": 175000, "trackNumber": 9, "discNumber": 1 },
+    { "id": "t_5_10", "title": "Ash", "albumId": "alb_5", "artistId": "art_5", "durationMs": 240000, "trackNumber": 10, "discNumber": 1 },
+
+    { "id": "t_6_01", "title": "Break", "albumId": "alb_6", "artistId": "art_6", "durationMs": 200000, "trackNumber": 1, "discNumber": 1 },
+    { "id": "t_6_02", "title": "Bend", "albumId": "alb_6", "artistId": "art_6", "durationMs": 220000, "trackNumber": 2, "discNumber": 1 },
+    { "id": "t_6_03", "title": "Twist", "albumId": "alb_6", "artistId": "art_6", "durationMs": 240000, "trackNumber": 3, "discNumber": 1 },
+    { "id": "t_6_04", "title": "Turn", "albumId": "alb_6", "artistId": "art_6", "durationMs": 180000, "trackNumber": 4, "discNumber": 1 },
+    { "id": "t_6_05", "title": "Spin", "albumId": "alb_6", "artistId": "art_6", "durationMs": 210000, "trackNumber": 5, "discNumber": 1 },
+    { "id": "t_6_06", "title": "Rotate", "albumId": "alb_6", "artistId": "art_6", "durationMs": 230000, "trackNumber": 6, "discNumber": 1 },
+    { "id": "t_6_07", "title": "Orbit", "albumId": "alb_6", "artistId": "art_6", "durationMs": 190000, "trackNumber": 7, "discNumber": 1 },
+    { "id": "t_6_08", "title": "Gravity", "albumId": "alb_6", "artistId": "art_6", "durationMs": 205000, "trackNumber": 8, "discNumber": 1 },
+    { "id": "t_6_09", "title": "Mass", "albumId": "alb_6", "artistId": "art_6", "durationMs": 225000, "trackNumber": 9, "discNumber": 1 },
+    { "id": "t_6_10", "title": "Void", "albumId": "alb_6", "artistId": "art_6", "durationMs": 195000, "trackNumber": 10, "discNumber": 1 }
+  ]
+}
