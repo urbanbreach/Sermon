@@ -80,11 +80,11 @@ screenshots/
 session-*.md
 
 # AI Orchestration (Sisyphus internal)
-.sisyphus/
+#.sisyphus/
 
 # Internal planning docs (not for public repo)
-plans/
+#plans/
 #prompts/
 
 # UI test fixtures (large binary files)
-ui/fixtures/
+#ui/fixtures/

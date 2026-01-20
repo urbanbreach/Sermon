@@ -19,6 +19,14 @@
   --glass-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
   --glass-blur: 16px;
   --glass-radius: 12px;
+
+  /* Dynamic theme tokens (defaults - overridden by dynamicTheme.ts) */
+  --theme-accent: rgb(74, 175, 255);
+  --theme-bg-0: rgb(24, 32, 44);
+  --theme-bg-1: rgb(10, 10, 10);
+  --theme-accent-r: 74;
+  --theme-accent-g: 175;
+  --theme-accent-b: 255;
 }
 
 body {
