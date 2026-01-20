@@ -1,9 +1,10 @@
 use crate::db::{self, open_db};
 use crate::error::LibraryError;
 use crate::identity::{IdentitySource, compute_partial_hash, get_file_identity};
-use crate::models::{FolderOptions, ScanProgress, ScanSummary, TrackRow};
+use crate::models::{FolderOptions, QuickScanSummary, ScanProgress, ScanSummary, TrackRow};
 use globset::{Glob, GlobSetBuilder};
 use rusqlite::{Connection, params};
+use std::collections::HashSet;
 use std::path::Path;
 use std::time::Instant;
 use tracing::{info, warn};
@@ -402,4 +403,133 @@ fn mark_missing_files(
     }
 
     Ok(())
+}
+
+/// Quick scan all library folders on startup
+/// - Checks if existing tracks still exist on disk (marks missing if not)
+/// - Detects new files in folders (adds them to library)
+/// - Restores previously missing files that reappear
+/// This is faster than a full scan as it skips unchanged files
+pub fn quick_scan(db_path: &Path) -> Result<QuickScanSummary, LibraryError> {
+    let start = Instant::now();
+    let conn = open_db(db_path)?;
+
+    let mut folders_checked = 0u32;
+    let mut files_checked = 0u32;
+    let mut files_added = 0u32;
+    let mut files_marked_missing = 0u32;
+    let mut files_restored = 0u32;
+
+    // Get all enabled folders
+    let folders = db::list_folders(&conn)?;
+
+    for folder in folders.iter().filter(|f| f.enabled) {
+        let folder_path = Path::new(&folder.path);
+
+        if !folder_path.exists() || !folder_path.is_dir() {
+            warn!("Quick scan: folder unavailable: {}", folder.path);
+            continue;
+        }
+
+        folders_checked += 1;
+
+        // Parse folder options
+        let options: FolderOptions = serde_json::from_str(&folder.options_json).unwrap_or_default();
+        let exclude_set = build_glob_set(&options.exclude_patterns);
+
+        // 1. Check existing tracks in this folder for missing files
+        let existing_tracks = get_folder_tracks(&conn, folder.id)?;
+
+        for (track_id, track_path, is_missing) in &existing_tracks {
+            files_checked += 1;
+            let path = Path::new(track_path);
+
+            if path.exists() {
+                // File exists - restore if was marked missing
+                if *is_missing {
+                    db::set_missing(&conn, *track_id, false)?;
+                    files_restored += 1;
+                    info!("Quick scan: restored track {} ({})", track_id, track_path);
+                }
+            } else {
+                // File doesn't exist - mark as missing if not already
+                if !*is_missing {
+                    db::set_missing(&conn, *track_id, true)?;
+                    files_marked_missing += 1;
+                    info!(
+                        "Quick scan: marked missing track {} ({})",
+                        track_id, track_path
+                    );
+                }
+            }
+        }
+
+        // 2. Check for new files in folder
+        let existing_paths: HashSet<String> = existing_tracks
+            .iter()
+            .map(|(_, path, _)| path.clone())
+            .collect();
+
+        let disk_files = collect_eligible_files(folder_path, &options, &exclude_set);
+
+        for file_path in disk_files {
+            let path_str = file_path.to_string_lossy().to_string();
+
+            if !existing_paths.contains(&path_str) {
+                // New file found - add it
+                match process_file(&conn, folder.id, &file_path) {
+                    Ok(_) => {
+                        files_added += 1;
+                        info!("Quick scan: added new track {}", path_str);
+                    }
+                    Err(e) => {
+                        warn!("Quick scan: failed to add {}: {}", path_str, e);
+                    }
+                }
+            }
+        }
+    }
+
+    let elapsed_ms = start.elapsed().as_millis() as u64;
+
+    let summary = QuickScanSummary {
+        folders_checked,
+        files_checked,
+        files_added,
+        files_marked_missing,
+        files_restored,
+        elapsed_ms,
+    };
+
+    info!(
+        "quick_scan_complete folders={} checked={} added={} missing={} restored={} elapsed_ms={}",
+        folders_checked,
+        files_checked,
+        files_added,
+        files_marked_missing,
+        files_restored,
+        elapsed_ms
+    );
+
+    Ok(summary)
+}
+
+/// Get all tracks for a folder with their paths and missing status
+fn get_folder_tracks(
+    conn: &Connection,
+    folder_id: i64,
+) -> Result<Vec<(i64, String, bool)>, LibraryError> {
+    let mut stmt =
+        conn.prepare("SELECT id, path, is_missing FROM tracks WHERE library_folder_id = ?")?;
+
+    let rows = stmt.query_map(params![folder_id], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+    })?;
+
+    let mut tracks = Vec::new();
+    for row in rows {
+        tracks.push(row?);
+    }
+
+    Ok(tracks)
 }

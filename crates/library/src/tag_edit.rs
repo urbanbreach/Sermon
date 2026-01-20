@@ -80,6 +80,7 @@ impl UpdateTagsRequest {
             track_no: self.track_no.clone(),
             disc_no: self.disc_no.clone(),
             year: self.year.clone(),
+            picture: Default::default(),
         }
     }
 }
