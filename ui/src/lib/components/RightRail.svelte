@@ -2,20 +2,20 @@
   import { railMode, isRailOpen, setRailMode, toggleRail } from '../state/rightRail';
   import { queue, currentIndex, playNow } from '../state/playback';
   import { currentArtworkUrl } from '../state/artwork';
-  import { currentLyrics, currentLineIndex, lyricsContext } from '../state/lyrics';
+  import { currentLyrics, lyricsContext } from '../state/lyrics';
   import { navigate } from '../state/route';
-  import { ListMusic, Disc3, Radio, MicVocal, X, Maximize2 } from '@lucide/svelte';
+  import { ListMusic, Disc3, Radio, MicVocal, Maximize2, Infinity } from '@lucide/svelte';
   import { derived } from 'svelte/store';
+  import { fade, slide } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
+  import { fadeIn, pressScale } from '../utils/animations';
+  import { VList } from 'virtua/svelte';
   
   function goFullscreenLyrics() {
     navigate({ name: 'lyrics-fullscreen' });
   }
   
   // Derive Now Playing and Up Next from queue
-  // If currentIndex is null, we assume the first track is "current" (or nothing is playing yet but queue exists)
-  // Actually, usually currentIndex is null means nothing playing.
-  // But the prompt says: "If currentIndex is null: treat queue[0] as Now Playing and queue.slice(1) as Up Next"
-  
   const nowPlayingTrack = derived([queue, currentIndex], ([$queue, $currentIndex]) => {
     const index = $currentIndex ?? 0;
     return $queue[index] ?? null;
@@ -23,80 +23,96 @@
   
   const upNextTracks = derived([queue, currentIndex], ([$queue, $currentIndex]) => {
     const index = $currentIndex ?? 0;
-    // Up next is everything AFTER the current index
     return $queue.slice(index + 1);
   });
   
-  function formatDuration(ms?: number): string {
-    if (!ms && ms !== 0) return '—';
-    const minutes = Math.floor(ms / 60000);
-    const seconds = Math.floor((ms % 60000) / 1000);
-    return minutes + ":" + (seconds < 10 ? '0' : '') + seconds;
-  }
+  // Item count for the header pill
+  const itemCount = derived([queue], ([$queue]) => $queue.length);
 
   function handleKeydown(e: KeyboardEvent, trackId: number) {
     if (e.key === 'Enter') {
       playNow(trackId);
     }
   }
+  
+  // Mock autoplay suggestions
+  const autoplaySuggestions = [
+    { title: 'Similar Track 1', artist: 'Artist Name' },
+    { title: 'Similar Track 2', artist: 'Another Artist' },
+    { title: 'Similar Track 3', artist: 'Third Artist' },
+  ];
 </script>
 
 {#if $isRailOpen}
-  <!-- Scrim for overlay mode (1100-1279px) -->
-  <!-- We can use a media query in CSS to only show this scrim when in overlay mode -->
-  <!-- or rely on the fact that >=1280 the rail pushes content so scrim might not be needed? -->
-  <!-- Actually, the prompt says "overlay with scrim 1100-1279px". -->
-  <!-- At >=1280px, layout is persistent (side-by-side). -->
-  <!-- Since this component is mounted as a sibling, we need CSS to handle the positioning. -->
-  <div class="rail-scrim" onclick={toggleRail} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && toggleRail()}></div>
+  <!-- Scrim for overlay mode (<1280px) -->
+  <div 
+    class="rail-scrim" 
+    onclick={toggleRail} 
+    role="button" 
+    tabindex="0" 
+    onkeydown={(e) => e.key === 'Enter' && toggleRail()}
+    transition:fade={{ duration: 200 }}
+  ></div>
   
-  <aside class="right-rail-panel">
-    <!-- Control strip -->
-    <div class="rail-controls">
-      <div class="mode-tabs">
-        <button 
-          class:active={$railMode === 'now-playing'}
-          onclick={() => setRailMode('now-playing')}
-          title="Now Playing"
-          class="tab-btn"
-        >
-          <Disc3 size={18} />
-        </button>
-        <button 
-          class:active={$railMode === 'up-next'}
-          onclick={() => setRailMode('up-next')}
-          title="Up Next"
-          class="tab-btn"
-        >
-          <ListMusic size={18} />
-        </button>
-        <button 
-          class:active={$railMode === 'autoplay'}
-          onclick={() => setRailMode('autoplay')}
-          title="Autoplay"
-          class="tab-btn"
-        >
-          <Radio size={18} />
-        </button>
-        <button 
-          class:active={$railMode === 'lyrics'}
-          onclick={() => setRailMode('lyrics')}
-          title="Lyrics"
-          class="tab-btn"
-        >
-          <MicVocal size={18} />
-        </button>
+  <aside 
+    class="right-rail-panel"
+    transition:slide={{ duration: 250, easing: cubicOut, axis: 'x' }}
+  >
+    <!-- Cider-style top pill header -->
+    <div class="rail-header">
+      <div class="header-pills">
+        <!-- Mode icons pill -->
+        <div class="mode-pill">
+          <button 
+            class="pill-icon"
+            class:active={$railMode === 'now-playing'}
+            onclick={() => setRailMode('now-playing')}
+            title="Now Playing"
+            use:pressScale={{ scale: 0.95 }}
+          >
+            <Disc3 size={16} />
+          </button>
+          <button 
+            class="pill-icon"
+            class:active={$railMode === 'up-next'}
+            onclick={() => setRailMode('up-next')}
+            title="Up Next"
+            use:pressScale={{ scale: 0.95 }}
+          >
+            <ListMusic size={16} />
+          </button>
+          <button 
+            class="pill-icon"
+            class:active={$railMode === 'autoplay'}
+            onclick={() => setRailMode('autoplay')}
+            title="Autoplay"
+            use:pressScale={{ scale: 0.95 }}
+          >
+            <Radio size={16} />
+          </button>
+          <button 
+            class="pill-icon"
+            class:active={$railMode === 'lyrics'}
+            onclick={() => setRailMode('lyrics')}
+            title="Lyrics"
+            use:pressScale={{ scale: 0.95 }}
+          >
+            <MicVocal size={16} />
+          </button>
+        </div>
+        
+        <!-- Item count pill -->
+        <div class="count-pill">
+          {$itemCount} {$itemCount === 1 ? 'item' : 'items'}
+        </div>
       </div>
-      <button class="close-btn" onclick={toggleRail}>
-        <X size={18} />
-      </button>
     </div>
     
     <!-- Content based on mode -->
-    <div class="rail-content">
+    <div class="rail-content" use:fadeIn={{ duration: 200, delay: 100 }}>
       {#if $railMode === 'now-playing'}
         <div class="section">
-          <h3>Now Playing</h3>
+          <h3 class="section-header">Now Playing</h3>
           {#if $nowPlayingTrack}
             <div class="now-playing-card">
               {#if $currentArtworkUrl}
@@ -110,127 +126,183 @@
               </div>
             </div>
           {:else}
-            <div class="empty-state">Nothing Playing</div>
+            <div class="empty-state" use:fadeIn={{ duration: 300 }}>
+              <Disc3 size={24} strokeWidth={1.5} />
+              <span>Nothing playing</span>
+            </div>
           {/if}
         </div>
         
         <div class="section">
-          <h3>Playing Next</h3>
+          <div class="section-header-row">
+            <h3 class="section-header">Playing Next</h3>
+            {#if $nowPlayingTrack?.album}
+              <span class="section-subtitle">From {$nowPlayingTrack.album}</span>
+            {/if}
+          </div>
           {#if $upNextTracks.length > 0}
             <div class="queue-list">
-              {#each $upNextTracks as item, i}
-                <div 
-                  class="queue-item"
-                  role="button"
-                  tabindex="0"
-                  ondblclick={() => playNow(item.track_id)}
-                  onkeydown={(e) => handleKeydown(e, item.track_id)}
-                >
-                  <span class="q-index">{i + 1}</span>
-                  <div class="q-info">
-                    <span class="q-title">{item.title || '—'}</span>
-                    <span class="q-artist">{item.artist || '—'}</span>
+              <VList data={$upNextTracks} getKey={(item: { track_id: number }) => item.track_id} itemSize={52}>
+                {#snippet children(item: { track_id: number; title?: string; artist?: string })}
+                  <div 
+                    class="queue-item"
+                    role="button"
+                    tabindex="0"
+                    ondblclick={() => playNow(item.track_id)}
+                    onkeydown={(e) => handleKeydown(e, item.track_id)}
+                  >
+                    <div class="q-thumb-placeholder"></div>
+                    <div class="q-info">
+                      <span class="q-title">{item.title || '—'}</span>
+                      <span class="q-artist">{item.artist || '—'}</span>
+                    </div>
                   </div>
-                  <span class="q-time">{formatDuration(item.duration_ms)}</span>
-                </div>
-              {/each}
+                {/snippet}
+              </VList>
             </div>
           {:else}
-            <div class="empty-state">Up Next is empty</div>
+            <div class="empty-state" use:fadeIn={{ duration: 300 }}>
+              <ListMusic size={24} strokeWidth={1.5} />
+              <span>Queue is empty</span>
+            </div>
           {/if}
         </div>
+        
+        <!-- Autoplay section in now-playing mode -->
+        <div class="section">
+          <div class="section-header-row">
+            <div class="header-with-icon">
+              <Infinity size={14} />
+              <h3 class="section-header">Autoplay</h3>
+            </div>
+            <span class="section-subtitle">Similar music will keep playing</span>
+          </div>
+          <div class="queue-list">
+            {#each autoplaySuggestions as suggestion}
+              <div class="queue-item autoplay-item">
+                <div class="q-thumb-placeholder"></div>
+                <div class="q-info">
+                  <span class="q-title">{suggestion.title}</span>
+                  <span class="q-artist">{suggestion.artist}</span>
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
+        
       {:else if $railMode === 'up-next'}
         <div class="section">
-          <h3>Up Next</h3>
+          <div class="section-header-row">
+            <h3 class="section-header">Up Next</h3>
+            <span class="item-count-label">{$upNextTracks.length} tracks</span>
+          </div>
           {#if $upNextTracks.length > 0}
             <div class="queue-list">
-              {#each $upNextTracks as item, i}
-                <div 
-                  class="queue-item"
-                  role="button"
-                  tabindex="0"
-                  ondblclick={() => playNow(item.track_id)}
-                  onkeydown={(e) => handleKeydown(e, item.track_id)}
-                >
-                  <span class="q-index">{i + 1}</span>
-                  <div class="q-info">
-                    <span class="q-title">{item.title || '—'}</span>
-                    <span class="q-artist">{item.artist || '—'}</span>
+              <VList data={$upNextTracks} getKey={(item: { track_id: number }) => item.track_id} itemSize={52}>
+                {#snippet children(item: { track_id: number; title?: string; artist?: string })}
+                  <div 
+                    class="queue-item"
+                    role="button"
+                    tabindex="0"
+                    ondblclick={() => playNow(item.track_id)}
+                    onkeydown={(e) => handleKeydown(e, item.track_id)}
+                  >
+                    <div class="q-thumb-placeholder"></div>
+                    <div class="q-info">
+                      <span class="q-title">{item.title || '—'}</span>
+                      <span class="q-artist">{item.artist || '—'}</span>
+                    </div>
                   </div>
-                  <span class="q-time">{formatDuration(item.duration_ms)}</span>
-                </div>
-              {/each}
+                {/snippet}
+              </VList>
             </div>
           {:else}
-            <div class="empty-state">Up Next is empty</div>
+            <div class="empty-state" use:fadeIn={{ duration: 300 }}>
+              <ListMusic size={24} strokeWidth={1.5} />
+              <span>Queue is empty</span>
+            </div>
           {/if}
         </div>
+        
       {:else if $railMode === 'autoplay'}
         <div class="section">
-          <h3>Autoplay</h3>
-          <div class="empty-state">Autoplay is Off</div>
-          <p class="hint">Similar music will play when your queue ends.</p>
+          <div class="section-header-row">
+            <div class="header-with-icon">
+              <Infinity size={14} />
+              <h3 class="section-header">Autoplay</h3>
+            </div>
+          </div>
+          <p class="autoplay-description">Similar music will play when your queue ends.</p>
+          <div class="queue-list">
+            {#each autoplaySuggestions as suggestion}
+              <div class="queue-item autoplay-item">
+                <div class="q-thumb-placeholder"></div>
+                <div class="q-info">
+                  <span class="q-title">{suggestion.title}</span>
+                  <span class="q-artist">{suggestion.artist}</span>
+                </div>
+              </div>
+            {/each}
+          </div>
         </div>
+        
       {:else if $railMode === 'lyrics'}
         <div class="section lyrics-section">
           <div class="lyrics-header-row">
-            <h3>Lyrics</h3>
-            <button class="fullscreen-btn" onclick={goFullscreenLyrics} title="Fullscreen">
+            <h3 class="section-header">Lyrics</h3>
+            <button class="fullscreen-btn" onclick={goFullscreenLyrics} title="Fullscreen" use:pressScale={{ scale: 0.95 }}>
               <Maximize2 size={16} />
             </button>
           </div>
           {#if $currentLyrics && $currentLyrics.length > 0}
             <div class="lyrics-rail-content">
-              {#each $lyricsContext.lines as line, i}
-                <p 
-                  class="lyric-line"
-                  class:active={i === $lyricsContext.activeIndex}
-                  class:before={i < $lyricsContext.activeIndex}
-                  class:after={i > $lyricsContext.activeIndex}
-                >
-                  {line || '\u00A0'}
-                </p>
-              {/each}
+              <VList data={$lyricsContext.lines}>
+                {#snippet children(line: string, i: number)}
+                  <p 
+                    class="lyric-line"
+                    class:active={i === $lyricsContext.activeIndex}
+                    class:before={i < $lyricsContext.activeIndex}
+                    class:after={i > $lyricsContext.activeIndex}
+                  >
+                    {line || '\u00A0'}
+                  </p>
+                {/snippet}
+              </VList>
             </div>
           {:else}
-            <div class="empty-state">Lyrics not available for this track.</div>
+            <div class="empty-state" use:fadeIn={{ duration: 300 }}>
+              <MicVocal size={24} strokeWidth={1.5} />
+              <span>Lyrics not available</span>
+            </div>
           {/if}
         </div>
       {/if}
     </div>
+    
   </aside>
 {/if}
 
 <style>
   /* Base styles */
   .right-rail-panel {
-    width: var(--layout-rail-width, 300px);
+    width: var(--layout-rail-width, 320px);
     height: 100%;
-    background: var(--glass-bg, rgba(20, 20, 20, 0.95));
-    backdrop-filter: blur(var(--glass-blur, 20px));
-    -webkit-backdrop-filter: blur(var(--glass-blur, 20px));
-    border-left: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
+    background: transparent;
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
     box-sizing: border-box;
-    z-index: 90; /* High enough to be above content, but below modals */
+    z-index: 90;
+    position: relative;
   }
 
   /* Persistent mode (>=1280px) */
   @media (min-width: 1280px) {
     .right-rail-panel {
-      position: relative; /* Sibling in flex container */
+      position: relative;
     }
     .rail-scrim {
       display: none;
-    }
-    .close-btn {
-      display: none; /* Usually persistent rails don't have a close button, or maybe it toggles visibility? */
-      /* The prompt includes a close button in the controls HTML. Let's keep it visible if the user wants to close it manually. */
-      /* Actually, prompt says: ">=1280px: isRailOpen=true (persistent, no overlay)" */
-      /* If strictly persistent, maybe no close button? But toggleRail exists. */
-      /* I'll leave the close button visible as it's good UX to be able to hide sidebars. */
     }
   }
 
@@ -241,7 +313,8 @@
       top: 0;
       right: 0;
       bottom: 0;
-      box-shadow: -5px 0 20px rgba(0,0,0,0.5);
+      background: rgba(10, 10, 10, 0.95);
+      box-shadow: -2px 0 12px rgba(0,0,0,0.25);
     }
     
     .rail-scrim {
@@ -256,114 +329,165 @@
     }
   }
 
-  .rail-controls {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px;
-    border-bottom: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
+  /* ============================================
+     CIDER-STYLE TOP PILL HEADER
+     ============================================ */
+  .rail-header {
+    padding: 12px 16px;
     -webkit-app-region: no-drag;
   }
 
-  .mode-tabs {
+  .header-pills {
     display: flex;
-    gap: 4px;
-    background: rgba(255, 255, 255, 0.05);
+    align-items: center;
+    gap: 8px;
+  }
+
+  .mode-pill {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    background: var(--surface-1);
     padding: 4px;
-    border-radius: 6px;
+    border-radius: 999px;
+    border: 1px solid var(--glass-border);
   }
 
-  .tab-btn {
+  .pill-icon {
     background: transparent;
     border: none;
-    color: #888;
-    padding: 6px;
-    border-radius: 4px;
+    color: var(--text-tertiary);
+    padding: 6px 8px;
+    border-radius: 999px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
+    transition: all var(--motion-fast) var(--ease-out);
   }
 
-  .tab-btn:hover {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.1);
+  .pill-icon:hover {
+    color: var(--text-secondary);
+    background: var(--surface-hover);
   }
 
-  .tab-btn.active {
-    background: var(--accent-color, #4af);
-    color: #000; /* Contrast on accent */
+  .pill-icon.active {
+    color: var(--theme-accent);
+    background: var(--accent-weak);
   }
 
-  .close-btn {
-    background: transparent;
-    border: none;
-    color: #888;
-    padding: 6px;
-    border-radius: 4px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
+  .count-pill {
+    background: var(--surface-1);
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    border: 1px solid var(--glass-border);
   }
 
-  .close-btn:hover {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.1);
-  }
-
+  /* ============================================
+     CONTENT AREA
+     ============================================ */
   .rail-content {
     flex: 1;
     overflow-y: auto;
-    padding: 16px;
+    padding: 0 16px 80px 16px;
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 20px;
   }
 
-  .section h3 {
-    margin: 0 0 12px 0;
-    font-size: 14px;
+  .section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* ============================================
+     SECTION HEADERS - CIDER NEUTRAL STYLE
+     ============================================ */
+  .section-header {
+    margin: 0;
+    font-size: 15px;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.8);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    color: var(--text-primary);
   }
 
-  .empty-state {
-    color: #666;
-    font-size: 14px;
-    padding: 20px 0;
-    text-align: center;
-    background: rgba(255, 255, 255, 0.02);
-    border-radius: 8px;
-    border: 1px dashed rgba(255, 255, 255, 0.1);
+  .section-header-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
 
-  .hint {
-    color: #555;
+  .section-subtitle {
     font-size: 12px;
-    margin-top: 8px;
-    text-align: center;
+    color: var(--text-tertiary);
   }
 
-  /* Now Playing Card */
+  .header-with-icon {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .header-with-icon .section-header {
+    margin: 0;
+  }
+
+  .item-count-label {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  /* ============================================
+     EMPTY STATE - SUBTLE, NO DASHED BORDER
+     ============================================ */
+  .empty-state {
+    color: var(--text-tertiary);
+    font-size: 13px;
+    padding: 32px 16px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: var(--surface-1);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+  }
+
+  .empty-state :global(svg) {
+    opacity: 0.5;
+    color: var(--text-disabled);
+  }
+
+  .autoplay-description {
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 13px;
+    margin: 0 0 8px 0;
+  }
+
+  /* ============================================
+     NOW PLAYING CARD
+     ============================================ */
   .now-playing-card {
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 8px;
-    padding: 12px;
     display: flex;
     gap: 12px;
     align-items: center;
-    margin-bottom: 8px;
+    padding: 8px;
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--shadow-1);
   }
 
   .np-artwork {
     width: 48px;
     height: 48px;
-    border-radius: 4px;
+    border-radius: 6px;
     object-fit: cover;
     background: #222;
   }
@@ -371,8 +495,8 @@
   .np-artwork-placeholder {
     width: 48px;
     height: 48px;
-    border-radius: 4px;
-    background: linear-gradient(45deg, #222, #333);
+    border-radius: 6px;
+    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
   }
 
   .np-info {
@@ -383,6 +507,7 @@
   .np-title {
     font-weight: 600;
     font-size: 14px;
+    color: rgba(255, 255, 255, 0.95);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -391,45 +516,49 @@
 
   .np-artist {
     font-size: 12px;
-    color: #888;
+    color: rgba(255, 255, 255, 0.5);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  /* Queue List */
+  /* ============================================
+     QUEUE LIST - WITH THUMBNAILS
+     ============================================ */
   .queue-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
   }
 
   .queue-item {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 10px; /* 36px total height approx: 16+8+8=32 + borders */
+    padding: 6px 8px;
     border-radius: 6px;
     cursor: default;
-    transition: background 0.1s;
-    height: 36px; /* Explicit height per requirement */
+    transition: background var(--motion-fast) var(--ease-out);
+    height: 52px;
     box-sizing: border-box;
   }
 
   .queue-item:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--surface-hover);
   }
 
   .queue-item:focus {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--surface-2);
     outline: none;
+    box-shadow: inset 0 0 0 1px var(--accent-medium);
   }
 
-  .q-index {
-    color: #555;
-    font-size: 12px;
-    width: 20px;
-    text-align: right;
+  .q-thumb-placeholder {
+    width: 40px;
+    height: 40px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+    flex-shrink: 0;
   }
 
   .q-info {
@@ -438,6 +567,7 @@
     flex-direction: column;
     overflow: hidden;
     justify-content: center;
+    gap: 2px;
   }
 
   .q-title {
@@ -445,24 +575,24 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: #eee;
+    color: rgba(255, 255, 255, 0.9);
   }
 
   .q-artist {
     font-size: 11px;
-    color: #777;
+    color: rgba(255, 255, 255, 0.45);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .q-time {
-    font-size: 12px;
-    color: #666;
-    margin-left: 8px;
+  .autoplay-item {
+    opacity: 0.7;
   }
 
-  /* Lyrics Rail Styles */
+  /* ============================================
+     LYRICS SECTION
+     ============================================ */
   .lyrics-section {
     flex: 1;
     display: flex;
@@ -477,26 +607,26 @@
     margin-bottom: 12px;
   }
 
-  .lyrics-header-row h3 {
+  .lyrics-header-row .section-header {
     margin: 0;
   }
 
   .fullscreen-btn {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.08);
     border: none;
-    color: #888;
+    color: rgba(255, 255, 255, 0.6);
     padding: 6px;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
+    transition: all 0.15s ease;
   }
 
   .fullscreen-btn:hover {
     color: #fff;
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.12);
   }
 
   .lyrics-rail-content {
@@ -509,7 +639,7 @@
   .lyric-line {
     margin: 0;
     padding: 6px 0;
-    font-size: 22px;
+    font-size: 20px;
     font-weight: 500;
     line-height: 1.4;
     transition: all 0.3s ease;
@@ -519,7 +649,6 @@
   .lyric-line.active {
     color: #fff;
     font-weight: 700;
-    font-size: 22px;
   }
 
   .lyric-line.before {
@@ -528,5 +657,34 @@
 
   .lyric-line.after {
     color: rgba(255, 255, 255, 0.35);
+  }
+
+  .mode-pill button:nth-child(1) { animation-delay: 0ms; }
+  .mode-pill button:nth-child(2) { animation-delay: 30ms; }
+  .mode-pill button:nth-child(3) { animation-delay: 60ms; }
+  .mode-pill button:nth-child(4) { animation-delay: 90ms; }
+
+  @keyframes fadeSlideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .right-rail-panel .pill-icon {
+    animation: fadeSlideIn 0.2s ease-out backwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .right-rail-panel {
+      transition: none;
+    }
+    .pill-icon {
+      animation: none;
+    }
   }
 </style>

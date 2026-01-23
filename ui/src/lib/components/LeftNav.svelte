@@ -1,6 +1,6 @@
 <script lang="ts">
   import { currentRouteName, navigate } from '../state/route';
-  import { Disc3, Users, ListMusic, Activity, Settings, ChevronDown, ChevronRight, Search, Music } from 'lucide-svelte';
+  import { Disc3, Users, ListMusic, Activity, Settings, ChevronDown, ChevronRight, Search, X } from '@lucide/svelte';
   import { pressScale } from '../utils/animations';
 
   type SimpleRouteName = 'albums' | 'artists' | 'tracks' | 'diagnostics' | 'preferences';
@@ -38,18 +38,45 @@
   function toggleSection(header: string) {
     expandedSections[header] = !expandedSections[header];
   }
+
+  let searchQuery = $state('');
+  let searchFocused = $state(false);
+
+  function handleSearchKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && searchQuery.trim()) {
+      navigate({ name: 'search-results', query: searchQuery.trim() });
+    }
+    if (e.key === 'Escape') {
+      searchQuery = '';
+      (e.target as HTMLInputElement).blur();
+    }
+  }
+
+  function clearSearch() {
+    searchQuery = '';
+  }
 </script>
 
 <nav class="left-nav" data-testid="glass-panel">
   <!-- Cider-style Search Bar -->
   <div class="search-container">
-    <div class="search-bar">
-      <span class="search-placeholder">Search</span>
-      <Search size={16} strokeWidth={1.5} />
+    <div class="search-bar" class:focused={searchFocused}>
+      <Search size={14} strokeWidth={1.5} />
+      <input
+        type="text"
+        placeholder="Search"
+        bind:value={searchQuery}
+        onfocus={() => searchFocused = true}
+        onblur={() => searchFocused = false}
+        onkeydown={handleSearchKeydown}
+      />
+      {#if searchQuery}
+        <button class="clear-btn" onclick={clearSearch}>
+          <X size={14} />
+        </button>
+      {/if}
+      <span class="shortcut-hint">⌘K</span>
     </div>
-    <button class="music-btn" title="Browse Music">
-      <Music size={18} strokeWidth={1.5} />
-    </button>
   </div>
 
   <!-- Navigation Sections -->
@@ -79,7 +106,7 @@
               class="nav-item"
               class:active={$currentRouteName === item.routeName}
               onclick={() => handleNavigate(item.routeName)}
-              use:pressScale={{ scale: 0.98 }}
+              use:pressScale
             >
               <item.icon size={18} strokeWidth={1.5} />
               <span>{item.label}</span>
@@ -90,18 +117,6 @@
     </div>
   {/each}
   
-  <!-- Spacer to push profile to bottom -->
-  <div class="nav-spacer"></div>
-  
-  <!-- User Profile Footer (Cider-style) -->
-  <div class="profile-footer">
-    <div class="profile-avatar">
-      <span>S</span>
-    </div>
-    <div class="profile-info">
-      <span class="profile-name">Sermon User</span>
-    </div>
-  </div>
 </nav>
 
 <style>
@@ -109,71 +124,97 @@
     display: flex;
     flex-direction: column;
     width: var(--layout-sidebar-width, 250px);
-    background: rgba(0, 0, 0, 0.45);
-    backdrop-filter: blur(40px);
-    -webkit-backdrop-filter: blur(40px);
-    /* Remove border-right - using divider element instead */
-    padding: 12px 10px;
+    /* Integrated look: transparent background, no independent glass effect */
+    background: transparent;
+    /* No backdrop-filter - unified with window background */
+    padding: 12px 12px 12px 12px;
     height: 100%;
     box-sizing: border-box;
-    gap: 16px;
+    gap: 12px;
     user-select: none;
-    /* Remove card-like shadow, keep subtle inner highlight */
     box-shadow: none;
   }
 
-  /* Cider-style Search Bar */
+  /* Search container - fits within sidebar padding */
   .search-container {
     display: flex;
-    gap: 8px;
-    padding: 0 4px;
+    align-items: center;
+    padding: 0;
     -webkit-app-region: no-drag;
+    flex-shrink: 0;
+    box-sizing: border-box;
   }
 
   .search-bar {
-    flex: 1;
+    width: 100%;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    height: 34px;
-    padding: 0 12px;
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    background: var(--surface-1);
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
     color: var(--text-tertiary);
     cursor: text;
-    transition: all var(--motion-fast) var(--ease-standard);
+    transition: all var(--motion-fast) var(--ease-out);
+    font-size: 12px;
+    box-sizing: border-box;
   }
 
   .search-bar:hover {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.1);
+    background: var(--surface-2);
+    border-color: rgba(255, 255, 255, 0.12);
   }
 
-  .search-placeholder {
+  .search-bar.focused {
+    border-color: var(--accent-medium);
+    background: var(--surface-2);
+    box-shadow: var(--focus-ring);
+  }
+
+  .search-bar input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
     font-size: 13px;
-    font-weight: 400;
-    color: #AAAAAA;
+    font-family: inherit;
+    min-width: 0;
   }
 
-  .music-btn {
-    width: 36px;
-    height: 36px;
+  .search-bar input::placeholder {
+    color: var(--text-tertiary);
+  }
+
+  .clear-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-tertiary);
+    padding: 2px;
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--glass-bg-light);
-    border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 50%;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all var(--motion-fast) var(--ease-standard);
+    transition: all var(--motion-fast) var(--ease-out);
+    flex-shrink: 0;
   }
 
-  .music-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
+  .clear-btn:hover {
     color: var(--text-primary);
+    background: var(--surface-hover);
+  }
+
+  .shortcut-hint {
+    font-size: 10px;
+    color: var(--text-disabled);
+    padding: 2px 4px;
+    background: var(--surface-1);
+    border-radius: 4px;
+    font-family: system-ui;
+    flex-shrink: 0;
   }
 
   /* Navigation Sections */
@@ -188,15 +229,15 @@
     align-items: center;
     justify-content: space-between;
     gap: 6px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #CCCCCC;
-    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    padding: 8px 12px;
     margin-bottom: 2px;
     background: transparent;
     border: none;
     cursor: pointer;
-    transition: color var(--motion-fast) var(--ease-standard);
+    transition: color var(--motion-fast) var(--ease-out);
     -webkit-app-region: no-drag;
   }
 
@@ -209,7 +250,7 @@
     align-items: center;
     justify-content: center;
     opacity: 0.6;
-    transition: transform var(--motion-fast) var(--ease-standard);
+    transition: transform var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out);
   }
 
   .section-header.collapsed .chevron {
@@ -225,14 +266,15 @@
   .nav-item {
     background: transparent;
     border: none;
-    color: var(--text-secondary);
+    color: var(--text-primary);
     text-align: left;
-    padding: 8px 12px;
+    padding: 0 12px;
+    height: 36px;
     cursor: pointer;
     font-size: 14px;
     font-weight: 500;
-    border-radius: 6px;
-    transition: all var(--motion-fast) var(--ease-standard);
+    border-radius: 8px;
+    transition: all var(--motion-fast) var(--ease-out);
     display: flex;
     align-items: center;
     gap: 12px;
@@ -240,69 +282,21 @@
     -webkit-app-region: no-drag;
   }
 
-  .nav-item:hover {
-    background: rgba(255, 255, 255, 0.06);
+  .nav-item:hover:not(.active) {
+    background: var(--surface-hover);
   }
 
   .nav-item.active {
-    background: #9C2737;
-    color: #FFFFFF;
-    font-weight: 600;
-    border: none;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    background: var(--accent-weak);
+    color: var(--theme-accent);
+    font-weight: 500;
+    border: 1px solid var(--accent-medium);
+    box-shadow: var(--shadow-1);
   }
 
   .nav-item :global(svg) {
-    transition: stroke var(--motion-fast) var(--ease-standard);
+    transition: stroke var(--motion-fast) var(--ease-out);
     flex-shrink: 0;
   }
 
-  /* Spacer */
-  .nav-spacer {
-    flex: 1;
-  }
-
-  /* Cider-style Profile Footer */
-  .profile-footer {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    margin: 0 4px;
-    background: transparent;
-    cursor: pointer;
-    transition: background var(--motion-fast) var(--ease-standard);
-    -webkit-app-region: no-drag;
-  }
-
-  .profile-footer:hover {
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  .profile-avatar {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, var(--theme-accent), rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.7));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    font-weight: 700;
-    color: #000;
-  }
-
-  .profile-info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .profile-name {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
 </style>

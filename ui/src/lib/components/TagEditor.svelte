@@ -2,7 +2,6 @@
   import { listen } from '@tauri-apps/api/event';
   import { onMount, onDestroy } from 'svelte';
   import Modal from './Modal.svelte';
-  import RawTagsViewer from './RawTagsViewer.svelte';
   import { updateTrackTags } from '../api/library';
   import { loadTracks } from '../state/library';
   import type { TrackRow, TagPatch, NumberPatch, TagWriteStatusEvent } from '../types/library';
@@ -37,7 +36,6 @@
   let saving = $state(false);
   let error = $state<string | null>(null);
   let retryStatus = $state<{ attempt: number; maxAttempts: number } | null>(null);
-  let showRawTags = $state(false);
 
   // Event listener cleanup
   let unlistenStatus: (() => void) | null = null;
@@ -443,14 +441,6 @@
           <input type="checkbox" bind:checked={createBackup} disabled={saving} />
           Create backup before writing
         </label>
-        <button
-          type="button"
-          class="raw-tags-btn"
-          onclick={() => showRawTags = true}
-          disabled={saving}
-        >
-          Show Raw Tags
-        </button>
       </div>
 
       <div class="actions">
@@ -469,12 +459,6 @@
   {/if}
 </Modal>
 
-<!-- Raw Tags Viewer Modal -->
-<RawTagsViewer
-  trackId={track?.id ?? null}
-  open={showRawTags}
-  onclose={() => showRawTags = false}
-/>
 
 <style>
   .tag-editor {
@@ -617,28 +601,6 @@
     margin-top: 1.5rem;
     padding-top: 1rem;
     border-top: 1px solid var(--glass-border);
-  }
-
-  .raw-tags-btn {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--glass-border);
-    border-radius: 6px;
-    color: #888;
-    padding: 0.4rem 0.75rem;
-    font-size: 0.85rem;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .raw-tags-btn:hover:not(:disabled) {
-    background: rgba(68, 170, 255, 0.15);
-    border-color: rgba(68, 170, 255, 0.3);
-    color: #4af;
-  }
-
-  .raw-tags-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .checkbox-label {
