@@ -156,7 +156,6 @@ export function applyEffects(): void {
 
   // When reduce_effects is on, disable all effects
   if (reduce) {
-    root.style.setProperty('--glass-blur', '0px');
     root.classList.add('reduce-effects');
     root.classList.remove('effects-blur', 'effects-glow', 'effects-border');
   } else {
@@ -164,10 +163,8 @@ export function applyEffects(): void {
     
     // Apply individual toggles
     if (blur) {
-      root.style.setProperty('--glass-blur', '16px');
       root.classList.add('effects-blur');
     } else {
-      root.style.setProperty('--glass-blur', '0px');
       root.classList.remove('effects-blur');
     }
 
@@ -216,18 +213,4 @@ export function syncAppearanceToEffects(settings: Record<string, string>): void 
   applyEffects();
 }
 
-// Reset effects to defaults
-export function resetEffectsDefaults(): void {
-  reduceEffects.set(false);
-  themeBlur.set(true);
-  themeGlow.set(true);
-  themeBorderHighlight.set(true);
-  blurPx.set(16);
-  glowStrength.set(0.35);
-  borderStrength.set(0.2);
-  bgIntensity.set(0.35);
-  bgNoiseOpacity.set(0.18);
-  bgCrossfadeMs.set(1200);
-  
-  applyEffects();
-}
+

@@ -22,9 +22,13 @@ const FALLBACK_THEME: ThemeColors = {
   bg1: [10, 10, 10],
 };
 
+const themeCache = new Map<string, ThemeColors>();
+let debounceTimer: any = null;
+
 /**
  * RGB to HSL conversion
  */
+
 function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
   r /= 255; g /= 255; b /= 255;
   const max = Math.max(r, g, b), min = Math.min(r, g, b);
@@ -136,6 +140,10 @@ function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
  * Works with both asset URLs (snapshot mode) and data URLs (runtime mode)
  */
 export async function computeThemeFromImageSrc(src: string): Promise<ThemeColors> {
+  if (themeCache.has(src)) {
+    return themeCache.get(src)!;
+  }
+
   // Load image
   const img = new Image();
   img.crossOrigin = 'anonymous';
@@ -201,6 +209,7 @@ export async function computeThemeFromImageSrc(src: string): Promise<ThemeColors
 
   // If no pixels remain after filtering, use fallback
   if (samples.length === 0) {
+    themeCache.set(src, FALLBACK_THEME);
     return FALLBACK_THEME;
   }
 
@@ -238,6 +247,7 @@ export async function computeThemeFromImageSrc(src: string): Promise<ThemeColors
   // Compute accent RGB as mean of original RGB bytes in dominant bucket
   const dominantSamples = buckets[dominantBucket].samples;
   if (dominantSamples.length === 0) {
+    themeCache.set(src, FALLBACK_THEME);
     return FALLBACK_THEME;
   }
 
@@ -288,40 +298,51 @@ export async function computeThemeFromImageSrc(src: string): Promise<ThemeColors
     Math.round(accentB * 0.30),
   ];
 
-  return {
+  const theme: ThemeColors = {
     accent: [accentR, accentG, accentB],
     accent2,
     accent3,
     bg0,
     bg1,
   };
+
+  themeCache.set(src, theme);
+  return theme;
 }
 
+
 /**
- * Apply theme colors to document via CSS variables
+ * Apply theme colors to document via CSS variables (debounced at 120ms)
  */
 export function applyThemeToDocument(theme: ThemeColors): void {
-  const root = document.documentElement;
+  if (debounceTimer) clearTimeout(debounceTimer);
   
-  root.style.setProperty('--theme-accent', `rgb(${theme.accent.join(',')})`);
-  root.style.setProperty('--theme-accent-2', `rgb(${theme.accent2.join(',')})`);
-  root.style.setProperty('--theme-accent-3', `rgb(${theme.accent3.join(',')})`);
-  root.style.setProperty('--theme-bg-0', `rgb(${theme.bg0.join(',')})`);
-  root.style.setProperty('--theme-bg-1', `rgb(${theme.bg1.join(',')})`);
-  
-  // Also set individual RGB values for alpha variations
-  root.style.setProperty('--theme-accent-r', String(theme.accent[0]));
-  root.style.setProperty('--theme-accent-g', String(theme.accent[1]));
-  root.style.setProperty('--theme-accent-b', String(theme.accent[2]));
-  
-  root.style.setProperty('--theme-accent-2-r', String(theme.accent2[0]));
-  root.style.setProperty('--theme-accent-2-g', String(theme.accent2[1]));
-  root.style.setProperty('--theme-accent-2-b', String(theme.accent2[2]));
-  
-  root.style.setProperty('--theme-accent-3-r', String(theme.accent3[0]));
-  root.style.setProperty('--theme-accent-3-g', String(theme.accent3[1]));
-  root.style.setProperty('--theme-accent-3-b', String(theme.accent3[2]));
+  debounceTimer = setTimeout(() => {
+    const root = document.documentElement;
+    
+    root.style.setProperty('--theme-accent', `rgb(${theme.accent.join(',')})`);
+    root.style.setProperty('--theme-accent-2', `rgb(${theme.accent2.join(',')})`);
+    root.style.setProperty('--theme-accent-3', `rgb(${theme.accent3.join(',')})`);
+    root.style.setProperty('--theme-bg-0', `rgb(${theme.bg0.join(',')})`);
+    root.style.setProperty('--theme-bg-1', `rgb(${theme.bg1.join(',')})`);
+    
+    // Also set individual RGB values for alpha variations
+    root.style.setProperty('--theme-accent-r', String(theme.accent[0]));
+    root.style.setProperty('--theme-accent-g', String(theme.accent[1]));
+    root.style.setProperty('--theme-accent-b', String(theme.accent[2]));
+    
+    root.style.setProperty('--theme-accent-2-r', String(theme.accent2[0]));
+    root.style.setProperty('--theme-accent-2-g', String(theme.accent2[1]));
+    root.style.setProperty('--theme-accent-2-b', String(theme.accent2[2]));
+    
+    root.style.setProperty('--theme-accent-3-r', String(theme.accent3[0]));
+    root.style.setProperty('--theme-accent-3-g', String(theme.accent3[1]));
+    root.style.setProperty('--theme-accent-3-b', String(theme.accent3[2]));
+    
+    debounceTimer = null;
+  }, 120);
 }
+
 
 /**
  * Reset theme to defaults

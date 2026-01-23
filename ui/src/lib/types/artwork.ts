@@ -28,11 +28,6 @@ export interface SelectCandidateResponse {
   cacheHit: boolean;
 }
 
-export interface ExtractEmbeddedResponse {
-  found: boolean;
-  cacheKey?: string;
-  mime?: string;
-}
 
 export interface FindFolderArtworkResponse {
   found: boolean;

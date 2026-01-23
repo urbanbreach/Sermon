@@ -9,38 +9,16 @@ import { writable } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 
 // Types for each category's settings
-export interface GeneralSettings {
-  'general.startup.with_windows': string;
-  'general.startup.minimized': string;
-}
-
 export interface PlayerSettings {
   'player.buffer_size_ms': string;
   'player.preload_next': string;
 }
 
-export interface NowPlayingSettings {
-  'nowplaying.double_click': string;
-  'nowplaying.queue_add_position': string;
-  'nowplaying.shuffle_mode': string;
-}
-
 export interface LibrarySettings {
   'library.scan_on_startup': string;
-  'library.continuous_monitoring': string;
-}
-
-export interface TagsSettings {
-  'tags.backup_before_write': string;
-  'tags.write_behavior': string;
 }
 
 export interface InternetSettings {
-  'internet.lastfm_enabled': string;
-}
-
-export interface DevicesSettings {
-  'devices.dsd_dop_enabled': string;
 }
 
 export interface AppearanceSettings {
@@ -56,26 +34,18 @@ export interface AppearanceSettings {
   'ui.background.crossfade_ms': string;
 }
 
-export type PreferenceCategory = 'general' | 'player' | 'nowplaying' | 'library' | 'tags' | 'internet' | 'devices' | 'appearance';
+export type PreferenceCategory = 'player' | 'library' | 'internet' | 'appearance';
 
 export type CategorySettings = 
-  | GeneralSettings 
   | PlayerSettings 
-  | NowPlayingSettings 
   | LibrarySettings 
-  | TagsSettings 
   | InternetSettings 
-  | DevicesSettings
   | AppearanceSettings;
 
 // Stores for each category
-export const generalSettings = writable<GeneralSettings | null>(null);
 export const playerSettings = writable<PlayerSettings | null>(null);
-export const nowPlayingSettings = writable<NowPlayingSettings | null>(null);
 export const librarySettings = writable<LibrarySettings | null>(null);
-export const tagsSettings = writable<TagsSettings | null>(null);
 export const internetSettings = writable<InternetSettings | null>(null);
-export const devicesSettings = writable<DevicesSettings | null>(null);
 export const appearanceSettings = writable<AppearanceSettings | null>(null);
 
 // Loading state
@@ -87,10 +57,6 @@ export function parseBool(value: string | undefined | null): boolean {
   return value === 'on';
 }
 
-// Helper: Convert boolean to 'on'/'off' string
-export function toBoolString(value: boolean): string {
-  return value ? 'on' : 'off';
-}
 
 // Load settings for a category
 export async function loadCategorySettings(category: PreferenceCategory): Promise<void> {
@@ -101,26 +67,14 @@ export async function loadCategorySettings(category: PreferenceCategory): Promis
     const settings = await invoke<Record<string, string>>('cmd_settings_get_category', { category });
     
     switch (category) {
-      case 'general':
-        generalSettings.set(settings as unknown as GeneralSettings);
-        break;
       case 'player':
         playerSettings.set(settings as unknown as PlayerSettings);
-        break;
-      case 'nowplaying':
-        nowPlayingSettings.set(settings as unknown as NowPlayingSettings);
         break;
       case 'library':
         librarySettings.set(settings as unknown as LibrarySettings);
         break;
-      case 'tags':
-        tagsSettings.set(settings as unknown as TagsSettings);
-        break;
       case 'internet':
         internetSettings.set(settings as unknown as InternetSettings);
-        break;
-      case 'devices':
-        devicesSettings.set(settings as unknown as DevicesSettings);
         break;
       case 'appearance':
         appearanceSettings.set(settings as unknown as AppearanceSettings);
@@ -169,7 +123,7 @@ export async function resetCategoryToDefaults(category: PreferenceCategory): Pro
 // Load all categories at once (for initial load)
 export async function loadAllPreferences(): Promise<void> {
   const categories: PreferenceCategory[] = [
-    'general', 'player', 'nowplaying', 'library', 'tags', 'internet', 'devices', 'appearance'
+    'player', 'library', 'internet', 'appearance'
   ];
   
   await Promise.all(categories.map(cat => loadCategorySettings(cat)));

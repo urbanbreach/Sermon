@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import type {
   PlaybackStateEvent, NowPlayingEvent, PlaybackPositionEvent,
   QueueChangedEvent, DeviceChangedEvent, AudioDebugEvent, PlaybackErrorEvent,
-  TrackEventData, QueueItemData, TrackMarkedMissingEvent, AudioLevelsEvent
+  TrackEventData, QueueItemData, TrackMarkedMissingEvent
 } from '../types/playback';
 import * as api from '../api/playback';
 import type { AudioOutputSettings } from '../api/playback';
@@ -11,10 +11,8 @@ import { Fixtures } from '../data/fixtures';
 
 // Core state
 export const playbackState = writable<'playing' | 'paused' | 'stopped'>('stopped');
-export const playId = writable<string | null>(null);
 export const currentTrack = writable<TrackEventData | null>(null);
 export const positionMs = writable<number>(0);
-export const playedMs = writable<number>(0);
 export const durationMs = writable<number>(0);
 export const volume = writable<number>(1.0);
 
@@ -33,13 +31,6 @@ export const audioDebug = writable<AudioDebugEvent | null>(null);
 // Error state
 export const playbackError = writable<PlaybackErrorEvent | null>(null);
 
-// Audio levels for visualization (512 FFT bands + peak/RMS)
-export const audioLevels = writable<AudioLevelsEvent>({
-  peak: 0,
-  rms: 0,
-  bands: new Array(512).fill(0),
-  timestamp_ms: 0,
-});
 
 // Derived
 export const isPlaying = derived(playbackState, $s => $s === 'playing');
@@ -66,18 +57,18 @@ export async function addToQueue(trackId: number) {
 
 export async function togglePlayPause() {
   const state = get(playbackState);
-  if (state === 'playing') {
-    await api.playbackPause();
-  } else if (state === 'paused') {
-    await api.playbackResume();
-  } else if (state === 'stopped') {
-    // If stopped, we might want to restart the current track if available, or do nothing.
-    // Ideally the UI should handle "Play" on a specific track if stopped.
-    // But if we have a queue, we might be able to resume? 
-    // For now let's just log or no-op if stopped, as usually this button becomes "Play" and needs a target or resume signal.
-    // Actually, if we are stopped but have a current track/queue, maybe we can just resume?
-    // Let's assume resume works if we have context.
-     await api.playbackResume();
+  console.log('[Playback] togglePlayPause called, current state:', state);
+  try {
+    if (state === 'playing') {
+      await api.playbackPause();
+    } else if (state === 'paused') {
+      await api.playbackResume();
+    } else if (state === 'stopped') {
+      // If stopped, try to resume - this works if there's a track in the queue
+      await api.playbackResume();
+    }
+  } catch (e) {
+    console.error('[Playback] togglePlayPause failed:', e);
   }
 }
 
@@ -90,11 +81,21 @@ export async function seek(ms: number) {
 }
 
 export async function next() {
-  await api.playbackNext();
+  console.log('[Playback] next called');
+  try {
+    await api.playbackNext();
+  } catch (e) {
+    console.error('[Playback] next failed:', e);
+  }
 }
 
 export async function previous() {
-  await api.playbackPrevious();
+  console.log('[Playback] previous called');
+  try {
+    await api.playbackPrevious();
+  } catch (e) {
+    console.error('[Playback] previous failed:', e);
+  }
 }
 
 export async function setVolume(vol: number) {
@@ -164,17 +165,6 @@ export function initPlaybackListeners(): void {
 
   listen<PlaybackStateEvent>('evt_playback_state', (event) => {
     playbackState.set(event.payload.state as 'playing' | 'paused' | 'stopped');
-    playId.set(event.payload.play_id);
-    
-    // Reset audio levels when stopped
-    if (event.payload.state === 'stopped') {
-      audioLevels.set({
-        peak: 0,
-        rms: 0,
-        bands: new Array(512).fill(0),
-        timestamp_ms: 0,
-      });
-    }
   });
 
   listen<NowPlayingEvent>('evt_now_playing', (event) => {
@@ -185,7 +175,6 @@ export function initPlaybackListeners(): void {
 
   listen<PlaybackPositionEvent>('evt_playback_position', (event) => {
     positionMs.set(event.payload.position_ms);
-    playedMs.set(event.payload.played_ms);
     durationMs.set(event.payload.duration_ms);
   });
 
@@ -219,10 +208,6 @@ export function initPlaybackListeners(): void {
     }));
   });
 
-  // Listen for audio levels (FFT analysis for visualization)
-  listen<AudioLevelsEvent>('evt_audio_levels', (event) => {
-    audioLevels.set(event.payload);
-  });
 
   // Load initial volume
   api.getVolume().then(v => volume.set(v)).catch(() => {});

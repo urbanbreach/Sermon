@@ -4,7 +4,6 @@ import type {
   ArtworkBytesResponse,
   SearchCandidatesResponse,
   SelectCandidateResponse,
-  ExtractEmbeddedResponse,
   FindFolderArtworkResponse,
 } from '../types/artwork';
 
@@ -61,14 +60,6 @@ export async function embedArtworkToFile(
   });
 }
 
-/**
- * Extract embedded artwork from a track's audio file and cache it
- */
-export async function extractEmbeddedArtwork(trackId: number): Promise<ExtractEmbeddedResponse> {
-  return invoke('cmd_artwork_extract_embedded', {
-    request: { trackId },
-  });
-}
 
 /**
  * Find artwork in the same folder as the track (cover.jpg, folder.jpg, etc.)

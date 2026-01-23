@@ -87,10 +87,6 @@ export function replaceRoute(route: Route): void {
 }
 
 // Clear stack and set single route
-export function resetTo(route: Route): void {
-  forwardStack.set([]);
-  routeStack.set([route]);
-}
 
 // Helper to compare routes
 function routesEqual(a: Route, b: Route): boolean {
@@ -112,7 +108,3 @@ function routesEqual(a: Route, b: Route): boolean {
   }
 }
 
-// Legacy compatibility - set route by name
-export function setRoute(name: 'albums' | 'artists' | 'tracks' | 'diagnostics' | 'now-playing' | 'preferences'): void {
-  navigate({ name });
-}
