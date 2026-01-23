@@ -3,36 +3,29 @@
   import { invoke } from '@tauri-apps/api/core';
   import { save } from '@tauri-apps/plugin-dialog';
   import { writeTextFile } from '@tauri-apps/plugin-fs';
-  import GeneralPrefs from '../components/preferences/GeneralPrefs.svelte';
   import PlayerPrefs from '../components/preferences/PlayerPrefs.svelte';
-  import NowPlayingPrefs from '../components/preferences/NowPlayingPrefs.svelte';
   import LibraryPrefs from '../components/preferences/LibraryPrefs.svelte';
-  import TagsPrefs from '../components/preferences/TagsPrefs.svelte';
   import InternetPrefs from '../components/preferences/InternetPrefs.svelte';
-  import DevicesPrefs from '../components/preferences/DevicesPrefs.svelte';
   import AppearancePrefs from '../components/preferences/AppearancePrefs.svelte';
   import { resetCategoryToDefaults } from '../state/preferences';
   import { loadEffectsSettings } from '../state/effects';
-  import { Settings, Volume2, MonitorSpeaker, Library, Tag, Globe, Speaker, Palette, RotateCcw, Download, Check, X } from '@lucide/svelte';
+  import { Settings, Volume2, Library, Globe, Palette, RotateCcw, Download, Check, X } from '@lucide/svelte';
   
   const isMock = import.meta.env.SERMON_MOCK === '1';
   
-  type PreferenceCategory = 'general' | 'player' | 'nowplaying' | 'library' | 'tags' | 'internet' | 'devices' | 'appearance';
+  type PreferenceCategory = 'player' | 'library' | 'internet' | 'appearance';
   
-  let activeCategory: PreferenceCategory = $state('general');
+  let activeCategory: PreferenceCategory = $state('player');
   let statusMessage: string = $state('');
   let statusType: 'success' | 'error' = $state('success');
   
   const categories: { id: PreferenceCategory; label: string; icon: typeof Settings }[] = [
-    { id: 'general', label: 'General', icon: Settings },
     { id: 'player', label: 'Player', icon: Volume2 },
-    { id: 'nowplaying', label: 'Now Playing', icon: MonitorSpeaker },
     { id: 'library', label: 'Library', icon: Library },
-    { id: 'tags', label: 'Tags', icon: Tag },
     { id: 'internet', label: 'Internet', icon: Globe },
-    { id: 'devices', label: 'Devices', icon: Speaker },
     { id: 'appearance', label: 'Appearance', icon: Palette },
   ];
+
   
   function selectCategory(category: PreferenceCategory) {
     activeCategory = category;
@@ -109,24 +102,17 @@
     </header>
     
     <div class="prefs-body">
-      {#if activeCategory === 'general'}
-        <GeneralPrefs />
-      {:else if activeCategory === 'player'}
+      {#if activeCategory === 'player'}
         <PlayerPrefs />
-      {:else if activeCategory === 'nowplaying'}
-        <NowPlayingPrefs />
       {:else if activeCategory === 'library'}
         <LibraryPrefs />
-      {:else if activeCategory === 'tags'}
-        <TagsPrefs />
       {:else if activeCategory === 'internet'}
         <InternetPrefs />
-      {:else if activeCategory === 'devices'}
-        <DevicesPrefs />
       {:else if activeCategory === 'appearance'}
         <AppearancePrefs />
       {/if}
     </div>
+
     
     {#if statusMessage}
       <div class="status-message" class:error={statusType === 'error'}>

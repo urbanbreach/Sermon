@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+import { onMount } from 'svelte';
   import { emit } from '@tauri-apps/api/event';
   import { currentRouteName } from './lib/state/route';
   import { initPlaybackListeners } from './lib/state/playback';
   import { initArtworkStore } from './lib/state/artwork';
   import { initRailResponsive } from './lib/state/rightRail';
+  import { loadEffectsSettings } from './lib/state/effects';
   
   import TopBar from './lib/components/TopBar.svelte';
   import BackgroundLayer from './lib/components/BackgroundLayer.svelte';
@@ -25,10 +26,11 @@
 
   import RightRail from './lib/components/RightRail.svelte';
 
-  onMount(async () => {
+onMount(async () => {
     initPlaybackListeners();
     initArtworkStore();
     initRailResponsive();
+    await loadEffectsSettings();
 
     // Snapshot mode: disable transitions
     if (import.meta.env.SERMON_SNAPSHOT === '1') {
@@ -54,8 +56,9 @@
   {#if $currentRouteName === 'lyrics-fullscreen'}
     <LyricsView />
   {:else}
-    <div class="main-body">
+<div class="main-body">
       <LeftNav />
+      <div class="divider-v"></div>
       
       <main class="content-area">
         <TopBar />
@@ -83,8 +86,9 @@
             {#if $currentRouteName === 'now-playing'}
               <NowPlayingView />
             {/if}
-          </div>
+</div>
 
+          <div class="divider-v"></div>
           <RightRail />
         </div>
       </main>
@@ -114,6 +118,8 @@
     overflow: hidden;
     position: relative;
     z-index: 1;
+    /* Reserve space for bottom bar */
+    padding-bottom: var(--layout-player-height, 88px);
   }
 
   .content-area {
@@ -140,5 +146,12 @@
     flex-direction: column;
   }
 
+  /* Cider-style vertical dividers between columns */
+  .divider-v {
+    width: 1px;
+    background: var(--divider-color, rgba(255, 255, 255, 0.07));
+    flex-shrink: 0;
+    align-self: stretch;
+  }
 
 </style>

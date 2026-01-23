@@ -6,7 +6,10 @@
   import { Fixtures } from '../data/fixtures';
   import { getArtworkBestForAlbum, getArtworkBytes } from '../api/artwork';
   import ArtworkPickerModal from '../components/ArtworkPickerModal.svelte';
-  import { ImagePlus } from '@lucide/svelte';
+  import SkeletonCard from '../components/SkeletonCard.svelte';
+  import { MoreVertical, Play, Disc3 } from '@lucide/svelte';
+  import { hoverScale, staggeredFadeIn, fadeIn } from '../utils/animations';
+  import { VList } from 'virtua/svelte';
 
   let albums: AlbumListItem[] = $state([]);
   let loading = $state(false);
@@ -18,6 +21,22 @@
   // Artwork picker modal state
   let pickerOpen = $state(false);
   let pickerAlbum: AlbumListItem | null = $state(null);
+
+  // Virtualization state
+  let containerWidth = $state(0);
+  
+  // Compute columns based on container width (min 160px + 20px gap)
+  let columns = $derived(Math.max(1, Math.floor((containerWidth - 64 + 20) / 180)));
+  
+  // Chunk albums into rows
+  let rows = $derived.by(() => {
+    const c = columns;
+    const res = [];
+    for (let i = 0; i < albums.length; i += c) {
+      res.push(albums.slice(i, i + c));
+    }
+    return res;
+  });
 
   function getAlbumKey(album: AlbumListItem): string {
     return `${album.albumArtistSort}||${album.albumTitleSort}`;
@@ -70,27 +89,6 @@
     const key = getAlbumKey(album);
     if (artworkUrls.has(key)) return;
 
-    // Mock/Snapshot mode: use fixtures
-    if (import.meta.env.SERMON_MOCK === '1') {
-      const fixtureAlbums = Fixtures.getAlbums();
-      const fixtureArtists = Fixtures.getArtists();
-
-      for (const fixtureAlbum of fixtureAlbums) {
-        const artist = fixtureArtists.find(a => a.id === fixtureAlbum.artistId);
-        const artistSort = (artist?.name?.trim().toLowerCase()) || 'unknown artist';
-        const titleSort = (fixtureAlbum.title?.trim().toLowerCase()) || 'unknown album';
-
-        if (artistSort === album.albumArtistSort && titleSort === album.albumTitleSort) {
-          const artworkUrl = Fixtures.getArtworkPath(fixtureAlbum.artworkFile);
-          if (artworkUrl) {
-            artworkUrls = new Map(artworkUrls).set(key, artworkUrl);
-          }
-          return;
-        }
-      }
-      return;
-    }
-
     // Runtime mode: use IPC
     try {
       const best = await getArtworkBestForAlbum(album.albumArtistSort, album.albumTitleSort);
@@ -104,12 +102,15 @@
     }
   }
 
-  $effect(() => {
-    // Load artwork for visible albums
-    for (const album of albums) {
-      loadAlbumArtwork(album);
-    }
-  });
+  // Action for lazy loading artwork
+  function lazyArtwork(node: HTMLElement, album: AlbumListItem) {
+    loadAlbumArtwork(album);
+    return {
+      update(newAlbum: AlbumListItem) {
+        loadAlbumArtwork(newAlbum);
+      }
+    };
+  }
 
   function openArtworkPicker(album: AlbumListItem, e: Event) {
     e.stopPropagation();
@@ -135,45 +136,72 @@
   }
 </script>
 
-<div class="view-container" onscroll={handleScroll}>
+<div 
+  class="view-container" 
+  onscroll={handleScroll}
+  bind:clientWidth={containerWidth}
+>
   <h1>Albums</h1>
   
   {#if !initialLoadComplete && albums.length === 0}
-    <div class="loading-state">Loading...</div>
-  {:else if albums.length === 0}
-    <div class="empty-state">No albums found</div>
-  {:else}
     <div class="albums-grid">
-      {#each albums as album}
-        {@const artworkUrl = artworkUrls.get(getAlbumKey(album))}
-        <div 
-          class="card"
-          role="button"
-          tabindex="0"
-          onkeydown={(e) => e.key === 'Enter' && handleAlbumClick(album)}
-          onclick={() => handleAlbumClick(album)}
-        >
-          {#if artworkUrl}
-            <div class="artwork">
-              <img src={artworkUrl} alt="" loading="lazy" />
-            </div>
-          {:else}
-            <div class="artwork-placeholder"></div>
-          {/if}
-          <div class="info">
-            <div class="title" title={album.albumTitleDisplay}>{album.albumTitleDisplay}</div>
-            <div class="artist" title={album.albumArtistDisplay}>{album.albumArtistDisplay}</div>
-            {#if album.year}<div class="year">{album.year}</div>{/if}
-          </div>
-          <button 
-            class="choose-artwork-btn"
-            onclick={(e) => openArtworkPicker(album, e)}
-            title="Choose Artwork"
-          >
-            <ImagePlus size={16} />
-          </button>
-        </div>
+      {#each Array(12) as _}
+        <SkeletonCard />
       {/each}
+    </div>
+  {:else if albums.length === 0}
+    <div class="empty-state" use:fadeIn={{ duration: 300 }}>
+      <Disc3 size={48} strokeWidth={1} />
+      <p class="empty-title">No albums found</p>
+      <p class="empty-hint">Add a library folder in Preferences to see your music</p>
+    </div>
+  {:else}
+    <div class="list-wrapper">
+      <VList data={rows} getKey={(row) => getAlbumKey(row[0])}>
+        {#snippet children(row)}
+          <div class="grid-row" style="grid-template-columns: repeat({columns}, 1fr)">
+            {#each row as album, i (getAlbumKey(album))}
+              {@const artworkUrl = artworkUrls.get(getAlbumKey(album))}
+              <div 
+                class="card"
+                role="button"
+                tabindex="0"
+                use:lazyArtwork={album}
+                onkeydown={(e) => e.key === 'Enter' && handleAlbumClick(album)}
+                onclick={() => handleAlbumClick(album)}
+                use:hoverScale={{ scale: 1.02, duration: 200 }}
+              >
+                {#if artworkUrl}
+                  <div class="artwork">
+                    <img src={artworkUrl} alt="" loading="lazy" />
+                    <div class="play-overlay">
+                      <Play fill="white" size={24} />
+                    </div>
+                  </div>
+                {:else}
+                  <div class="artwork-placeholder">
+                    <div class="play-overlay">
+                      <Play fill="white" size={24} />
+                    </div>
+                  </div>
+                {/if}
+                <div class="info">
+                  <div class="title" title={album.albumTitleDisplay}>{album.albumTitleDisplay}</div>
+                  <div class="artist" title={album.albumArtistDisplay}>{album.albumArtistDisplay}</div>
+                  {#if album.year}<div class="year">{album.year}</div>{/if}
+                </div>
+                <button 
+                  class="choose-artwork-btn"
+                  onclick={(e) => openArtworkPicker(album, e)}
+                  title="Choose Artwork"
+                >
+                  <MoreVertical size={16} />
+                </button>
+              </div>
+            {/each}
+          </div>
+        {/snippet}
+      </VList>
     </div>
     
     {#if loading}
@@ -201,41 +229,85 @@
     box-sizing: border-box;
     background: transparent;
     min-height: 100%;
+    display: flex;
+    flex-direction: column;
   }
 
   h1 {
     margin-bottom: 1.5rem;
     font-size: var(--text-view-title, 22px);
     font-weight: 600;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    flex-shrink: 0;
   }
 
+  /* Skeleton Grid - keep for loading state */
   .albums-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: var(--space-6, 24px);
+    gap: 20px;
+  }
+  
+  .list-wrapper {
+    flex: 1;
+  }
+
+  .grid-row {
+    display: grid;
+    gap: 20px;
+    margin-bottom: 20px; /* Gap between rows */
   }
 
   .card {
-    background: var(--glass-bg);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    border-radius: var(--radius-md, 12px);
-    border: 1px solid var(--glass-border);
-    box-shadow: var(--glass-shadow);
+    background: transparent;
+    border-radius: var(--radius-sm, 10px);
+    border: 1px solid transparent;
+    box-shadow: none;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), border-color 0.2s;
     cursor: pointer;
     position: relative;
+    will-change: transform, box-shadow;
+    transition: all var(--motion-fast) var(--ease-out);
   }
 
   .card:hover {
-    transform: scale(1.02) translateY(-2px);
-    border-color: rgba(255, 255, 255, 0.4);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 20px rgba(255, 255, 255, 0.05);
-    background: rgba(255, 255, 255, 0.1);
+    box-shadow: var(--shadow-2);
+  }
+  
+  .card:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring), var(--shadow-2);
+  }
+
+  .play-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    opacity: 0 !important;
+    visibility: hidden;
+    transition: all var(--motion-fast) var(--ease-out);
+    pointer-events: none;
+    z-index: 2;
+    box-shadow: var(--shadow-2);
+  }
+
+  .card:hover .play-overlay {
+    opacity: 1 !important;
+    visibility: visible;
+  }
+
+  .card:hover .artwork img {
+    opacity: 0.85;
   }
 
   .card:hover .choose-artwork-btn {
@@ -246,15 +318,15 @@
     position: absolute;
     top: 8px;
     right: 8px;
-    width: 32px;
-    height: 32px;
-    border-radius: 6px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
     background: rgba(0, 0, 0, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: #aaa;
+    border: none;
+    color: var(--text-secondary);
     cursor: pointer;
     opacity: 0;
-    transition: opacity 0.2s, background 0.2s, color 0.2s;
+    transition: all var(--motion-fast) var(--ease-out);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -262,9 +334,9 @@
   }
 
   .choose-artwork-btn:hover {
-    background: rgba(74, 175, 255, 0.9);
+    background: var(--theme-accent);
     color: #000;
-    border-color: #4af;
+    box-shadow: var(--shadow-2);
   }
 
   .artwork-placeholder {
@@ -275,61 +347,92 @@
     align-items: center;
     justify-content: center;
     color: #555;
+    border-radius: 10px;
+    position: relative;
   }
 
   .artwork {
     width: 100%;
     aspect-ratio: 1;
     overflow: hidden;
+    border-radius: 10px;
+    position: relative;
   }
 
   .artwork img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    transition: opacity 0.15s ease;
   }
 
   .info {
-    padding: var(--space-3, 12px);
-    min-height: 70px;
+    padding: 8px 4px 4px 4px;
+    min-height: auto;
     display: flex;
     flex-direction: column;
   }
 
   .title {
-    font-weight: 500;
+    font-weight: 600;
     margin-bottom: 0.25rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: 14px;
-    line-height: 1.2;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    font-size: 13px;
+    line-height: 1.3;
+    color: var(--text-primary);
   }
 
   .artist {
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.7);
+    font-size: 12px;
+    color: var(--text-tertiary);
+    font-weight: 400;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    line-height: 1.2;
+    line-height: 1.3;
   }
 
   .year {
-    font-size: var(--text-meta, 12px);
-    color: #888;
-    margin-top: auto;
-    padding-top: 0.25rem;
+    display: none;
   }
 
-  .loading-state, .empty-state {
+  .loading-state {
     display: flex;
     justify-content: center;
     align-items: center;
     height: 200px;
     font-size: 1.2rem;
     color: #888;
+  }
+
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 48px;
+    color: rgba(255, 255, 255, 0.4);
+    height: 400px;
+  }
+
+  .empty-state :global(svg) {
+    opacity: 0.3;
+  }
+
+  .empty-title {
+    font-size: 16px;
+    font-weight: 500;
+    margin: 0;
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  .empty-hint {
+    font-size: 13px;
+    margin: 0;
+    color: rgba(255, 255, 255, 0.35);
   }
 
   .loading-more {

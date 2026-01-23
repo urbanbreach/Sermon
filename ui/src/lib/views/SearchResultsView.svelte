@@ -5,6 +5,7 @@
   import { searchTracksPage, searchAlbumsPage, searchArtistsPage } from '../api/library';
   import type { TrackRow, AlbumListItem, ArtistListItem, OffsetCursor, AlbumCursor, ArtistCursor } from '../types/library';
   import { ArrowLeft } from '@lucide/svelte';
+  import { VList } from 'virtua/svelte';
 
   let query = $derived(
     $currentRoute.name === 'search-results' ? $currentRoute.query : ''
@@ -248,26 +249,28 @@
     <section class="section tracks-section">
       <h2>Tracks ({tracks.length}{tracksHasMore ? '+' : ''})</h2>
       <div class="tracks-list">
-        {#each tracks as track (track.id)}
-          <div 
-            class="track-row"
-            role="button"
-            tabindex="0"
-            onclick={() => handleTrackClick(track)}
-            onkeydown={(e) => e.key === 'Enter' && handleTrackClick(track)}
-          >
-            <div class="track-main">
-              <div class="track-title">{track.title || 'Unknown Title'}</div>
-              <div class="track-details">
-                {track.artist || 'Unknown Artist'} • {track.album || 'Unknown Album'}
+        <VList data={tracks} getKey={(t) => t.id} itemSize={60} bufferSize={200}>
+          {#snippet children(track)}
+            <div 
+              class="track-row"
+              role="button"
+              tabindex="0"
+              onclick={() => handleTrackClick(track)}
+              onkeydown={(e) => e.key === 'Enter' && handleTrackClick(track)}
+            >
+              <div class="track-main">
+                <div class="track-title">{track.title || 'Unknown Title'}</div>
+                <div class="track-details">
+                  {track.artist || 'Unknown Artist'} • {track.album || 'Unknown Album'}
+                </div>
+              </div>
+              <div class="track-meta">
+                <span class="duration">{formatTime(track.duration_ms)}</span>
+                <button class="queue-btn" onclick={(e) => handleTrackQueue(track, e)} title="Add to Queue">+</button>
               </div>
             </div>
-            <div class="track-meta">
-              <span class="duration">{formatTime(track.duration_ms)}</span>
-              <button class="queue-btn" onclick={(e) => handleTrackQueue(track, e)} title="Add to Queue">+</button>
-            </div>
-          </div>
-        {/each}
+          {/snippet}
+        </VList>
       </div>
       
       {#if tracksHasMore}
@@ -453,7 +456,8 @@
   .tracks-list {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    /* Remove gap and rely on item padding/margin inside VList if needed, 
+       but here track-row has padding and VList handles flow. */
   }
 
   .track-row {
@@ -467,6 +471,8 @@
     border-radius: 6px;
     cursor: pointer;
     transition: background 0.2s, border-color 0.2s;
+    margin-bottom: 0.5rem; /* Add margin here for spacing since VList doesn't support gap directly on container */
+    box-sizing: border-box;
   }
 
   .track-row:hover {

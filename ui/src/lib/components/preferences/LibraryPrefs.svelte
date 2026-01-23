@@ -67,14 +67,6 @@
         Scan library on startup
       </label>
     </div>
-
-    <div class="setting">
-      <label>
-        <input type="checkbox" disabled />
-        Continuous monitoring
-        <span class="coming-soon">[Coming Soon]</span>
-      </label>
-    </div>
   {/if}
 </div>
 

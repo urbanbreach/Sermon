@@ -4,39 +4,42 @@
   
   /* Layout tokens */
   --layout-sidebar-width: 240px;
-  --layout-rail-width: 300px;
+  --layout-rail-width: 320px;
   --layout-header-height: 44px;
-  --layout-player-height: 84px;
-  --layout-content-pad-x: 32px;
-  --layout-content-pad-y: 24px;
+  --layout-player-height: 88px;
+  --layout-bottom-bar-progress-height: 28px;
   
   /* Spacing scale */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
-  --space-5: 20px;
   --space-6: 24px;
-  --space-7: 32px;
-  --space-8: 40px;
-  --space-9: 48px;
-  --space-10: 64px;
   
   /* Radii */
-  --radius-xs: 6px;
   --radius-sm: 8px;
   --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
   --radius-pill: 999px;
+  --glass-radius: var(--radius-md);
   
-  /* Glass (updated) */
-  --glass-blur: 18px;
+  /* Glass Effects System */
+  /* Base variables set by effects.ts */
+  --blur-px: 16px;
+  --glow-strength: 0.35;
+  --border-strength: 0.08;
+  
+  /* Derived Glass Tokens (Default: Off/Minimal) */
+  --glass-blur: 0px;
+  --glass-border-opacity: 0.05;
+  --glass-shadow-opacity: 0;
+  
   --glass-bg: rgba(14, 14, 18, 0.32);
-  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border: rgba(255, 255, 255, var(--glass-border-opacity));
   --glass-highlight: rgba(255, 255, 255, 0.12);
-  --glass-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
   
+  /* Shadow is tinted with accent color when glow is enabled */
+  --glass-shadow: 0 8px 20px rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), var(--glass-shadow-opacity));
+
   /* Typography scale */
   --text-meta: 12px;
   --text-table-header: 13px;
@@ -44,31 +47,59 @@
   --text-label: 16px;
   --text-section: 18px;
   --text-view-title: 22px;
-  --text-album-title: 28px;
-  --text-now-playing: 36px;
-  --text-lyric-active: 44px;
-  --text-lyric-context: 22px;
   
   /* Icon sizes */
-  --icon-sm: 16px;
-  --icon-md: 20px;
-  --icon-lg: 24px;
-  --icon-xl: 32px;
-  --icon-2xl: 40px;
   
   /* Table tokens */
   --table-header-height: 28px;
-  --table-row-height: 36px;
   --table-cell-gap: 12px;
   
   /* Background tokens */
   --bg-intensity: 0.35;
-  --bg-noise-opacity: 0.18;
+  --bg-noise-opacity: 0.06; /* Reduced from 0.18 - Cider uses subtle matte, not heavy grain */
   --bg-crossfade-ms: 1200;
   
   /* Scrollbar tokens */
   --scrollbar-track: rgba(255, 255, 255, 0.06);
   --scrollbar-thumb: rgba(255, 255, 255, 0.18);
+
+  /* ===== MOTION TOKENS ===== */
+  --motion-fast: 0.15s;
+  --motion-medium: 0.25s;
+  --motion-slow: 0.4s;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ===== SHADOW TOKENS ===== */
+  --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+  --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-3: 0 8px 24px rgba(0, 0, 0, 0.35), 0 4px 8px rgba(0, 0, 0, 0.25);
+  --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-glow: 0 0 16px rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.35);
+
+  /* ===== SEMANTIC TEXT COLORS ===== */
+  --text-primary: rgba(255, 255, 255, 0.92);
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-tertiary: rgba(255, 255, 255, 0.45);
+  --text-disabled: rgba(255, 255, 255, 0.25);
+
+  /* ===== SURFACE TOKENS ===== */
+  --surface-1: rgba(255, 255, 255, 0.04);
+  --surface-2: rgba(255, 255, 255, 0.08);
+  --surface-hover: rgba(255, 255, 255, 0.1);
+  --surface-active: rgba(255, 255, 255, 0.06);
+
+  /* ===== ACCENT VARIANTS ===== */
+  --accent-weak: rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.12);
+  --accent-medium: rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.25);
+  --accent-strong: rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.5);
+
+  /* ===== FOCUS RING ===== */
+  --focus-ring: 0 0 0 2px rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.5);
+  --focus-ring-offset: 0 0 0 3px rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.25);
+
+  /* Divider token (Cider-style subtle separator) */
+  --divider-color: rgba(255, 255, 255, 0.07);
 
   /* Color scheme */
   color-scheme: dark;
@@ -82,8 +113,6 @@
 
   /* Dynamic theme tokens (defaults - overridden by dynamicTheme.ts) */
   --theme-accent: rgb(74, 175, 255);
-  --theme-bg-0: rgb(24, 32, 44);
-  --theme-bg-1: rgb(10, 10, 10);
   --theme-accent-r: 74;
   --theme-accent-g: 175;
   --theme-accent-b: 255;
@@ -157,13 +186,53 @@ body {
 
 /* Button base hover/press states */
 button {
-  transition: all 0.15s ease;
+  transition: 
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out);
 }
 button:active:not(:disabled) {
   transform: scale(0.97);
 }
 
+/* Global focus-visible styling */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Improved link/interactive element transitions */
+a, [role="button"] {
+  transition: 
+    color var(--motion-fast) var(--ease-out),
+    background-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+
+/* Glass Effect Classes (Toggled by effects.ts) */
+:root.effects-blur {
+  --glass-blur: var(--blur-px);
+}
+
+:root.effects-glow {
+  --glass-shadow-opacity: var(--glow-strength);
+}
+
+:root.effects-border {
+  --glass-border-opacity: var(--border-strength);
+}
+
 /* Reduce motion mode */
+.reduce-effects {
+  --glass-blur: 0px !important;
+  --glass-shadow-opacity: 0 !important;
+  --bg-intensity: 0 !important;
+  --bg-noise-opacity: 0 !important;
+}
+
 .reduce-effects,
 .reduce-effects * {
   transition-duration: 0.01ms !important;

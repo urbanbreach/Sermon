@@ -33,18 +33,6 @@
       <span class="setting-hint">Used for high-res album artwork</span>
     </div>
   </div>
-
-  <div class="setting-group">
-    <h3>Scrobbling</h3>
-    
-    <div class="setting">
-      <label>
-        <input type="checkbox" disabled />
-        Enable Last.fm Scrobbling
-        <span class="coming-soon">[Coming Soon]</span>
-      </label>
-    </div>
-  </div>
 </div>
 
 <style>

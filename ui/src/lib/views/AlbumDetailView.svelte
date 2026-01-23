@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { currentRoute, goBack, canGoBack, navigate } from '../state/route';
+  import { currentRoute, navigate } from '../state/route';
   import { playNow, addToQueue } from '../state/playback';
   import { listAlbumTracksPage } from '../api/library';
   import { getArtworkBestForAlbum, getArtworkBytes } from '../api/artwork';
   import type { TrackRow, AlbumTrackCursor } from '../types/library';
-  import { ChevronLeft, Play, Plus } from '@lucide/svelte';
+  import { Play, Plus, Shuffle, MoreHorizontal, Search, ChevronDown } from '@lucide/svelte';
 
   let tracks = $state<TrackRow[]>([]);
   let loading = $state(true);
@@ -14,16 +14,57 @@
   let hasLoaded = $state(false);
   let artworkUrl: string | null = $state(null);
   
+  // Search and Sort state
+  let searchQuery = $state('');
+  let debouncedSearchQuery = $state('');
+  let sortField = $state<'album' | 'title' | 'artist'>('album');
+  let sortDirection = $state<'asc' | 'desc'>('asc');
+
+  // Debounce search query
+  let searchTimeout: any;
+  $effect(() => {
+    searchQuery; // dependency
+    if (searchTimeout) clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      debouncedSearchQuery = searchQuery;
+    }, 150);
+  });
+  
   // Get route params once on mount to avoid reactive loops
   let albumArtistSort = '';
   let albumTitleSort = '';
   
-  // Derived album info from first track (with proper casing)
+  // Derived album info
   let albumDisplay = $derived(tracks.length > 0 ? (tracks[0].album || 'Unknown Album') : 'Loading...');
   let artistDisplay = $derived(tracks.length > 0 ? (tracks[0].album_artist || tracks[0].artist || 'Unknown Artist') : '');
+  let artistInitial = $derived(artistDisplay ? artistDisplay[0].toUpperCase() : '?');
   let year = $derived(tracks.length > 0 ? tracks[0].year : undefined);
   let totalTracks = $derived(tracks.length);
   let totalDuration = $derived(tracks.reduce((acc, t) => acc + (t.duration_ms || 0), 0));
+
+  let sortLabel = $derived(sortField === 'album' ? 'Track #' : sortField === 'title' ? 'Title' : 'Artist');
+  let directionLabel = $derived(sortDirection === 'asc' ? 'Ascending' : 'Descending');
+
+  // Memoize sorted tracks
+  let sortedTracks = $derived.by(() => {
+    return [...tracks].sort((a, b) => {
+      let cmp = 0;
+      if (sortField === 'album') cmp = (a.track_no || 0) - (b.track_no || 0);
+      else if (sortField === 'title') cmp = (a.title || '').localeCompare(b.title || '');
+      else if (sortField === 'artist') cmp = (a.artist || '').localeCompare(b.artist || '');
+      return sortDirection === 'asc' ? cmp : -cmp;
+    });
+  });
+
+  // Derived filtered tracks from memoized sorted list
+  let filteredTracks = $derived.by(() => {
+    const q = debouncedSearchQuery.toLowerCase().trim();
+    if (!q) return sortedTracks;
+    return sortedTracks.filter(t => 
+      (t.title || '').toLowerCase().includes(q) || 
+      (t.artist || '').toLowerCase().includes(q)
+    );
+  });
 
   // Handler for track marked missing event
   function handleTrackMarkedMissing(event: CustomEvent) {
@@ -113,33 +154,37 @@
     if (minutes > 60) {
         const hours = Math.floor(minutes / 60);
         const mins = minutes % 60;
-        return `${hours} hr ${mins} min`;
+        return `${hours} HR ${mins} MIN`;
     }
-    return `${minutes} min`;
+    return `${minutes} MIN`;
   }
 
   function handlePlayAlbum() {
-    if (tracks.length > 0 && tracks[0].id) {
-      playNow(tracks[0].id);
+    if (filteredTracks.length > 0 && filteredTracks[0].id) {
+      playNow(filteredTracks[0].id);
     }
   }
 
   function handleAddAlbumToQueue() {
-    tracks.forEach(track => {
+    filteredTracks.forEach(track => {
       if (track.id && !track.is_missing) {
         addToQueue(track.id);
       }
     });
   }
+
+  function toggleSortField() {
+     if (sortField === 'album') sortField = 'title';
+     else if (sortField === 'title') sortField = 'artist';
+     else sortField = 'album';
+  }
+
+  function toggleSortDirection() {
+      sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+  }
 </script>
 
 <div class="view-container">
-  <div class="top-bar">
-    <button class="back-btn" onclick={goBack} disabled={!$canGoBack}>
-      <ChevronLeft size={16} /> Back
-    </button>
-  </div>
-
   <div class="album-header">
     {#if artworkUrl}
       <div class="artwork">
@@ -148,27 +193,57 @@
     {:else}
       <div class="artwork-placeholder"></div>
     {/if}
+    
     <div class="album-info">
       <h1>{albumDisplay}</h1>
-      <div class="meta">
-        <span class="artist">{artistDisplay}</span>
+      
+      <div class="artist-row">
+        <div class="artist-avatar">{artistInitial}</div>
+        <span class="artist-name">{artistDisplay}</span>
+        <button class="artist-follow-btn" title="Follow">
+          <Plus size={14} />
+        </button>
+      </div>
+
+      <div class="metadata-line">
         {#if year}
-          <span class="bullet">•</span>
-          <span class="year">{year}</span>
+          <span class="meta-item">{year}</span>
+          <span class="meta-separator">•</span>
         {/if}
-        {#if hasLoaded}
-          <span class="bullet">•</span>
-          <span class="stats">{totalTracks} tracks, {formatTotalDuration(totalDuration)}</span>
-        {/if}
+        <span class="meta-item">{totalTracks} TRACKS</span>
+        <span class="meta-separator">•</span>
+        <span class="meta-item">{formatTotalDuration(totalDuration)}</span>
       </div>
+
       <div class="album-actions">
-         <button class="primary-btn" onclick={handlePlayAlbum} disabled={tracks.length === 0}>
-            Play
-         </button>
-         <button class="secondary-btn" onclick={handleAddAlbumToQueue} disabled={tracks.length === 0}>
-            Add to Queue
-         </button>
+         <div class="actions-left">
+            <button class="play-btn" onclick={handlePlayAlbum} disabled={filteredTracks.length === 0}>
+               <Play size={18} fill="currentColor" /> Play
+            </button>
+            <button class="shuffle-btn" disabled={filteredTracks.length === 0}>
+               <Shuffle size={18} /> Shuffle
+            </button>
+         </div>
+         <div class="actions-right">
+             <button class="add-btn" onclick={handleAddAlbumToQueue} title="Add to Queue" disabled={filteredTracks.length === 0}>
+                <Plus size={20} />
+             </button>
+             <button class="more-btn" title="More options">
+                <MoreHorizontal size={20} />
+             </button>
+         </div>
       </div>
+    </div>
+  </div>
+  
+  <div class="track-controls-row">
+    <div class="search-field">
+      <Search size={14} />
+      <input type="text" placeholder="Search in album..." bind:value={searchQuery} />
+    </div>
+    <div class="sort-controls">
+      <button class="sort-pill" onclick={toggleSortField}>{sortLabel} <ChevronDown size={12} /></button>
+      <button class="sort-pill" onclick={toggleSortDirection}>{directionLabel} <ChevronDown size={12} /></button>
     </div>
   </div>
   
@@ -181,20 +256,12 @@
         <p class="error-detail">{loadError}</p>
         <button onclick={loadTracks}>Retry</button>
       </div>
-    {:else if tracks.length === 0}
-      <div class="empty-state">No tracks found for this album</div>
+    {:else if filteredTracks.length === 0}
+      <div class="empty-state">No tracks found</div>
     {:else}
       <table>
-        <thead>
-          <tr>
-            <th class="col-num">#</th>
-            <th class="col-title">Title</th>
-            <th class="col-duration">Duration</th>
-            <th class="col-actions"></th>
-          </tr>
-        </thead>
         <tbody>
-          {#each tracks as track}
+          {#each filteredTracks as track}
             <tr class:missing={track.is_missing} ondblclick={() => !track.is_missing && track.id && playNow(track.id)}>
               <td class="col-num">{track.track_no || '-'}</td>
               <td class="col-title">
@@ -207,14 +274,9 @@
               </td>
               <td class="col-duration">{formatDuration(track.duration_ms)}</td>
               <td class="col-actions">
-                 <div class="row-actions">
-                   <button class="icon-btn" title="Play Now" onclick={(e) => { e.stopPropagation(); if (track.id) playNow(track.id); }}>
-                     <Play size={14} fill="currentColor" />
-                   </button>
-                   <button class="icon-btn" title="Add to Queue" onclick={(e) => { e.stopPropagation(); if (track.id) addToQueue(track.id); }}>
-                     <Plus size={14} />
-                   </button>
-                 </div>
+                 <button class="row-more-btn" title="Track options" onclick={(e) => { e.stopPropagation(); }}>
+                    <MoreHorizontal size={16} />
+                 </button>
               </td>
             </tr>
           {/each}
@@ -236,38 +298,6 @@
     background: transparent;
   }
   
-  .top-bar {
-    margin-bottom: 0.5rem;
-  }
-  
-  .back-btn {
-    background: var(--glass-bg);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    border: 1px solid var(--glass-border);
-    color: #ccc;
-    cursor: pointer;
-    font-size: 0.9rem;
-    padding: 0.5rem 1rem;
-    border-radius: 20px;
-    transition: all 0.2s;
-    box-shadow: var(--glass-shadow);
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  
-  .back-btn:hover {
-    color: #fff;
-    background: var(--glass-border);
-    transform: translateX(-2px);
-  }
-  
-  .back-btn:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  
   .album-header {
     display: flex;
     gap: 2rem;
@@ -275,10 +305,10 @@
   }
   
   .artwork {
-    width: 220px;
-    height: 220px;
+    width: 280px;
+    height: 280px;
     border-radius: 12px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
     flex-shrink: 0;
     overflow: hidden;
   }
@@ -290,14 +320,14 @@
   }
   
   .artwork-placeholder {
-    width: 220px;
-    height: 220px;
+    width: 280px;
+    height: 280px;
     background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
     border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
     flex-shrink: 0;
     color: #444;
   }
@@ -307,87 +337,227 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    padding-bottom: 1rem;
+    padding-bottom: 0.5rem;
   }
   
   h1 {
-    font-size: var(--text-album-title, 28px);
+    font-size: 38px;
     font-weight: 700;
     margin: 0;
     line-height: 1.1;
-    text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+    text-shadow: 0 1px 3px rgba(0,0,0,0.35);
+    letter-spacing: -0.02em;
   }
   
-  .meta {
+  .artist-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    color: #aaa;
-    font-size: var(--text-body, 14px);
+    gap: 10px;
+    margin: 0.5rem 0;
   }
-  
-  .artist {
-    color: #fff;
-    font-weight: 600;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
-    font-size: var(--text-section, 18px);
-  }
-  
-  .bullet {
-    color: #666;
-  }
-  
-  .album-actions {
-    margin-top: 1rem;
+
+  .artist-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--theme-accent, #4aafff), rgba(255,255,255,0.2));
     display: flex;
-    gap: 1rem;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  .artist-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  .artist-follow-btn {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
   }
   
-  .primary-btn {
-    background: #fff;
+  .artist-follow-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  /* Metadata Line */
+  .metadata-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 0.25rem;
+  }
+
+  .meta-item {
+    font-size: 12px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .meta-separator {
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 10px;
+  }
+
+  .album-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1.5rem;
+  }
+  
+  .actions-left, .actions-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  /* Play Button (accent filled) */
+  .play-btn {
+    background: rgba(255,255,255,0.95);
     color: #000;
     border: none;
-    padding: 0.8rem 2rem;
-    border-radius: 30px;
+    padding: 0 24px;
+    height: 38px;
+    border-radius: var(--radius-pill, 999px);
     font-weight: 600;
-    font-size: 1rem;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     cursor: pointer;
-    transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.2s;
-    box-shadow: 0 4px 12px rgba(255,255,255,0.2);
+    transition: transform 0.2s;
   }
   
-  .primary-btn:hover:not(:disabled) {
+  .play-btn:hover:not(:disabled) {
     transform: scale(1.05);
-    box-shadow: 0 6px 16px rgba(255,255,255,0.3);
   }
   
-  .primary-btn:active:not(:disabled) {
+  .play-btn:active:not(:disabled) {
     transform: scale(0.95);
   }
 
-  .primary-btn:disabled, .secondary-btn:disabled {
+  /* Shuffle Button (outlined) */
+  .shuffle-btn {
+    background: transparent;
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 0 20px;
+    height: 38px;
+    border-radius: var(--radius-pill, 999px);
+    font-weight: 500;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  
+  .shuffle-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  /* Circle buttons */
+  .add-btn, .more-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  
+  .add-btn:hover, .more-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .play-btn:disabled, .shuffle-btn:disabled, .add-btn:disabled {
     opacity: 0.5;
     cursor: default;
+    transform: none;
   }
 
-  .secondary-btn {
-    background: var(--glass-bg);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
+  /* Track controls row */
+  .track-controls-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--divider-color, rgba(255, 255, 255, 0.07));
+    margin-bottom: 0.5rem;
+  }
+
+  .search-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 0 12px;
+    height: 34px;
+    width: 220px;
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  .search-field input {
+    background: transparent;
+    border: none;
+    outline: none;
     color: #fff;
-    border: 1px solid var(--glass-border);
-    padding: 0.8rem 2rem;
-    border-radius: 30px;
-    font-weight: 600;
-    font-size: 1rem;
-    cursor: pointer;
-    transition: background 0.2s, border-color 0.2s, transform 0.2s;
+    font-size: 13px;
+    width: 100%;
+  }
+  
+  .search-field input::placeholder {
+    color: rgba(255, 255, 255, 0.3);
   }
 
-  .secondary-btn:hover:not(:disabled) {
-    background: var(--glass-border);
-    border-color: rgba(255,255,255,0.5);
-    transform: scale(1.05);
+  .sort-controls {
+    display: flex;
+    gap: 8px;
+  }
+
+  .sort-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: var(--radius-pill, 999px);
+    padding: 0 14px;
+    height: 30px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  
+  .sort-pill:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
   }
 
   .tracks-list {
@@ -400,26 +570,16 @@
     font-size: var(--text-body, 14px);
   }
   
-  th {
-    text-align: left;
-    color: #aaa;
-    font-weight: 500;
-    padding: 0 var(--table-cell-gap, 12px);
-    height: var(--table-header-height, 28px);
-    font-size: var(--text-table-header, 13px);
-    border-bottom: 1px solid var(--glass-border);
-  }
-  
   td {
     padding: 0 var(--table-cell-gap, 12px);
-    height: var(--table-row-height, 36px);
-    border-bottom: 1px solid rgba(255,255,255,0.05);
+    height: 56px; /* Increased from 36px */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04); /* Subtle border */
     color: #ddd;
     vertical-align: middle;
   }
   
   tr:hover {
-    background: var(--glass-highlight);
+    background: var(--glass-highlight, rgba(255,255,255,0.05));
   }
   
   tr.missing {
@@ -430,6 +590,8 @@
     width: 50px;
     text-align: right;
     color: #666;
+    font-size: 13px;
+    font-weight: 500;
   }
   
   .col-title {
@@ -440,60 +602,52 @@
     display: flex;
     flex-direction: column;
     justify-content: center;
-    line-height: 1.2;
+    line-height: 1.3;
   }
   
   .track-artist {
-    font-size: 0.85em;
-    color: #888;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
   }
 
   .col-duration {
     width: 80px;
     text-align: right;
     font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.6);
   }
   
   .col-actions {
-    width: 80px;
+    width: 60px;
     text-align: right;
   }
   
-  .row-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    opacity: 0;
-    transition: opacity 0.2s;
-    align-items: center;
-    height: 100%;
-  }
-  
-  tr:hover .row-actions {
-    opacity: 1;
-  }
-  
-  .icon-btn {
+  /* Row ellipsis button */
+  .row-more-btn {
     background: transparent;
-    border: 1px solid rgba(255,255,255,0.2);
-    color: #fff;
-    width: 28px;
-    height: 28px;
-    border-radius: 4px;
+    border: none;
+    color: rgba(255, 255, 255, 0.4);
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    font-size: 0.8rem;
-    transition: all 0.2s;
+    opacity: 0;
+    transition: opacity 0.2s, background 0.2s, color 0.2s;
   }
   
-  .icon-btn:hover {
-    background: rgba(255,255,255,0.1);
-    border-color: #fff;
-    transform: scale(1.1);
+  .row-more-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
   }
-  
+
+  tr:hover .row-more-btn {
+    opacity: 1;
+  }
+
   .loading-state, .empty-state, .error-state {
     display: flex;
     flex-direction: column;

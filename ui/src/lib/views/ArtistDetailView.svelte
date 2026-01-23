@@ -19,12 +19,19 @@
 
   let artistSort = '';
   let artistDisplay = $state('Loading...');
-  let albums = $state<ArtistAlbum[]>([]);
+  let albumMap = $state<Map<string, ArtistAlbum>>(new Map());
+  let albums = $derived(Array.from(albumMap.values()).sort((a, b) => {
+    if (a.year && b.year) return b.year - a.year;
+    if (a.year) return -1;
+    if (b.year) return 1;
+    return a.albumTitleDisplay.localeCompare(b.albumTitleDisplay);
+  }));
   let loading = $state(true);
   let loadError = $state<string | null>(null);
 
   let totalTracks = $derived(albums.reduce((acc, a) => acc + a.tracks.length, 0));
   let totalAlbums = $derived(albums.length);
+
 
   onMount(() => {
     const route = $currentRoute;
@@ -57,13 +64,13 @@
         artistDisplay = tracks[0].artist || 'Unknown Artist';
         
         // Group tracks by album
-        const albumMap = new Map<string, ArtistAlbum>();
+        const map = new Map<string, ArtistAlbum>();
         
         for (const track of tracks) {
           const albumKey = `${(track.album_artist || track.artist || '').toLowerCase()}|${(track.album || '').toLowerCase()}`;
           
-          if (!albumMap.has(albumKey)) {
-            albumMap.set(albumKey, {
+          if (!map.has(albumKey)) {
+            map.set(albumKey, {
               albumTitleDisplay: track.album || 'Unknown Album',
               albumArtistDisplay: track.album_artist || track.artist || 'Unknown Artist',
               albumTitleSort: (track.album || 'unknown album').toLowerCase(),
@@ -74,7 +81,7 @@
             });
           }
           
-          const album = albumMap.get(albumKey)!;
+          const album = map.get(albumKey)!;
           album.tracks.push(track);
           album.trackCount = album.tracks.length;
           if (track.year && (!album.year || track.year < album.year)) {
@@ -82,17 +89,12 @@
           }
         }
         
-        // Sort albums by year (newest first), then by name
-        albums = Array.from(albumMap.values()).sort((a, b) => {
-          if (a.year && b.year) return b.year - a.year;
-          if (a.year) return -1;
-          if (b.year) return 1;
-          return a.albumTitleDisplay.localeCompare(b.albumTitleDisplay);
-        });
+        albumMap = map;
       } else {
         artistDisplay = artistSort;
-        albums = [];
+        albumMap = new Map();
       }
+
     } catch (e) {
       console.error('Failed to load artist tracks:', e);
       loadError = e instanceof Error ? e.message : 'Failed to load artist';
