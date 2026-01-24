@@ -345,8 +345,29 @@ export function applyThemeToDocument(theme: ThemeColors): void {
 
 
 /**
- * Reset theme to defaults
+ * Reset theme to defaults (background colors only, preserves user accent color)
  */
 export function resetTheme(): void {
-  applyThemeToDocument(FALLBACK_THEME);
+  if (debounceTimer) clearTimeout(debounceTimer);
+  
+  debounceTimer = setTimeout(() => {
+    const root = document.documentElement;
+    
+    // Only reset background-related theme colors, NOT accent colors
+    // Accent colors are controlled by user's accentColor setting in effects.ts
+    root.style.setProperty('--theme-accent-2', `rgb(${FALLBACK_THEME.accent2.join(',')})`);
+    root.style.setProperty('--theme-accent-3', `rgb(${FALLBACK_THEME.accent3.join(',')})`);
+    root.style.setProperty('--theme-bg-0', `rgb(${FALLBACK_THEME.bg0.join(',')})`);
+    root.style.setProperty('--theme-bg-1', `rgb(${FALLBACK_THEME.bg1.join(',')})`);
+    
+    root.style.setProperty('--theme-accent-2-r', String(FALLBACK_THEME.accent2[0]));
+    root.style.setProperty('--theme-accent-2-g', String(FALLBACK_THEME.accent2[1]));
+    root.style.setProperty('--theme-accent-2-b', String(FALLBACK_THEME.accent2[2]));
+    
+    root.style.setProperty('--theme-accent-3-r', String(FALLBACK_THEME.accent3[0]));
+    root.style.setProperty('--theme-accent-3-g', String(FALLBACK_THEME.accent3[1]));
+    root.style.setProperty('--theme-accent-3-b', String(FALLBACK_THEME.accent3[2]));
+    
+    debounceTimer = null;
+  }, 120);
 }

@@ -3,7 +3,11 @@
   import { 
     reduceEffects, themeBlur, themeGlow, themeBorderHighlight,
     blurPx, glowStrength, borderStrength, bgIntensity, bgNoiseOpacity, bgCrossfadeMs,
+    bgStaticColor, bgDynamicLibrary, bgDynamicNowPlaying, bgDynamicAlbumDetail,
+    accentColor,
     setReduceEffects, setThemeBlur, setThemeGlow, setThemeBorderHighlight,
+    setBgStaticColor, setBgDynamicLibrary, setBgDynamicNowPlaying, setBgDynamicAlbumDetail,
+    setAccentColor,
     applyEffects, loadEffectsSettings
   } from '../../state/effects';
   import { loadCategorySettings, saveCategorySetting } from '../../state/preferences';
@@ -12,7 +16,9 @@
   
   onMount(async () => {
     if (!isMock) {
-      await Promise.all([loadCategorySettings('appearance'), loadEffectsSettings()]);
+      // loadCategorySettings('appearance') removed - appearance settings are loaded via loadEffectsSettings()
+      // which uses individual cmd_settings_get calls that work correctly
+      await loadEffectsSettings();
     }
   });
   
@@ -20,6 +26,18 @@
     if (isMock) return;
     await saveCategorySetting('appearance', key, String(value));
     await loadEffectsSettings();
+  }
+
+  async function handleColorChange(e: Event) {
+    if (isMock) return;
+    const target = e.target as HTMLInputElement;
+    await setBgStaticColor(target.value);
+  }
+
+  async function handleAccentColorChange(e: Event) {
+    if (isMock) return;
+    const target = e.target as HTMLInputElement;
+    await setAccentColor(target.value);
   }
 </script>
 
@@ -127,7 +145,80 @@
     </div>
 
     <div class="setting-group">
+      <h3>Colors</h3>
+
+      <div class="setting color-setting">
+        <label for="accent-color">Highlight Color</label>
+        <div class="color-picker-row">
+          <input 
+            type="color" 
+            id="accent-color"
+            value={$accentColor}
+            onchange={handleAccentColorChange}
+            disabled={isMock}
+          />
+          <span class="color-value">{$accentColor}</span>
+        </div>
+        <span class="setting-hint">Used for buttons, selections, and UI accents</span>
+      </div>
+    </div>
+
+    <div class="setting-group">
       <h3>Background</h3>
+
+      <div class="setting">
+        <label>
+          <input 
+            type="checkbox" 
+            checked={$bgDynamicLibrary}
+            onchange={(e) => setBgDynamicLibrary(e.currentTarget.checked)}
+            disabled={isMock}
+          />
+          Dynamic Background in Library
+        </label>
+        <span class="setting-hint">Use artwork-based colors in library views</span>
+      </div>
+
+      <div class="setting">
+        <label>
+          <input 
+            type="checkbox" 
+            checked={$bgDynamicNowPlaying}
+            onchange={(e) => setBgDynamicNowPlaying(e.currentTarget.checked)}
+            disabled={isMock}
+          />
+          Dynamic Background in Now Playing
+        </label>
+        <span class="setting-hint">Use artwork-based colors in now playing view</span>
+      </div>
+
+      <div class="setting">
+        <label>
+          <input 
+            type="checkbox" 
+            checked={$bgDynamicAlbumDetail}
+            onchange={(e) => setBgDynamicAlbumDetail(e.currentTarget.checked)}
+            disabled={isMock}
+          />
+          Dynamic Background in Album Page
+        </label>
+        <span class="setting-hint">Use artwork-based colors in album detail view</span>
+      </div>
+
+      <div class="setting color-setting">
+        <label for="bg-static-color">Static Background Color</label>
+        <div class="color-picker-row">
+          <input 
+            type="color" 
+            id="bg-static-color"
+            value={$bgStaticColor}
+            onchange={handleColorChange}
+            disabled={isMock}
+          />
+          <span class="color-value">{$bgStaticColor}</span>
+        </div>
+        <span class="setting-hint">Used when dynamic background is disabled</span>
+      </div>
       
       <div class="setting slider-setting" data-testid="appearance-slider-bg-intensity">
         <label for="bg-intensity">Intensity: {($bgIntensity * 100).toFixed(0)}%</label>
@@ -202,6 +293,41 @@
   input[type="range"] {
     width: 200px;
     accent-color: #4af;
+  }
+
+  input[type="color"] {
+    width: 48px;
+    height: 32px;
+    border: 1px solid var(--glass-border);
+    border-radius: 4px;
+    background: transparent;
+    cursor: pointer;
+    padding: 2px;
+  }
+
+  input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+
+  input[type="color"]::-webkit-color-swatch {
+    border: none;
+    border-radius: 2px;
+  }
+
+  .color-setting {
+    margin-left: 0;
+  }
+
+  .color-picker-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .color-value {
+    font-family: monospace;
+    font-size: 0.9rem;
+    color: #888;
   }
   
   input[type="checkbox"] { margin-right: 0.5rem; }

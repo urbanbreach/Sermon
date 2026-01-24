@@ -56,13 +56,13 @@ onMount(async () => {
   {#if $currentRouteName === 'lyrics-fullscreen'}
     <LyricsView />
   {:else}
-<div class="main-body">
+    <TopBar />
+    
+    <div class="main-body">
       <LeftNav />
       <div class="divider-v"></div>
       
       <main class="content-area">
-        <TopBar />
-        
         <div class="content-row">
           <div class="view-viewport">
             {#if $currentRouteName === 'albums'}
@@ -118,8 +118,8 @@ onMount(async () => {
     overflow: hidden;
     position: relative;
     z-index: 1;
-    /* Reserve space for bottom bar */
-    padding-bottom: var(--layout-player-height, 88px);
+    /* Reserve space for bottom bar using margin instead of padding */
+    margin-bottom: var(--layout-player-height, 88px);
   }
 
   .content-area {

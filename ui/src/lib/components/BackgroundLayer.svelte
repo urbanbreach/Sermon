@@ -1,16 +1,33 @@
 <script lang="ts">
   import { currentArtworkUrl } from '../state/artwork';
+  import { currentRouteName } from '../state/route';
   import { computeThemeFromImageSrc, applyThemeToDocument, resetTheme } from '../theme/dynamicTheme';
-  import { reduceEffects } from '../state/effects';
+  import { reduceEffects, bgDynamicLibrary, bgDynamicNowPlaying, bgDynamicAlbumDetail, applyAppearanceToCSS } from '../state/effects';
   
   let prevArtwork = $state('');
   let isTransitioning = $state(false);
   
+  // Determine if dynamic background should be active based on current route
+  const isDynamic = $derived(() => {
+    const route = $currentRouteName;
+    if (route === 'now-playing') {
+      return $bgDynamicNowPlaying;
+    }
+    if (route === 'album-detail') {
+      return $bgDynamicAlbumDetail;
+    }
+    // All other routes are "library" views
+    return $bgDynamicLibrary;
+  });
+  
   $effect(() => {
-    if ($currentArtworkUrl && $currentArtworkUrl !== prevArtwork) {
+    const dynamic = isDynamic();
+    if (dynamic && $currentArtworkUrl && $currentArtworkUrl !== prevArtwork) {
       handleArtworkChange($currentArtworkUrl);
-    } else if (!$currentArtworkUrl && prevArtwork) {
+    } else if (!dynamic || (!$currentArtworkUrl && prevArtwork)) {
       resetTheme();
+      // Restore user's accent color after resetting to default theme
+      applyAppearanceToCSS();
       prevArtwork = '';
     }
   });
@@ -23,6 +40,8 @@
     } catch (e) {
       console.error('Theme extraction failed:', e);
       resetTheme();
+      // Restore user's accent color after resetting to default theme
+      applyAppearanceToCSS();
     }
     prevArtwork = url;
     // Allow crossfade to complete
@@ -30,21 +49,24 @@
   }
 </script>
 
-<div class="background-container" class:transitioning={isTransitioning} class:reduce-effects={$reduceEffects}>
-  <!-- Base dark layer -->
+<div class="background-container" class:transitioning={isTransitioning} class:reduce-effects={$reduceEffects} class:static-mode={!isDynamic()}>
+  <!-- Base dark layer / Static color layer -->
   <div class="bg-base"></div>
   
-  <!-- Primary glow (center) -->
-  <div class="bg-glow bg-glow-primary"></div>
-  
-  <!-- Secondary glow (top-left) -->
-  <div class="bg-glow bg-glow-secondary"></div>
-  
-  <!-- Tertiary glow (bottom-right) -->
-  <div class="bg-glow bg-glow-tertiary"></div>
-  
-  <!-- Noise overlay -->
-  <div class="bg-noise"></div>
+  <!-- Dynamic glow layers (only visible when dynamic mode is active) -->
+  {#if isDynamic()}
+    <!-- Primary glow (center) -->
+    <div class="bg-glow bg-glow-primary"></div>
+    
+    <!-- Secondary glow (top-left) -->
+    <div class="bg-glow bg-glow-secondary"></div>
+    
+    <!-- Tertiary glow (bottom-right) -->
+    <div class="bg-glow bg-glow-tertiary"></div>
+    
+    <!-- Noise overlay -->
+    <div class="bg-noise"></div>
+  {/if}
   
   <!-- Dark gradient overlay for readability -->
   <div class="bg-overlay"></div>
@@ -63,6 +85,12 @@
     position: absolute;
     inset: 0;
     background: #0a0a0a;
+    transition: background calc(var(--bg-crossfade-ms, 1200) * 1ms) ease-in-out;
+  }
+  
+  /* Static mode: use the user-selected static color */
+  .static-mode .bg-base {
+    background: var(--bg-static-color, #1a1a2e);
   }
   
   .bg-glow {

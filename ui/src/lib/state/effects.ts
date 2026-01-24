@@ -19,6 +19,11 @@ const KEYS = {
   BACKGROUND_INTENSITY: 'ui.background.intensity',
   BACKGROUND_NOISE_OPACITY: 'ui.background.noise_opacity',
   BACKGROUND_CROSSFADE_MS: 'ui.background.crossfade_ms',
+  BACKGROUND_STATIC_COLOR: 'ui.background.static_color',
+  BACKGROUND_DYNAMIC_LIBRARY: 'ui.background.dynamic_library',
+  BACKGROUND_DYNAMIC_NOW_PLAYING: 'ui.background.dynamic_now_playing',
+  BACKGROUND_DYNAMIC_ALBUM_DETAIL: 'ui.background.dynamic_album_detail',
+  ACCENT_COLOR: 'ui.theme.accent_color',
   PROVIDER_ITUNES: 'artwork.provider.itunes',
   PROVIDER_DEEZER: 'artwork.provider.deezer',
 } as const;
@@ -36,6 +41,15 @@ export const borderStrength = writable<number>(0.2);
 export const bgIntensity = writable<number>(0.35);
 export const bgNoiseOpacity = writable<number>(0.18);
 export const bgCrossfadeMs = writable<number>(1200);
+
+// Background mode stores
+export const bgStaticColor = writable<string>('#1a1a2e');
+export const bgDynamicLibrary = writable<boolean>(true);
+export const bgDynamicNowPlaying = writable<boolean>(true);
+export const bgDynamicAlbumDetail = writable<boolean>(true);
+
+// Accent/highlight color
+export const accentColor = writable<string>('#4aafff');
 
 // Artwork provider toggles
 export const providerItunes = writable<boolean>(true);
@@ -76,7 +90,9 @@ export async function loadEffectsSettings(): Promise<void> {
   const [
     reduce, blur, glow, border, itunes, deezer,
     blurPxVal, glowStrengthVal, borderStrengthVal,
-    bgIntensityVal, bgNoiseOpacityVal, bgCrossfadeMsVal
+    bgIntensityVal, bgNoiseOpacityVal, bgCrossfadeMsVal,
+    bgStaticColorVal, bgDynamicLibraryVal, bgDynamicNowPlayingVal, bgDynamicAlbumDetailVal,
+    accentColorVal
   ] = await Promise.all([
     getSetting(KEYS.REDUCE_EFFECTS),
     getSetting(KEYS.THEME_BLUR),
@@ -90,6 +106,11 @@ export async function loadEffectsSettings(): Promise<void> {
     getSetting(KEYS.BACKGROUND_INTENSITY),
     getSetting(KEYS.BACKGROUND_NOISE_OPACITY),
     getSetting(KEYS.BACKGROUND_CROSSFADE_MS),
+    getSetting(KEYS.BACKGROUND_STATIC_COLOR),
+    getSetting(KEYS.BACKGROUND_DYNAMIC_LIBRARY),
+    getSetting(KEYS.BACKGROUND_DYNAMIC_NOW_PLAYING),
+    getSetting(KEYS.BACKGROUND_DYNAMIC_ALBUM_DETAIL),
+    getSetting(KEYS.ACCENT_COLOR),
   ]);
 
   reduceEffects.set(parseBool(reduce, false));
@@ -106,6 +127,15 @@ export async function loadEffectsSettings(): Promise<void> {
   bgIntensity.set(parseNum(bgIntensityVal, 0.35));
   bgNoiseOpacity.set(parseNum(bgNoiseOpacityVal, 0.18));
   bgCrossfadeMs.set(parseNum(bgCrossfadeMsVal, 1200));
+
+  // Background mode stores
+  bgStaticColor.set(bgStaticColorVal || '#1a1a2e');
+  bgDynamicLibrary.set(parseBool(bgDynamicLibraryVal, true));
+  bgDynamicNowPlaying.set(parseBool(bgDynamicNowPlayingVal, true));
+  bgDynamicAlbumDetail.set(parseBool(bgDynamicAlbumDetailVal, true));
+
+  // Accent color
+  accentColor.set(accentColorVal || '#4aafff');
 
   // Apply effects immediately
   applyEffects();
@@ -144,6 +174,33 @@ export async function setProviderItunes(value: boolean): Promise<void> {
 export async function setProviderDeezer(value: boolean): Promise<void> {
   providerDeezer.set(value);
   await setSetting(KEYS.PROVIDER_DEEZER, value ? 'on' : 'off');
+}
+
+export async function setBgStaticColor(value: string): Promise<void> {
+  bgStaticColor.set(value);
+  await setSetting(KEYS.BACKGROUND_STATIC_COLOR, value);
+  applyAppearanceToCSS();
+}
+
+export async function setBgDynamicLibrary(value: boolean): Promise<void> {
+  bgDynamicLibrary.set(value);
+  await setSetting(KEYS.BACKGROUND_DYNAMIC_LIBRARY, value ? 'on' : 'off');
+}
+
+export async function setBgDynamicNowPlaying(value: boolean): Promise<void> {
+  bgDynamicNowPlaying.set(value);
+  await setSetting(KEYS.BACKGROUND_DYNAMIC_NOW_PLAYING, value ? 'on' : 'off');
+}
+
+export async function setBgDynamicAlbumDetail(value: boolean): Promise<void> {
+  bgDynamicAlbumDetail.set(value);
+  await setSetting(KEYS.BACKGROUND_DYNAMIC_ALBUM_DETAIL, value ? 'on' : 'off');
+}
+
+export async function setAccentColor(value: string): Promise<void> {
+  accentColor.set(value);
+  await setSetting(KEYS.ACCENT_COLOR, value);
+  applyAppearanceToCSS();
 }
 
 // Apply effects to document based on current settings
@@ -195,6 +252,27 @@ export function applyAppearanceToCSS(): void {
   root.style.setProperty('--bg-intensity', String(get(bgIntensity)));
   root.style.setProperty('--bg-noise-opacity', String(get(bgNoiseOpacity)));
   root.style.setProperty('--bg-crossfade-ms', String(get(bgCrossfadeMs)));
+  root.style.setProperty('--bg-static-color', get(bgStaticColor));
+  
+  // Apply accent color and extract RGB components
+  const accent = get(accentColor);
+  root.style.setProperty('--theme-accent', accent);
+  const rgb = hexToRgb(accent);
+  if (rgb) {
+    root.style.setProperty('--theme-accent-r', String(rgb.r));
+    root.style.setProperty('--theme-accent-g', String(rgb.g));
+    root.style.setProperty('--theme-accent-b', String(rgb.b));
+  }
+}
+
+// Helper to convert hex to RGB
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  } : null;
 }
 
 // Sync appearance settings from preferences store to effects stores
@@ -209,6 +287,11 @@ export function syncAppearanceToEffects(settings: Record<string, string>): void 
   bgIntensity.set(parseNum(settings['ui.background.intensity'], 0.35));
   bgNoiseOpacity.set(parseNum(settings['ui.background.noise_opacity'], 0.18));
   bgCrossfadeMs.set(parseNum(settings['ui.background.crossfade_ms'], 1200));
+  bgStaticColor.set(settings['ui.background.static_color'] || '#1a1a2e');
+  bgDynamicLibrary.set(settings['ui.background.dynamic_library'] !== 'off');
+  bgDynamicNowPlaying.set(settings['ui.background.dynamic_now_playing'] !== 'off');
+  bgDynamicAlbumDetail.set(settings['ui.background.dynamic_album_detail'] !== 'off');
+  accentColor.set(settings['ui.theme.accent_color'] || '#4aafff');
   
   applyEffects();
 }

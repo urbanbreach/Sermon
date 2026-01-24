@@ -198,8 +198,8 @@
     /* Dynamic positioning - aligns with content area */
     position: absolute;
     bottom: 0;
-    left: calc(var(--layout-sidebar-width) + 1px); /* After sidebar + divider */
-    right: 1px; /* Account for divider, default when rail closed */
+    left: 0;
+    right: 0;
     
     /* Two-row layout */
     height: var(--layout-player-height, 88px);
@@ -213,11 +213,6 @@
     
     /* CRITICAL: Ensure bottom bar is above main-body for click events */
     z-index: 10;
-  }
-
-  /* Adjust right edge when rail is open */
-  .bottom-bar.rail-open {
-    right: calc(var(--layout-rail-width) + 1px); /* Before rail + divider */
   }
 
   /* ===== ROW 1: PROGRESS ===== */

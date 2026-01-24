@@ -122,7 +122,7 @@
     flex-direction: column;
   }
 
-  .item {
+.item {
     background: var(--glass-bg);
     backdrop-filter: blur(var(--glass-blur));
     -webkit-backdrop-filter: blur(var(--glass-blur));
@@ -130,7 +130,7 @@
     margin-bottom: var(--space-2, 8px);
     border-radius: var(--glass-radius);
     border: 1px solid var(--glass-border);
-    box-shadow: var(--glass-shadow);
+    box-shadow: none;
     display: flex;
     align-items: center;
     gap: 1rem;

@@ -32,6 +32,11 @@ export interface AppearanceSettings {
   'ui.background.intensity': string;
   'ui.background.noise_opacity': string;
   'ui.background.crossfade_ms': string;
+  'ui.background.static_color': string;
+  'ui.background.dynamic_library': string;
+  'ui.background.dynamic_now_playing': string;
+  'ui.background.dynamic_album_detail': string;
+  'ui.theme.accent_color': string;
 }
 
 export type PreferenceCategory = 'player' | 'library' | 'internet' | 'appearance';
