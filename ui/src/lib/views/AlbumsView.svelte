@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { listAlbumsPage } from '../api/library';
   import type { AlbumListItem, AlbumCursor } from '../types/library';
   import { navigate } from '../state/route';
+  import { setViewTitle } from '../state/viewTitle';
   import { Fixtures } from '../data/fixtures';
   import { getArtworkBestForAlbum, getArtworkBytes } from '../api/artwork';
   import ArtworkPickerModal from '../components/ArtworkPickerModal.svelte';
@@ -26,7 +27,8 @@
   let containerWidth = $state(0);
   
   // Compute columns based on container width (min 160px + 20px gap)
-  let columns = $derived(Math.max(1, Math.floor((containerWidth - 64 + 20) / 180)));
+  // containerWidth - 32 accounts for 1rem (16px) padding on each side
+  let columns = $derived(Math.max(1, Math.floor((containerWidth - 32 + 20) / 180)));
   
   // Chunk albums into rows
   let rows = $derived.by(() => {
@@ -42,10 +44,14 @@
     return `${album.albumArtistSort}||${album.albumTitleSort}`;
   }
 
-  // Load initial page
   onMount(async () => {
+    setViewTitle('Albums');
     await loadMore();
     initialLoadComplete = true;
+  });
+
+  onDestroy(() => {
+    setViewTitle('');
   });
 
   async function loadMore() {
@@ -141,8 +147,6 @@
   onscroll={handleScroll}
   bind:clientWidth={containerWidth}
 >
-  <h1>Albums</h1>
-  
   {#if !initialLoadComplete && albums.length === 0}
     <div class="albums-grid">
       {#each Array(12) as _}
@@ -222,7 +226,10 @@
 
 <style>
   .view-container {
-    padding: 2rem;
+    padding: 1rem;
+    padding-top: 12px;
+    padding-right: 0;
+    padding-bottom: 0;
     color: #fff;
     height: 100%;
     overflow-y: auto;
@@ -233,18 +240,11 @@
     flex-direction: column;
   }
 
-  h1 {
-    margin-bottom: 1.5rem;
-    font-size: var(--text-view-title, 22px);
-    font-weight: 600;
-    flex-shrink: 0;
-  }
-
-  /* Skeleton Grid - keep for loading state */
   .albums-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 20px;
+    padding-right: 1rem;
   }
   
   .list-wrapper {
@@ -254,7 +254,8 @@
   .grid-row {
     display: grid;
     gap: 20px;
-    margin-bottom: 20px; /* Gap between rows */
+    margin-bottom: 20px;
+    padding-right: 1rem;
   }
 
   .card {

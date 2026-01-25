@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { VList } from 'virtua/svelte';
   import { tracks, sortBy, sortDirection, scanStatus, scanProgress, setSortBy, toggleSortDirection, initLibrary, loadTracks } from '../state/library';
-  import { playNow, addToQueue, currentTrack } from '../state/playback';
+  import { playNow, addToQueue, currentTrack, playNowWithQueue } from '../state/playback';
+  import { setViewTitle } from '../state/viewTitle';
   import type { SortBy, TrackRow } from '../types/library';
   import TagEditor from '../components/TagEditor.svelte';
   import SkeletonRow from '../components/SkeletonRow.svelte';
@@ -18,11 +19,16 @@
   let initialLoadComplete = $state(false);
 
   onMount(async () => {
+    setViewTitle('Tracks');
     initLibrary();
     if ($tracks.length === 0) {
       await loadTracks();
     }
     initialLoadComplete = true;
+  });
+
+  onDestroy(() => {
+    setViewTitle('');
   });
 
   function formatDuration(ms?: number): string {
@@ -58,19 +64,31 @@
   function closeMenu() {
     openMenuTrackId = null;
   }
+
+  function handleTrackDoubleClick(track: TrackRow, trackIndex: number) {
+    if (track.is_missing) return;
+    const validTracks = $tracks.filter(t => !t.is_missing);
+    const trackIds = validTracks.map(t => t.id);
+    const startIndex = validTracks.findIndex(t => t.id === track.id);
+    if (startIndex >= 0 && trackIds.length > 0) {
+      playNowWithQueue(trackIds, startIndex);
+    }
+  }
+
+  function handlePlayIconClick(e: MouseEvent, track: TrackRow, trackIndex: number) {
+    e.stopPropagation();
+    handleTrackDoubleClick(track, trackIndex);
+  }
 </script>
 
 <svelte:window onclick={closeMenu} />
 
 <div class="view-container" use:fadeIn={{ duration: 300 }}>
-  <div class="header">
-    <h1>Tracks</h1>
-    {#if $scanStatus === 'scanning'}
-      <div class="scan-progress">
-        Scanning... {$scanProgress.scanned}/{$scanProgress.total}
-      </div>
-    {/if}
-  </div>
+  {#if $scanStatus === 'scanning'}
+    <div class="scan-progress">
+      Scanning... {$scanProgress.scanned}/{$scanProgress.total}
+    </div>
+  {/if}
   
   <div class="tracks-list-container">
     <div class="tracks-header">
@@ -124,7 +142,7 @@
               class="track-row"
               class:missing={track.is_missing} 
               class:playing={$currentTrack?.id === track.id}
-              ondblclick={() => !track.is_missing && playNow(track.id)}
+              ondblclick={() => handleTrackDoubleClick(track, i)}
               role="row"
               tabindex="0"
               aria-rowindex={i + 1}
@@ -132,7 +150,7 @@
               <div class="col-index cell">
                 <div class="row-index">
                   <span class="number">{i + 1}</span>
-                  <button class="play-icon" onclick={(e) => { e.stopPropagation(); playNow(track.id); }}>
+                  <button class="play-icon" onclick={(e) => handlePlayIconClick(e, track, i)}>
                     <Play size={12} fill="currentColor" />
                   </button>
                 </div>
@@ -171,26 +189,15 @@
 
 <style>
   .view-container {
-    padding: 2rem;
+    padding: 1rem;
+    padding-top: 12px;
+    padding-right: 0;
     color: #fff;
     height: 100%;
     overflow-y: hidden;
     background: transparent;
     display: flex;
     flex-direction: column;
-  }
-  .header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1rem;
-    flex-shrink: 0;
-  }
-  .header h1 {
-    font-size: 24px;
-    font-weight: 600;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.25);
-    margin: 0;
   }
   .scan-progress {
     background: var(--glass-bg);
@@ -202,6 +209,7 @@
     color: #d61e30;
     border: 1px solid var(--glass-border);
     box-shadow: var(--glass-shadow);
+    margin-bottom: 1rem;
   }
   
   .tracks-list-container {
@@ -213,9 +221,10 @@
 
   .tracks-header {
     display: grid;
-    grid-template-columns: 40px minmax(200px, 1.4fr) 1fr 1fr 0.8fr 60px 40px;
+    grid-template-columns: 40px minmax(200px, 1.4fr) 1fr 1fr 1fr 75px 40px;
     border-bottom: 1px solid var(--divider-color, rgba(255, 255, 255, 0.07));
     padding-bottom: 4px;
+    padding-right: 1rem;
     margin-bottom: 4px;
     font-size: var(--text-table-header, 13px);
     color: #989898;
@@ -265,13 +274,14 @@
   /* Row styling */
   .track-row {
     display: grid;
-    grid-template-columns: 40px minmax(200px, 1.4fr) 1fr 1fr 0.8fr 60px 40px;
-    height: 40px; /* matches itemSize */
+    grid-template-columns: 40px minmax(200px, 1.4fr) 1fr 1fr 1fr 75px 40px;
+    height: 40px;
     border-bottom: 1px solid var(--divider-color, rgba(255, 255, 255, 0.07));
     font-size: var(--text-body, 14px);
     color: var(--text-primary);
     transition: background var(--motion-fast) var(--ease-out);
     align-items: center;
+    padding-right: 1rem;
   }
 
   .track-row:hover {

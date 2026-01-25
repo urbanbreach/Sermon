@@ -1,8 +1,9 @@
 <script lang="ts">
   import { audioDebug } from '../state/playback';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { getLibraryStats } from '../api/library';
   import type { LibraryStats } from '../types/library';
+  import { setViewTitle } from '../state/viewTitle';
   import Modal from '../components/Modal.svelte';
   import { Activity, Settings, Cpu, ArrowRight, Database, CheckCircle, AlertTriangle, XCircle } from '@lucide/svelte';
 
@@ -32,12 +33,11 @@
   }
 
   onMount(() => {
-    // Load library stats
+    setViewTitle('Audio Diagnostics');
     getLibraryStats()
       .then((s) => { stats = s; })
       .catch((e) => { console.error('Failed to load library stats:', e); });
 
-    // Update active element info periodically when harness is open
     const interval = setInterval(() => {
       if (harnessModalOpen) {
         updateActiveElement();
@@ -45,6 +45,10 @@
     }, 100);
 
     return () => clearInterval(interval);
+  });
+
+  onDestroy(() => {
+    setViewTitle('');
   });
 
   function formatBytes(bytes: number): string {
@@ -60,8 +64,6 @@
 </script>
 
 <div class="view-container">
-  <h1><Activity size={24} /> Audio Diagnostics</h1>
-
   <div class="grid">
     <!-- Status Card -->
     <div class="card status-card">
@@ -69,7 +71,7 @@
       <div class="status-indicator" class:bit-perfect={debug?.bit_perfect === 'yes'}>
         <div class="dot"></div>
         <span class="label">Bit-Perfect:</span>
-        <span class="value">{debug?.bit_perfect === 'yes' ? 'YES' : 'NO'}</span>
+        <span class="value">{debug?.bit_perfect === 'yes' ? 'Yes' : 'No'}</span>
       </div>
       {#if debug?.bit_perfect === 'no'}
         <div class="reason">
@@ -92,7 +94,7 @@
       </div>
       <div class="row">
         <span class="label">Exclusive Active</span>
-        <span class="value highlight">{debug?.exclusive_active ? 'YES' : 'NO'}</span>
+        <span class="value highlight">{debug?.exclusive_active ? 'Yes' : 'No'}</span>
       </div>
     </div>
 
@@ -102,7 +104,7 @@
       <div class="row">
         <span class="label">Conversion</span>
         <span class="value" class:warn={debug?.conversion !== 'none'}>
-          {debug?.conversion || 'none'}
+          {debug?.conversion || 'None'}
         </span>
       </div>
       <div class="row">
@@ -261,21 +263,18 @@
 
 <style>
   .view-container {
-    padding: 2rem;
+    padding: 1rem;
+    padding-top: 12px;
+    padding-right: 0;
+    padding-bottom: calc(var(--layout-player-height, 80px) + 2rem);
     color: #fff;
     height: 100%;
     overflow-y: auto;
     background: transparent;
   }
 
-  h1 {
-    margin-bottom: 2rem;
-    font-size: var(--text-view-title, 22px);
-    font-weight: 600;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
-    display: flex;
-    align-items: center;
-    gap: var(--space-3, 12px);
+  .grid {
+    padding-right: 1rem;
   }
 
   h2 {
@@ -303,7 +302,7 @@
     border: 1px solid var(--glass-border);
     border-radius: 8px;
     padding: 1.5rem;
-    box-shadow: var(--glass-shadow);
+    box-shadow: var(--shadow-1);
   }
 
   .full-width {

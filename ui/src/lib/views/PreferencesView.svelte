@@ -1,15 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { invoke } from '@tauri-apps/api/core';
-  import { save } from '@tauri-apps/plugin-dialog';
-  import { writeTextFile } from '@tauri-apps/plugin-fs';
   import PlayerPrefs from '../components/preferences/PlayerPrefs.svelte';
   import LibraryPrefs from '../components/preferences/LibraryPrefs.svelte';
   import InternetPrefs from '../components/preferences/InternetPrefs.svelte';
   import AppearancePrefs from '../components/preferences/AppearancePrefs.svelte';
   import { resetCategoryToDefaults } from '../state/preferences';
   import { loadEffectsSettings } from '../state/effects';
-  import { Settings, Volume2, Library, Globe, Palette, RotateCcw, Download, Check, X } from '@lucide/svelte';
+  import { Settings, Volume2, Library, Globe, Palette, RotateCcw, Check, X } from '@lucide/svelte';
   
   const isMock = import.meta.env.SERMON_MOCK === '1';
   
@@ -41,34 +38,6 @@
     } catch (e) {
       statusType = 'error';
       statusMessage = 'Reset failed';
-      setTimeout(() => { statusMessage = ''; }, 3000);
-    }
-  }
-  
-  async function handleExportDiagnostics() {
-    if (isMock) return;
-    try {
-      // Get diagnostics JSON from backend
-      const diagnosticsJson = await invoke<string>('cmd_settings_export_diagnostics');
-      
-      // Open save dialog
-      const filePath = await save({
-        defaultPath: 'sermon-diagnostics.json',
-        filters: [{ name: 'JSON', extensions: ['json'] }]
-      });
-      
-      if (filePath) {
-        // Write file
-        await writeTextFile(filePath, diagnosticsJson);
-        const filename = filePath.split(/[\\/]/).pop() || 'file';
-        statusType = 'success';
-        statusMessage = `Saved to ${filename}`;
-        setTimeout(() => { statusMessage = ''; }, 3000);
-      }
-    } catch (e) {
-      console.error('Export failed:', e);
-      statusType = 'error';
-      statusMessage = 'Export failed';
       setTimeout(() => { statusMessage = ''; }, 3000);
     }
   }
@@ -125,13 +94,6 @@
       </div>
     {/if}
   </main>
-  
-  <footer class="prefs-footer">
-    <button class="btn" onclick={handleExportDiagnostics} disabled={isMock}>
-      <Download size={16} />
-      Export Diagnostics
-    </button>
-  </footer>
 </div>
 
 <style>
@@ -224,16 +186,8 @@
   .prefs-body {
     flex: 1;
     padding: var(--space-6, 24px);
+    padding-bottom: calc(var(--layout-player-height, 80px) + var(--space-6, 24px));
     overflow-y: auto;
-  }
-
-  .prefs-footer {
-    padding: var(--space-3, 12px) var(--space-6, 24px);
-    border-top: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
-    background: rgba(0, 0, 0, 0.1);
-    display: flex;
-    justify-content: flex-end;
-    flex-shrink: 0;
   }
 
   .btn {

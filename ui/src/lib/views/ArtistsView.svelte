@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { VList } from 'virtua/svelte';
   import { listArtistsPage } from '../api/library';
   import type { ArtistListItem, ArtistCursor } from '../types/library';
   import { navigate } from '../state/route';
+  import { setViewTitle } from '../state/viewTitle';
 
   let artists: ArtistListItem[] = $state([]);
   let loading = $state(false);
@@ -13,8 +14,13 @@
   let scrollContainer: HTMLElement | undefined = $state();
 
   onMount(async () => {
+    setViewTitle('Artists');
     await loadMore();
     initialLoadComplete = true;
+  });
+
+  onDestroy(() => {
+    setViewTitle('');
   });
 
   async function loadMore() {
@@ -58,15 +64,13 @@
   bind:this={scrollContainer}
   onscroll={handleScroll}
 >
-  <h1>Artists</h1>
-
   {#if !initialLoadComplete && artists.length === 0}
     <div class="loading-state">Loading...</div>
   {:else if artists.length === 0}
     <div class="empty-state">No artists found</div>
   {:else}
     <div class="list-wrapper">
-      <VList data={artists}>
+      <VList data={artists} itemSize={52}>
         {#snippet children(artist: ArtistListItem)}
           <div 
             class="item"
@@ -96,7 +100,10 @@
 
 <style>
   .view-container {
-    padding: 2rem;
+    padding: 1rem;
+    padding-top: 12px;
+    padding-right: 0;
+    padding-bottom: calc(var(--layout-player-height, 80px) + 2rem);
     color: #fff;
     height: 100%;
     overflow-y: auto;
@@ -107,14 +114,6 @@
     min-height: 100%;
   }
 
-  h1 {
-    margin-bottom: 1.5rem;
-    flex-shrink: 0;
-    font-size: 24px;
-    font-weight: 600;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
-  }
-
   .list-wrapper {
     flex-grow: 1;
     min-height: 200px;
@@ -122,60 +121,70 @@
     flex-direction: column;
   }
 
-.item {
-    background: var(--glass-bg);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    padding: var(--space-4, 16px);
-    margin-bottom: var(--space-2, 8px);
-    border-radius: var(--glass-radius);
-    border: 1px solid var(--glass-border);
-    box-shadow: none;
+  /* Compact row layout - 52px height for higher density */
+  .item {
+    height: 52px;
+    padding: 0 var(--space-3, 12px);
+    padding-right: 1rem;
+    margin-bottom: 0;
+    border-radius: var(--radius-sm, 8px);
+    border: none;
+    background: transparent;
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 12px;
     cursor: pointer;
-    transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), border-color 0.2s;
+    transition: background var(--motion-fast) var(--ease-out);
+    box-sizing: border-box;
   }
 
   .item:hover {
-    background: var(--glass-bg);
-    border-color: rgba(255,255,255,0.3);
-    transform: scale(1.01);
+    background: var(--surface-hover);
+  }
+
+  .item:focus-visible {
+    background: var(--surface-hover);
+    box-shadow: inset 0 0 0 1px var(--accent-medium);
+    outline: none;
   }
 
   .avatar {
-    width: 44px;
-    height: 44px;
-    background: linear-gradient(135deg, #444, #222);
+    width: 36px;
+    height: 36px;
+    background: linear-gradient(135deg, #3a3a3a, #252525);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: bold;
-    font-size: 1.2rem;
-    color: #fff;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-secondary);
     flex-shrink: 0;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-    border: 1px solid rgba(255,255,255,0.1);
   }
 
   .info {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
+    gap: 2px;
+    min-width: 0;
   }
 
   .name {
-    font-size: var(--text-label, 16px);
+    font-size: 14px;
     font-weight: 500;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .stats {
-    font-size: var(--text-meta, 12px);
-    color: #ccc;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .loading-state, .empty-state {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { currentRoute, navigate } from '../state/route';
-  import { playNow, addToQueue } from '../state/playback';
+  import { playNow, addToQueue, playNowWithQueue } from '../state/playback';
   import { listAlbumTracksPage } from '../api/library';
   import { getArtworkBestForAlbum, getArtworkBytes } from '../api/artwork';
   import type { TrackRow, AlbumTrackCursor } from '../types/library';
@@ -160,8 +160,20 @@
   }
 
   function handlePlayAlbum() {
-    if (filteredTracks.length > 0 && filteredTracks[0].id) {
-      playNow(filteredTracks[0].id);
+    const validTracks = filteredTracks.filter(t => t.id && !t.is_missing);
+    if (validTracks.length > 0) {
+      const trackIds = validTracks.map(t => t.id);
+      playNowWithQueue(trackIds, 0);
+    }
+  }
+
+  function handleTrackDoubleClick(track: TrackRow) {
+    if (track.is_missing || !track.id) return;
+    const validTracks = filteredTracks.filter(t => t.id && !t.is_missing);
+    const trackIds = validTracks.map(t => t.id);
+    const startIndex = validTracks.findIndex(t => t.id === track.id);
+    if (startIndex >= 0) {
+      playNowWithQueue(trackIds, startIndex);
     }
   }
 
@@ -262,7 +274,7 @@
       <table>
         <tbody>
           {#each filteredTracks as track}
-            <tr class:missing={track.is_missing} ondblclick={() => !track.is_missing && track.id && playNow(track.id)}>
+            <tr class:missing={track.is_missing} ondblclick={() => handleTrackDoubleClick(track)}>
               <td class="col-num">{track.track_no || '-'}</td>
               <td class="col-title">
                   <div class="title-cell">
