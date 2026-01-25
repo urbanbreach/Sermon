@@ -8,11 +8,37 @@
     setReduceEffects, setThemeBlur, setThemeGlow, setThemeBorderHighlight,
     setBgStaticColor, setBgDynamicLibrary, setBgDynamicNowPlaying, setBgDynamicAlbumDetail,
     setAccentColor,
+    glassMainBlur, glassEdgeBlur, glassEdgeWidth, glassMainBg, glassEdgeBg,
+    glassSheenBlur, glassSheenBg, glassSheenWidth, glassEdgeGradientWidth,
+    setGlassMainBlur, setGlassEdgeBlur, setGlassEdgeWidth, setGlassMainBg, setGlassEdgeBg,
+    setGlassSheenBlur, setGlassSheenBg, setGlassSheenWidth, setGlassEdgeGradientWidth,
     applyEffects, loadEffectsSettings
   } from '../../state/effects';
   import { loadCategorySettings, saveCategorySetting } from '../../state/preferences';
   
   const isMock = import.meta.env.SERMON_MOCK === '1';
+
+  function rgbaToHex(rgba: string): string {
+    const result = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(rgba);
+    if (result) {
+      const r = parseInt(result[1]).toString(16).padStart(2, '0');
+      const g = parseInt(result[2]).toString(16).padStart(2, '0');
+      const b = parseInt(result[3]).toString(16).padStart(2, '0');
+      return `#${r}${g}${b}`;
+    }
+    return '#000000';
+  }
+
+  function hexToRgba(hex: string, alpha: number): string {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    if (result) {
+      const r = parseInt(result[1], 16);
+      const g = parseInt(result[2], 16);
+      const b = parseInt(result[3], 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
   
   onMount(async () => {
     if (!isMock) {
@@ -142,6 +168,89 @@
           />
         </div>
       {/if}
+    </div>
+
+    <!-- Liquid Glass Bar Settings -->
+    <div class="setting-group">
+      <h3>Liquid Glass Bar</h3>
+      
+      <div class="setting slider-setting">
+        <label for="glass-main-blur">Main Blur: {$glassMainBlur}px</label>
+        <input type="range" id="glass-main-blur" min="0" max="40" step="1" 
+               value={$glassMainBlur}
+               oninput={(e) => setGlassMainBlur(parseFloat(e.currentTarget.value))} 
+               disabled={isMock} />
+      </div>
+
+      <div class="setting slider-setting">
+        <label for="glass-edge-blur">Edge Blur: {$glassEdgeBlur}px</label>
+        <input type="range" id="glass-edge-blur" min="0" max="40" step="1" 
+               value={$glassEdgeBlur}
+               oninput={(e) => setGlassEdgeBlur(parseFloat(e.currentTarget.value))}
+               disabled={isMock} />
+      </div>
+
+      <div class="setting slider-setting">
+        <label for="glass-edge-width">Edge Width: {$glassEdgeWidth}px</label>
+        <input type="range" id="glass-edge-width" min="0" max="100" step="1" 
+               value={$glassEdgeWidth}
+               oninput={(e) => setGlassEdgeWidth(parseFloat(e.currentTarget.value))}
+               disabled={isMock} />
+      </div>
+
+      <div class="setting slider-setting">
+        <label for="glass-sheen-blur">Sheen Blur: {$glassSheenBlur}px</label>
+        <input type="range" id="glass-sheen-blur" min="0" max="40" step="1" 
+               value={$glassSheenBlur}
+               oninput={(e) => setGlassSheenBlur(parseFloat(e.currentTarget.value))}
+               disabled={isMock} />
+      </div>
+
+      <div class="setting slider-setting">
+        <label for="glass-sheen-width">Sheen Width: {$glassSheenWidth}px</label>
+        <input type="range" id="glass-sheen-width" min="0" max="100" step="1" 
+               value={$glassSheenWidth}
+               oninput={(e) => setGlassSheenWidth(parseFloat(e.currentTarget.value))}
+               disabled={isMock} />
+      </div>
+
+      <div class="setting slider-setting">
+        <label for="glass-edge-grad-width">Edge Gradient Width: {$glassEdgeGradientWidth}px</label>
+        <input type="range" id="glass-edge-grad-width" min="0" max="100" step="1" 
+               value={$glassEdgeGradientWidth}
+               oninput={(e) => setGlassEdgeGradientWidth(parseFloat(e.currentTarget.value))}
+               disabled={isMock} />
+      </div>
+      
+      <div class="setting color-setting">
+        <label for="glass-main-bg">Main Background</label>
+        <div class="color-picker-row">
+          <input type="color" id="glass-main-bg" value={rgbaToHex($glassMainBg)} 
+                 onchange={(e) => setGlassMainBg(hexToRgba(e.currentTarget.value, 0.38))} 
+                 disabled={isMock} />
+          <span class="color-value">{$glassMainBg}</span>
+        </div>
+      </div>
+
+      <div class="setting color-setting">
+        <label for="glass-edge-bg">Edge Background</label>
+        <div class="color-picker-row">
+          <input type="color" id="glass-edge-bg" value={rgbaToHex($glassEdgeBg)} 
+                 onchange={(e) => setGlassEdgeBg(hexToRgba(e.currentTarget.value, 0.12))} 
+                 disabled={isMock} />
+          <span class="color-value">{$glassEdgeBg}</span>
+        </div>
+      </div>
+
+      <div class="setting color-setting">
+        <label for="glass-sheen-bg">Sheen Background</label>
+        <div class="color-picker-row">
+          <input type="color" id="glass-sheen-bg" value={rgbaToHex($glassSheenBg)} 
+                 onchange={(e) => setGlassSheenBg(hexToRgba(e.currentTarget.value, 0.22))} 
+                 disabled={isMock} />
+          <span class="color-value">{$glassSheenBg}</span>
+        </div>
+      </div>
     </div>
 
     <div class="setting-group">

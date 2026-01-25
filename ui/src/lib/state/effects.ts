@@ -26,6 +26,17 @@ const KEYS = {
   ACCENT_COLOR: 'ui.theme.accent_color',
   PROVIDER_ITUNES: 'artwork.provider.itunes',
   PROVIDER_DEEZER: 'artwork.provider.deezer',
+  
+  // Liquid Glass keys
+  GLASS_MAIN_BLUR: 'ui.theme.glass.main_blur',
+  GLASS_EDGE_BLUR: 'ui.theme.glass.edge_blur',
+  GLASS_EDGE_WIDTH: 'ui.theme.glass.edge_width',
+  GLASS_MAIN_BG: 'ui.theme.glass.main_bg',
+  GLASS_EDGE_BG: 'ui.theme.glass.edge_bg',
+  GLASS_SHEEN_BLUR: 'ui.theme.glass.sheen_blur',
+  GLASS_SHEEN_BG: 'ui.theme.glass.sheen_bg',
+  GLASS_SHEEN_WIDTH: 'ui.theme.glass.sheen_width',
+  GLASS_EDGE_GRADIENT_WIDTH: 'ui.theme.glass.edge_gradient_width',
 } as const;
 
 // Stores - Boolean toggles
@@ -54,6 +65,17 @@ export const accentColor = writable<string>('#4aafff');
 // Artwork provider toggles
 export const providerItunes = writable<boolean>(true);
 export const providerDeezer = writable<boolean>(true);
+
+// Liquid Glass Stores
+export const glassMainBlur = writable<number>(22);
+export const glassEdgeBlur = writable<number>(14);
+export const glassEdgeWidth = writable<number>(22);
+export const glassMainBg = writable<string>('rgba(20, 20, 24, 0.38)');
+export const glassEdgeBg = writable<string>('rgba(255, 255, 255, 0.12)');
+export const glassSheenBlur = writable<number>(18);
+export const glassSheenBg = writable<string>('rgba(255, 255, 255, 0.22)');
+export const glassSheenWidth = writable<number>(30);
+export const glassEdgeGradientWidth = writable<number>(28);
 
 // API helpers
 async function getSetting(key: string): Promise<string | null> {
@@ -92,7 +114,9 @@ export async function loadEffectsSettings(): Promise<void> {
     blurPxVal, glowStrengthVal, borderStrengthVal,
     bgIntensityVal, bgNoiseOpacityVal, bgCrossfadeMsVal,
     bgStaticColorVal, bgDynamicLibraryVal, bgDynamicNowPlayingVal, bgDynamicAlbumDetailVal,
-    accentColorVal
+    accentColorVal,
+    glassMainBlurVal, glassEdgeBlurVal, glassEdgeWidthVal, glassMainBgVal, glassEdgeBgVal,
+    glassSheenBlurVal, glassSheenBgVal, glassSheenWidthVal, glassEdgeGradientWidthVal
   ] = await Promise.all([
     getSetting(KEYS.REDUCE_EFFECTS),
     getSetting(KEYS.THEME_BLUR),
@@ -111,6 +135,15 @@ export async function loadEffectsSettings(): Promise<void> {
     getSetting(KEYS.BACKGROUND_DYNAMIC_NOW_PLAYING),
     getSetting(KEYS.BACKGROUND_DYNAMIC_ALBUM_DETAIL),
     getSetting(KEYS.ACCENT_COLOR),
+    getSetting(KEYS.GLASS_MAIN_BLUR),
+    getSetting(KEYS.GLASS_EDGE_BLUR),
+    getSetting(KEYS.GLASS_EDGE_WIDTH),
+    getSetting(KEYS.GLASS_MAIN_BG),
+    getSetting(KEYS.GLASS_EDGE_BG),
+    getSetting(KEYS.GLASS_SHEEN_BLUR),
+    getSetting(KEYS.GLASS_SHEEN_BG),
+    getSetting(KEYS.GLASS_SHEEN_WIDTH),
+    getSetting(KEYS.GLASS_EDGE_GRADIENT_WIDTH),
   ]);
 
   reduceEffects.set(parseBool(reduce, false));
@@ -136,6 +169,17 @@ export async function loadEffectsSettings(): Promise<void> {
 
   // Accent color
   accentColor.set(accentColorVal || '#4aafff');
+
+  // Liquid Glass stores
+  glassMainBlur.set(parseNum(glassMainBlurVal, 22));
+  glassEdgeBlur.set(parseNum(glassEdgeBlurVal, 14));
+  glassEdgeWidth.set(parseNum(glassEdgeWidthVal, 22));
+  glassMainBg.set(glassMainBgVal || 'rgba(20, 20, 24, 0.38)');
+  glassEdgeBg.set(glassEdgeBgVal || 'rgba(255, 255, 255, 0.12)');
+  glassSheenBlur.set(parseNum(glassSheenBlurVal, 18));
+  glassSheenBg.set(glassSheenBgVal || 'rgba(255, 255, 255, 0.22)');
+  glassSheenWidth.set(parseNum(glassSheenWidthVal, 30));
+  glassEdgeGradientWidth.set(parseNum(glassEdgeGradientWidthVal, 28));
 
   // Apply effects immediately
   applyEffects();
@@ -203,6 +247,61 @@ export async function setAccentColor(value: string): Promise<void> {
   applyAppearanceToCSS();
 }
 
+// Liquid Glass Setters
+export async function setGlassMainBlur(value: number): Promise<void> {
+  glassMainBlur.set(value);
+  await setSetting(KEYS.GLASS_MAIN_BLUR, String(value));
+  applyAppearanceToCSS();
+}
+
+export async function setGlassEdgeBlur(value: number): Promise<void> {
+  glassEdgeBlur.set(value);
+  await setSetting(KEYS.GLASS_EDGE_BLUR, String(value));
+  applyAppearanceToCSS();
+}
+
+export async function setGlassEdgeWidth(value: number): Promise<void> {
+  glassEdgeWidth.set(value);
+  await setSetting(KEYS.GLASS_EDGE_WIDTH, String(value));
+  applyAppearanceToCSS();
+}
+
+export async function setGlassMainBg(value: string): Promise<void> {
+  glassMainBg.set(value);
+  await setSetting(KEYS.GLASS_MAIN_BG, value);
+  applyAppearanceToCSS();
+}
+
+export async function setGlassEdgeBg(value: string): Promise<void> {
+  glassEdgeBg.set(value);
+  await setSetting(KEYS.GLASS_EDGE_BG, value);
+  applyAppearanceToCSS();
+}
+
+export async function setGlassSheenBlur(value: number): Promise<void> {
+  glassSheenBlur.set(value);
+  await setSetting(KEYS.GLASS_SHEEN_BLUR, String(value));
+  applyAppearanceToCSS();
+}
+
+export async function setGlassSheenBg(value: string): Promise<void> {
+  glassSheenBg.set(value);
+  await setSetting(KEYS.GLASS_SHEEN_BG, value);
+  applyAppearanceToCSS();
+}
+
+export async function setGlassSheenWidth(value: number): Promise<void> {
+  glassSheenWidth.set(value);
+  await setSetting(KEYS.GLASS_SHEEN_WIDTH, String(value));
+  applyAppearanceToCSS();
+}
+
+export async function setGlassEdgeGradientWidth(value: number): Promise<void> {
+  glassEdgeGradientWidth.set(value);
+  await setSetting(KEYS.GLASS_EDGE_GRADIENT_WIDTH, String(value));
+  applyAppearanceToCSS();
+}
+
 // Apply effects to document based on current settings
 export function applyEffects(): void {
   const root = document.documentElement;
@@ -254,6 +353,17 @@ export function applyAppearanceToCSS(): void {
   root.style.setProperty('--bg-crossfade-ms', String(get(bgCrossfadeMs)));
   root.style.setProperty('--bg-static-color', get(bgStaticColor));
   
+  // Liquid Glass Variables
+  root.style.setProperty('--glass-main-blur', `${get(glassMainBlur)}px`);
+  root.style.setProperty('--glass-edge-blur', `${get(glassEdgeBlur)}px`);
+  root.style.setProperty('--glass-edge-width', `${get(glassEdgeWidth)}px`);
+  root.style.setProperty('--glass-main-bg', get(glassMainBg));
+  root.style.setProperty('--glass-edge-bg', get(glassEdgeBg));
+  root.style.setProperty('--glass-sheen-blur', `${get(glassSheenBlur)}px`);
+  root.style.setProperty('--glass-sheen-bg', get(glassSheenBg));
+  root.style.setProperty('--glass-sheen-width', `${get(glassSheenWidth)}px`);
+  root.style.setProperty('--glass-edge-gradient-width', `${get(glassEdgeGradientWidth)}px`);
+  
   // Apply accent color and extract RGB components
   const accent = get(accentColor);
   root.style.setProperty('--theme-accent', accent);
@@ -293,6 +403,17 @@ export function syncAppearanceToEffects(settings: Record<string, string>): void 
   bgDynamicAlbumDetail.set(settings['ui.background.dynamic_album_detail'] !== 'off');
   accentColor.set(settings['ui.theme.accent_color'] || '#4aafff');
   
+  // Liquid Glass
+  glassMainBlur.set(parseNum(settings['ui.theme.glass.main_blur'], 22));
+  glassEdgeBlur.set(parseNum(settings['ui.theme.glass.edge_blur'], 14));
+  glassEdgeWidth.set(parseNum(settings['ui.theme.glass.edge_width'], 22));
+  glassMainBg.set(settings['ui.theme.glass.main_bg'] || 'rgba(20, 20, 24, 0.38)');
+  glassEdgeBg.set(settings['ui.theme.glass.edge_bg'] || 'rgba(255, 255, 255, 0.12)');
+  glassSheenBlur.set(parseNum(settings['ui.theme.glass.sheen_blur'], 18));
+  glassSheenBg.set(settings['ui.theme.glass.sheen_bg'] || 'rgba(255, 255, 255, 0.22)');
+  glassSheenWidth.set(parseNum(settings['ui.theme.glass.sheen_width'], 30));
+  glassEdgeGradientWidth.set(parseNum(settings['ui.theme.glass.edge_gradient_width'], 28));
+
   applyEffects();
 }
 
