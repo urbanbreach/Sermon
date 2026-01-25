@@ -13,7 +13,8 @@ use commands::{
     cmd_artwork_embed_to_file, cmd_artwork_extract_embedded, cmd_artwork_find_folder,
     cmd_artwork_get_best_for_album, cmd_artwork_get_best_for_track, cmd_artwork_get_bytes,
     cmd_artwork_search_candidates, cmd_artwork_select_candidate_for_album, cmd_library_add_folder,
-    cmd_library_get_raw_tags, cmd_library_get_stats, cmd_library_list_album_tracks_page,
+    cmd_library_get_raw_tags, cmd_library_get_stats, cmd_library_get_track_by_id, cmd_library_list_album_tracks_page,
+
     cmd_library_list_albums_page, cmd_library_list_artist_tracks_page,
     cmd_library_list_artists_page, cmd_library_list_folders, cmd_library_list_tracks,
     cmd_library_list_tracks_page, cmd_library_search_albums_page, cmd_library_search_artists_page,
@@ -21,7 +22,7 @@ use commands::{
     cmd_output_get_settings, cmd_output_list_devices, cmd_output_set_device,
     cmd_output_set_settings, cmd_playback_next, cmd_playback_pause, cmd_playback_previous,
     cmd_playback_resume, cmd_playback_seek, cmd_playback_start, cmd_playback_stop, cmd_queue_add,
-    cmd_queue_play_now, cmd_scan_start, cmd_settings_export_diagnostics, cmd_settings_get,
+    cmd_queue_play_now, cmd_queue_set_and_play, cmd_scan_start, cmd_settings_export_diagnostics, cmd_settings_get,
     cmd_settings_get_category, cmd_settings_reset_category, cmd_settings_set,
     cmd_settings_set_category, cmd_volume_get, cmd_volume_set,
 };
@@ -188,7 +189,9 @@ pub fn run() {
             cmd_library_add_folder,
             cmd_library_list_folders,
             cmd_library_list_tracks,
+            cmd_library_get_track_by_id,
             cmd_library_list_tracks_page,
+
             cmd_library_list_albums_page,
             cmd_library_list_artists_page,
             cmd_library_list_album_tracks_page,
@@ -210,6 +213,7 @@ pub fn run() {
             cmd_playback_previous,
             cmd_queue_play_now,
             cmd_queue_add,
+            cmd_queue_set_and_play,
             cmd_output_list_devices,
             cmd_output_set_device,
             cmd_output_get_settings,
@@ -859,6 +863,44 @@ fn handle_playback_command(
             }
 
             emit_queue_changed(app, engine);
+        }
+        PlaybackCommand::PlayNowWithQueue {
+            track_ids,
+            start_index,
+        } => {
+            let mut tracks = Vec::new();
+            for track_id in &track_ids {
+                if let Ok(track) = resolve_track(db_path, *track_id) {
+                    tracks.push(track);
+                }
+            }
+
+            if tracks.is_empty() {
+                emit_playback_error(app, "no_valid_tracks", "No valid tracks to play", None, false, None);
+                return;
+            }
+
+            let actual_start = start_index.min(tracks.len() - 1);
+            let start_track = tracks[actual_start].clone();
+
+            {
+                let mut engine = engine.lock();
+                engine.set_and_play(tracks, actual_start);
+            }
+
+            if let Err(e) = playback.start_playback(&start_track) {
+                error!("Failed to start playback: {}", e);
+                let (code, msg) = parse_playback_error(&e);
+                emit_playback_error(app, &code, &msg, Some(start_track.id), false, None);
+                engine.lock().stop();
+                emit_playback_state(app, engine);
+                return;
+            }
+
+            emit_now_playing(app, engine);
+            emit_playback_state(app, engine);
+            emit_queue_changed(app, engine);
+            emit_audio_debug(app, engine, playback, current_device_info.as_ref());
         }
         PlaybackCommand::Pause => {
             engine.lock().pause();

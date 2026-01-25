@@ -89,6 +89,16 @@ pub fn cmd_library_list_tracks(
 }
 
 #[tauri::command]
+pub fn cmd_library_get_track_by_id(
+    state: State<'_, LibraryState>,
+    track_id: i64,
+) -> Result<TrackRow, String> {
+    let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
+    apply_migrations(&conn).map_err(|e| e.to_string())?;
+    library::get_track_by_id(&conn, track_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn cmd_scan_start(
     state: State<'_, LibraryState>,
     app: AppHandle,

@@ -307,6 +307,52 @@ pub fn cmd_queue_add(
 }
 
 #[tauri::command]
+pub fn cmd_queue_set_and_play(
+    app: tauri::AppHandle,
+    audio_state: State<'_, AudioState>,
+    library_state: State<'_, LibraryState>,
+    track_ids: Vec<i64>,
+    start_index: usize,
+) -> Result<(), String> {
+    if track_ids.is_empty() {
+        return Err("No tracks provided".to_string());
+    }
+
+    let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
+    apply_migrations(&conn).map_err(|e| e.to_string())?;
+
+    // Validate at least the starting track exists and is not missing
+    let start_track_id = track_ids.get(start_index).ok_or("Invalid start index")?;
+    let track = get_track_by_id(&conn, *start_track_id).map_err(|e| e.to_string())?;
+
+    if track.is_missing {
+        return Err("Starting track is missing".to_string());
+    }
+
+    if !Path::new(&track.path).exists() {
+        set_missing(&conn, *start_track_id, true).map_err(|e| e.to_string())?;
+        let _ = app.emit(
+            "evt_track_marked_missing",
+            TrackMarkedMissingEvent {
+                track_id: *start_track_id,
+                path: track.path.clone(),
+            },
+        );
+        return Err(format!("File not found: {}", track.path));
+    }
+
+    audio_state
+        .command_tx
+        .send(PlaybackCommand::PlayNowWithQueue {
+            track_ids,
+            start_index,
+        })
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
 pub fn cmd_output_list_devices() -> Result<Vec<AudioDeviceInfoResponse>, String> {
     let devices = list_devices().map_err(|e| e.to_string())?;
     Ok(devices

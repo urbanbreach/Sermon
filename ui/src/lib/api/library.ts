@@ -14,6 +14,10 @@ export async function listTracks(sortBy: SortBy, direction: SortDirection): Prom
   return invoke('cmd_library_list_tracks', { sortBy, direction });
 }
 
+export async function getTrackById(trackId: number): Promise<TrackRow> {
+  return invoke('cmd_library_get_track_by_id', { trackId });
+}
+
 export async function startScan(path: string): Promise<{ scan_id: number }> {
   return invoke('cmd_scan_start', { path });
 }

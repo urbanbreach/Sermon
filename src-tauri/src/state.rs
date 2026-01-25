@@ -42,6 +42,10 @@ pub enum PlaybackCommand {
     PlayNow {
         track_id: i64,
     },
+    PlayNowWithQueue {
+        track_ids: Vec<i64>,
+        start_index: usize,
+    },
     AddToQueue {
         track_id: i64,
     },

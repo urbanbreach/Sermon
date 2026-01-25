@@ -49,6 +49,10 @@ export async function queueAdd(trackId: number): Promise<void> {
   return invoke('cmd_queue_add', { trackId });
 }
 
+export async function queueSetAndPlay(trackIds: number[], startIndex: number): Promise<void> {
+  return invoke('cmd_queue_set_and_play', { trackIds, startIndex });
+}
+
 export async function listDevices(): Promise<AudioDeviceInfo[]> {
   return invoke('cmd_output_list_devices');
 }
