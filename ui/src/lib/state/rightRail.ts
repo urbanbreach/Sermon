@@ -1,6 +1,9 @@
-import { writable } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
+import { currentTrackFull } from './playback';
+import { listAlbumTracksPage } from '../api/library';
+import type { TrackRow } from '../types/library';
 
-export type RailMode = 'now-playing' | 'up-next' | 'autoplay' | 'lyrics';
+export type RailMode = 'now-playing' | 'lyrics';
 
 // Rail mode state
 export const railMode = writable<RailMode>('now-playing');
@@ -53,4 +56,45 @@ export function toggleRail(): void {
 // Set rail mode
 export function setRailMode(mode: RailMode): void {
   railMode.set(mode);
+}
+
+// Album tracks for "Playing Tracks" section
+export const albumTracks = writable<TrackRow[]>([]);
+export const albumTracksLoading = writable<boolean>(false);
+
+// Track the current album context to avoid refetching
+let currentAlbumKey = '';
+
+// Reactively load album tracks when the current track's album changes
+export function loadAlbumTracksIfNeeded(): void {
+  const track = get(currentTrackFull);
+  if (!track) {
+    albumTracks.set([]);
+    currentAlbumKey = '';
+    return;
+  }
+
+  const artist = (track.album_artist || track.artist || 'unknown artist').trim().toLowerCase();
+  const album = (track.album || 'unknown album').trim().toLowerCase();
+  const newKey = `${artist}||${album}`;
+
+  if (newKey === currentAlbumKey) {
+    return; // Already loaded this album
+  }
+
+  currentAlbumKey = newKey;
+  albumTracksLoading.set(true);
+
+  // Fetch all tracks for this album (limit 200 should cover most albums)
+  listAlbumTracksPage(artist, album, 200)
+    .then(page => {
+      albumTracks.set(page.items);
+    })
+    .catch(err => {
+      console.warn('Failed to load album tracks:', err);
+      albumTracks.set([]);
+    })
+    .finally(() => {
+      albumTracksLoading.set(false);
+    });
 }

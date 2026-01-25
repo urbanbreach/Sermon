@@ -1,5 +1,8 @@
 import { writable, derived, get } from 'svelte/store';
 import { listen } from '@tauri-apps/api/event';
+import { getTrackById } from '../api/library';
+import { loadAlbumTracksIfNeeded } from './rightRail';
+import type { TrackRow } from '../types/library';
 import type {
   PlaybackStateEvent, NowPlayingEvent, PlaybackPositionEvent,
   QueueChangedEvent, DeviceChangedEvent, AudioDebugEvent, PlaybackErrorEvent,
@@ -31,6 +34,9 @@ export const audioDebug = writable<AudioDebugEvent | null>(null);
 // Error state
 export const playbackError = writable<PlaybackErrorEvent | null>(null);
 
+// Full track data (includes year, genre, disc_no, track_no, etc.)
+export const currentTrackFull = writable<TrackRow | null>(null);
+
 
 // Derived
 export const isPlaying = derived(playbackState, $s => $s === 'playing');
@@ -44,6 +50,14 @@ export async function playNow(trackId: number) {
     await api.queuePlayNow(trackId);
   } catch (e) {
     console.error('Play failed:', e);
+  }
+}
+
+export async function playNowWithQueue(trackIds: number[], startIndex: number) {
+  try {
+    await api.queueSetAndPlay(trackIds, startIndex);
+  } catch (e) {
+    console.error('Play with queue failed:', e);
   }
 }
 
@@ -171,6 +185,17 @@ export function initPlaybackListeners(): void {
     currentTrack.set(event.payload.track);
     positionMs.set(event.payload.position_ms);
     durationMs.set(event.payload.track.duration_ms || 0);
+
+    // Fetch full track metadata
+    if (event.payload.track.id) {
+      getTrackById(event.payload.track.id).then(fullTrack => {
+        currentTrackFull.set(fullTrack);
+        loadAlbumTracksIfNeeded();
+      }).catch(err => {
+        console.warn('Failed to fetch full track data:', err);
+        currentTrackFull.set(null);
+      });
+    }
   });
 
   listen<PlaybackPositionEvent>('evt_playback_position', (event) => {
