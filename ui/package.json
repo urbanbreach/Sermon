@@ -13,6 +13,7 @@
     "@sveltejs/vite-plugin-svelte": "^6.2.1",
     "@tsconfig/svelte": "^5.0.6",
     "@types/node": "^24.10.1",
+    "@typescript-eslint/types": "^8.53.1",
     "svelte": "^5.43.8",
     "svelte-check": "^4.3.4",
     "typescript": "~5.9.3",
@@ -23,6 +24,7 @@
     "@tauri-apps/api": "^2.9.1",
     "@tauri-apps/plugin-dialog": "^2",
     "@tauri-apps/plugin-fs": "^2",
+    "liquid-glass-svelte": "^1.2.0",
     "virtua": "^0.48.3"
   }
 }

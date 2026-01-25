@@ -6,6 +6,9 @@
     "node": ">=20",
     "pnpm": ">=9"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  },
   "scripts": {
     "dev": "pnpm -C ui dev",
     "ui:snapshots": "node ./scripts/ui-snapshots.mjs"

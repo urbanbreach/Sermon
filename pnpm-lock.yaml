@@ -26,6 +26,9 @@ importers:
       '@tauri-apps/plugin-fs':
         specifier: ^2
         version: 2.4.5
+      liquid-glass-svelte:
+        specifier: ^1.2.0
+        version: 1.2.0(svelte@5.46.3)
       virtua:
         specifier: ^0.48.3
         version: 0.48.3(svelte@5.46.3)
@@ -39,6 +42,9 @@ importers:
       '@types/node':
         specifier: ^24.10.1
         version: 24.10.8
+      '@typescript-eslint/types':
+        specifier: ^8.53.1
+        version: 8.53.1
       svelte:
         specifier: ^5.43.8
         version: 5.46.3
@@ -465,6 +471,13 @@ packages:
   '@types/node@24.10.8':
     resolution: {integrity: sha512-r0bBaXu5Swb05doFYO2kTWHMovJnNVbCsII0fhesM8bNRlLhXIuckley4a2DaD+vOdmm5G+zGkQZAPZsF80+YQ==}
 
+  '@types/to-px@1.1.4':
+    resolution: {integrity: sha512-t8imv37xCZ5yS7ff9g8/3iRwfqx6ro8h3qkI1F1gjqdeu7q5/CxyjDs/EIHbdoEH89SdGuUC+SU27CWUZQ/Jtg==}
+
+  '@typescript-eslint/types@8.53.1':
+    resolution: {integrity: sha512-jr/swrr2aRmUAUjW5/zQHbMaui//vQlsZcJKijZf3M26bnmLj8LyZUpj8/Rd6uzaek06OWsqdofN/Thenm5O8A==}
+    engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
   acorn@8.15.0:
     resolution: {integrity: sha512-NZyJarBfL7nWwIq+FDL6Zp/yHEhePMNnnJ0y3qfieCrmNvYct8uvtiV41UvlSe6apAfk0fY1FbWx+NwfmpvtTg==}
     engines: {node: '>=0.4.0'}
@@ -521,6 +534,11 @@ packages:
   is-reference@3.0.3:
     resolution: {integrity: sha512-ixkJoqQvAP88E6wLydLGGqCJsrFUnqoH6HnaczB8XmDH1oaWU+xxdptvikTgaEhtZ53Ky6YXiBuUI2WXLMCwjw==}
 
+  liquid-glass-svelte@1.2.0:
+    resolution: {integrity: sha512-zKV5UITxQ6vPiFGl/fVemQUmu6qCHEPpxynhJVE7YqNhQs+Y9+E97GsBI8D9qZ4iZcHOL5IusQhW9ITEiky3MQ==}
+    peerDependencies:
+      svelte: ^5.0.0
+
   locate-character@3.0.0:
     resolution: {integrity: sha512-SW13ws7BjaeJ6p7Q6CO2nchbYEc3X3J6WrmTTDto7yMPqVSZTUyY5Tjbid+Ab8gLnATtygYtiDIJGQRRn2ZOiA==}
 
@@ -538,6 +556,9 @@ packages:
 
   obug@2.1.1:
     resolution: {integrity: sha512-uTqF9MuPraAQ+IsnPf366RG4cP9RtUi7MLO1N3KEc+wb0a6yKpeL0lmk2IB1jY5KHPAlTc6T/JRdC/YqxHNwkQ==}
+
+  parse-unit@1.0.1:
+    resolution: {integrity: sha512-hrqldJHokR3Qj88EIlV/kAyAi/G5R2+R56TBANxNMy0uPlYcttx0jnMW6Yx5KsKPSbC3KddM/7qQm3+0wEXKxg==}
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -582,6 +603,9 @@ packages:
   tinyglobby@0.2.15:
     resolution: {integrity: sha512-j2Zq4NyQYG5XMST4cbs02Ak8iJUdxRM0XI5QyxXuZOzKOINmWurp3smXu3y5wDcJrptwpSjgXHzIQxR0omXljQ==}
     engines: {node: '>=12.0.0'}
+
+  to-px@1.1.0:
+    resolution: {integrity: sha512-bfg3GLYrGoEzrGoE05TAL/Uw+H/qrf2ptr9V3W7U0lkjjyYnIfgxmVLUfhQ1hZpIQwin81uxhDjvUkDYsC0xWw==}
 
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
@@ -926,6 +950,10 @@ snapshots:
     dependencies:
       undici-types: 7.16.0
 
+  '@types/to-px@1.1.4': {}
+
+  '@typescript-eslint/types@8.53.1': {}
+
   acorn@8.15.0: {}
 
   aria-query@5.3.2: {}
@@ -988,6 +1016,12 @@ snapshots:
     dependencies:
       '@types/estree': 1.0.8
 
+  liquid-glass-svelte@1.2.0(svelte@5.46.3):
+    dependencies:
+      '@types/to-px': 1.1.4
+      svelte: 5.46.3
+      to-px: 1.1.0
+
   locate-character@3.0.0: {}
 
   magic-string@0.30.21:
@@ -999,6 +1033,8 @@ snapshots:
   nanoid@3.3.11: {}
 
   obug@2.1.1: {}
+
+  parse-unit@1.0.1: {}
 
   picocolors@1.1.1: {}
 
@@ -1083,6 +1119,10 @@ snapshots:
     dependencies:
       fdir: 6.5.0(picomatch@4.0.3)
       picomatch: 4.0.3
+
+  to-px@1.1.0:
+    dependencies:
+      parse-unit: 1.0.1
 
   typescript@5.9.3: {}
 
