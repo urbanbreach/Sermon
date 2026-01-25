@@ -2,6 +2,8 @@
   import { currentRouteName, navigate } from '../state/route';
   import { Disc3, Users, ListMusic, Activity, Settings, ChevronDown, ChevronRight, Search, X } from '@lucide/svelte';
   import { pressScale } from '../utils/animations';
+  import { currentTrack } from '../state/playback';
+  import { currentArtworkUrl } from '../state/artwork';
 
   type SimpleRouteName = 'albums' | 'artists' | 'tracks' | 'diagnostics' | 'preferences';
 
@@ -117,6 +119,27 @@
     </div>
   {/each}
   
+  <div class="nav-spacer"></div>
+
+  {#if $currentTrack}
+    <button 
+      class="now-playing-widget"
+      onclick={() => navigate({ name: 'now-playing' })}
+      use:pressScale={{ scale: 0.98 }}
+    >
+      {#if $currentArtworkUrl}
+        <img src={$currentArtworkUrl} alt="" class="np-widget-art" />
+      {:else}
+        <div class="np-widget-art-placeholder">
+          <Disc3 size={20} strokeWidth={1.5} />
+        </div>
+      {/if}
+      <div class="np-widget-info">
+        <span class="np-widget-title">{$currentTrack.title || '—'}</span>
+        <span class="np-widget-artist">{$currentTrack.artist || '—'}</span>
+      </div>
+    </button>
+  {/if}
 </nav>
 
 <style>
@@ -231,7 +254,7 @@
     gap: 6px;
     font-size: 12px;
     font-weight: 500;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
     padding: 8px 12px;
     margin-bottom: 2px;
     background: transparent;
@@ -297,6 +320,77 @@
   .nav-item :global(svg) {
     transition: stroke var(--motion-fast) var(--ease-out);
     flex-shrink: 0;
+  }
+
+  .nav-spacer {
+    flex: 1;
+  }
+
+  .now-playing-widget {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all var(--motion-fast) var(--ease-out);
+    -webkit-app-region: no-drag;
+    flex-shrink: 0;
+    text-align: left;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .now-playing-widget:hover {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .np-widget-art {
+    width: 40px;
+    height: 40px;
+    border-radius: 4px;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .np-widget-art-placeholder {
+    width: 40px;
+    height: 40px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+  }
+
+  .np-widget-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .np-widget-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .np-widget-artist {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
 </style>
