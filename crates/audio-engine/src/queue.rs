@@ -32,6 +32,19 @@ impl PlaybackQueue {
         }
     }
 
+    /// Replace entire queue with new tracks and start playing from given index
+    pub fn set_and_play(&mut self, tracks: Vec<TrackInfo>, start_index: usize) {
+        self.items.clear();
+        for track in tracks {
+            self.items.push_back(QueueItem { track });
+        }
+        if !self.items.is_empty() {
+            self.current_index = Some(start_index.min(self.items.len() - 1));
+        } else {
+            self.current_index = None;
+        }
+    }
+
     pub fn next(&mut self) -> Option<&QueueItem> {
         let len = self.items.len();
         let current_index = self.current_index?;

@@ -29,6 +29,13 @@ impl EngineState {
         self.queue.add_to_queue(track);
     }
 
+    pub fn set_and_play(&mut self, tracks: Vec<TrackInfo>, start_index: usize) {
+        self.queue.set_and_play(tracks, start_index);
+        if let Some(item) = self.queue.current() {
+            self.start_session(item.track.clone(), Instant::now());
+        }
+    }
+
     pub fn pause(&mut self) {
         if self.state != PlaybackState::Playing {
             return;
