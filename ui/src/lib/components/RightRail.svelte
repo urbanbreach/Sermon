@@ -1,36 +1,104 @@
 <script lang="ts">
-  import { railMode, isRailOpen, setRailMode, toggleRail } from '../state/rightRail';
-  import { queue, currentIndex, playNow } from '../state/playback';
+  import { railMode, isRailOpen, setRailMode, toggleRail, albumTracks, albumTracksLoading } from '../state/rightRail';
+  import { currentTrack, currentTrackFull, playNow } from '../state/playback';
   import { currentArtworkUrl } from '../state/artwork';
   import { currentLyrics, lyricsContext } from '../state/lyrics';
   import { navigate } from '../state/route';
-  import { ListMusic, Disc3, Radio, MicVocal, Maximize2, Infinity } from '@lucide/svelte';
+  import { Disc3, MicVocal, Maximize2, Volume2 } from '@lucide/svelte';
   import { derived } from 'svelte/store';
   import { fade, slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { fadeIn, pressScale } from '../utils/animations';
   import { VList } from 'virtua/svelte';
+  import type { TrackRow } from '../types/library';
   
   function goFullscreenLyrics() {
     navigate({ name: 'lyrics-fullscreen' });
   }
-  
-  // Derive Now Playing and Up Next from queue
-  const nowPlayingTrack = derived([queue, currentIndex], ([$queue, $currentIndex]) => {
-    const index = $currentIndex ?? 0;
-    return $queue[index] ?? null;
-  });
-  
-  const upNextTracks = derived([queue, currentIndex], ([$queue, $currentIndex]) => {
-    const index = $currentIndex ?? 0;
-    return $queue.slice(index + 1);
-  });
-  
-  // Item count for the header pill
-  const itemCount = derived([queue], ([$queue]) => $queue.length);
 
-  function handleKeydown(e: KeyboardEvent, trackId: number) {
-    if (e.key === 'Enter') {
+  // Helper: Format duration from ms to M:SS
+  function formatDuration(ms: number | undefined): string {
+    if (!ms) return '—';
+    const totalSecs = Math.floor(ms / 1000);
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  // Helper: Build audio format info string
+  function formatAudioInfo(track: TrackRow | null): string {
+    if (!track) return '';
+    const parts: string[] = [];
+    
+    // Codec
+    if (track.codec) {
+      parts.push(track.codec.toUpperCase());
+    }
+    
+    // Bit depth
+    if (track.bit_depth) {
+      parts.push(`${track.bit_depth} bit`);
+    }
+    
+    // Sample rate
+    if (track.sample_rate) {
+      const kHz = track.sample_rate / 1000;
+      parts.push(`${kHz} kHz`);
+    }
+    
+    // Channels
+    if (track.channels) {
+      parts.push(track.channels === 2 ? 'Stereo' : track.channels === 1 ? 'Mono' : `${track.channels}ch`);
+    }
+    
+    // Duration
+    if (track.duration_ms) {
+      parts.push(formatDuration(track.duration_ms));
+    }
+    
+    return parts.join(', ');
+  }
+
+  // Helper: Check if album has multiple discs
+  function hasMultipleDiscs(tracks: TrackRow[]): boolean {
+    const discs = new Set(tracks.map(t => t.disc_no ?? 1));
+    return discs.size > 1 || (discs.size === 1 && !discs.has(1));
+  }
+
+  // Helper: Group tracks by disc number
+  interface DiscGroup {
+    discNo: number;
+    tracks: TrackRow[];
+  }
+  
+  function groupTracksByDisc(tracks: TrackRow[]): DiscGroup[] {
+    const groups = new Map<number, TrackRow[]>();
+    
+    for (const track of tracks) {
+      const discNo = track.disc_no ?? 1;
+      if (!groups.has(discNo)) {
+        groups.set(discNo, []);
+      }
+      groups.get(discNo)!.push(track);
+    }
+    
+    // Sort by disc number
+    const sortedDiscs = Array.from(groups.keys()).sort((a, b) => a - b);
+    return sortedDiscs.map(discNo => ({
+      discNo,
+      tracks: groups.get(discNo)!
+    }));
+  }
+
+  // Derived: Grouped tracks
+  const discGroups = derived(albumTracks, ($tracks) => groupTracksByDisc($tracks));
+  const showDiscDividers = derived(albumTracks, ($tracks) => hasMultipleDiscs($tracks));
+  
+  // Track count for header
+  const trackCount = derived(albumTracks, ($tracks) => $tracks.length);
+
+  function handleKeydown(e: KeyboardEvent, trackId: number | undefined) {
+    if (e.key === 'Enter' && trackId) {
       playNow(trackId);
     }
   }
@@ -51,7 +119,7 @@
     class="right-rail-panel"
     transition:slide={{ duration: 250, easing: cubicOut, axis: 'x' }}
   >
-    <!-- Cider-style top pill header -->
+    <!-- Header with mode toggle -->
     <div class="rail-header">
       <div class="header-pills">
         <!-- Mode icons pill -->
@@ -60,29 +128,12 @@
             class="pill-icon"
             class:active={$railMode === 'now-playing'}
             onclick={() => setRailMode('now-playing')}
-            title="Now Playing"
+            title="Playing Tracks"
             use:pressScale={{ scale: 0.95 }}
           >
             <Disc3 size={16} />
           </button>
-          <button 
-            class="pill-icon"
-            class:active={$railMode === 'up-next'}
-            onclick={() => setRailMode('up-next')}
-            title="Up Next"
-            use:pressScale={{ scale: 0.95 }}
-          >
-            <ListMusic size={16} />
-          </button>
-          <button 
-            class="pill-icon"
-            class:active={$railMode === 'autoplay'}
-            onclick={() => setRailMode('autoplay')}
-            title="Autoplay"
-            use:pressScale={{ scale: 0.95 }}
-          >
-            <Radio size={16} />
-          </button>
+
           <button 
             class="pill-icon"
             class:active={$railMode === 'lyrics'}
@@ -94,30 +145,83 @@
           </button>
         </div>
         
-        <!-- Item count pill -->
+        <!-- Track count pill -->
         <div class="count-pill">
-          {$itemCount} {$itemCount === 1 ? 'item' : 'items'}
+          {$trackCount} {$trackCount === 1 ? 'track' : 'tracks'}
         </div>
       </div>
     </div>
     
     <!-- Content based on mode -->
     <div class="rail-content" use:fadeIn={{ duration: 200, delay: 100 }}>
-      {#if $railMode === 'now-playing'}
-        <div class="section">
-          <h3 class="section-header">Now Playing</h3>
-          {#if $nowPlayingTrack}
-            <div class="now-playing-card">
+      {#if $railMode === 'now-playing' || $railMode === 'up-next'}
+        <!-- Playing Tracks Section -->
+        <div class="section playing-tracks-section">
+          <h3 class="section-header">Playing Tracks</h3>
+          
+          {#if $currentTrackFull}
+            <!-- Album Info Card -->
+            <div class="album-info-card">
               {#if $currentArtworkUrl}
-                <img src={$currentArtworkUrl} alt="" class="np-artwork" />
+                <img src={$currentArtworkUrl} alt="" class="album-thumb" />
               {:else}
-                <div class="np-artwork-placeholder"></div>
+                <div class="album-thumb-placeholder"></div>
               {/if}
-              <div class="np-info">
-                <div class="np-title">{$nowPlayingTrack.title || '—'}</div>
-                <div class="np-artist">{$nowPlayingTrack.artist || '—'}</div>
+              <div class="album-info">
+                <div class="album-artist">{$currentTrackFull.album_artist || $currentTrackFull.artist || '—'}</div>
+                <div class="album-title">{$currentTrackFull.album || 'Unknown Album'}</div>
+                <div class="album-meta">
+                  {#if $currentTrackFull.year}
+                    <span>{$currentTrackFull.year}</span>
+                  {/if}
+                  {#if $currentTrackFull.year && $currentTrackFull.genre}
+                    <span class="meta-dot">•</span>
+                  {/if}
+                  {#if $currentTrackFull.genre}
+                    <span>{$currentTrackFull.genre}</span>
+                  {/if}
+                </div>
               </div>
             </div>
+
+            <!-- Track List -->
+            {#if $albumTracksLoading}
+              <div class="loading-state">Loading tracks...</div>
+            {:else if $albumTracks.length > 0}
+              <div class="track-list">
+                {#each $discGroups as group}
+                  {#if $showDiscDividers}
+                    <div class="disc-divider">Disc {group.discNo}</div>
+                  {/if}
+                  {#each group.tracks as track (track.id)}
+                    {@const isPlaying = track.id === $currentTrack?.id}
+                    <div 
+                      class="track-row"
+                      class:playing={isPlaying}
+                      role="button"
+                      tabindex="0"
+                      ondblclick={() => track.id && playNow(track.id)}
+                      onkeydown={(e) => handleKeydown(e, track.id)}
+                    >
+                      <span class="track-no">
+                        {#if isPlaying}
+                          <Volume2 size={14} class="playing-icon" />
+                        {:else}
+                          {track.track_no ?? '—'}
+                        {/if}
+                      </span>
+                      <span class="track-title">{track.title || '—'}</span>
+                      <span class="track-artist">{track.artist || '—'}</span>
+                    </div>
+                  {/each}
+                {/each}
+              </div>
+            {:else}
+              <div class="empty-state" use:fadeIn={{ duration: 300 }}>
+                <Disc3 size={24} strokeWidth={1.5} />
+                <span>No tracks</span>
+              </div>
+            {/if}
           {:else}
             <div class="empty-state" use:fadeIn={{ duration: 300 }}>
               <Disc3 size={24} strokeWidth={1.5} />
@@ -125,104 +229,51 @@
             </div>
           {/if}
         </div>
-        
-        <div class="section">
-          <div class="section-header-row">
-            <h3 class="section-header">Playing Next</h3>
-            {#if $nowPlayingTrack?.album}
-              <span class="section-subtitle">From {$nowPlayingTrack.album}</span>
-            {/if}
-          </div>
-          {#if $upNextTracks.length > 0}
-            <div class="queue-list">
-              <VList data={$upNextTracks} getKey={(item: { track_id: number }) => item.track_id} itemSize={52}>
-                {#snippet children(item: { track_id: number; title?: string; artist?: string })}
-                  <div 
-                    class="queue-item"
-                    role="button"
-                    tabindex="0"
-                    ondblclick={() => playNow(item.track_id)}
-                    onkeydown={(e) => handleKeydown(e, item.track_id)}
-                  >
-                    <div class="q-thumb-placeholder"></div>
-                    <div class="q-info">
-                      <span class="q-title">{item.title || '—'}</span>
-                      <span class="q-artist">{item.artist || '—'}</span>
-                    </div>
-                  </div>
-                {/snippet}
-              </VList>
+
+        <!-- Track Information Section -->
+        <div class="section track-info-section">
+          <h3 class="section-header">Track Information</h3>
+          
+          {#if $currentTrackFull}
+            <div class="track-info-list">
+              <div class="info-row">
+                <span class="info-value title">{$currentTrackFull.title || '—'}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-value">{$currentTrackFull.artist || '—'}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-value">{$currentTrackFull.album || '—'}</span>
+              </div>
+              {#if $currentTrackFull.year}
+                <div class="info-row">
+                  <span class="info-value">{$currentTrackFull.year}</span>
+                </div>
+              {/if}
+              {#if $currentTrackFull.genre}
+                <div class="info-row">
+                  <span class="info-value">{$currentTrackFull.genre}</span>
+                </div>
+              {/if}
+              <div class="info-row format">
+                <span class="info-value">{formatAudioInfo($currentTrackFull)}</span>
+              </div>
+            </div>
+
+            <!-- Large Artwork -->
+            <div class="large-artwork-container">
+              {#if $currentArtworkUrl}
+                <img src={$currentArtworkUrl} alt="" class="large-artwork" />
+              {:else}
+                <div class="large-artwork-placeholder"></div>
+              {/if}
             </div>
           {:else}
             <div class="empty-state" use:fadeIn={{ duration: 300 }}>
-              <ListMusic size={24} strokeWidth={1.5} />
-              <span>Queue is empty</span>
+              <Disc3 size={24} strokeWidth={1.5} />
+              <span>No track information</span>
             </div>
           {/if}
-        </div>
-        
-        <!-- Autoplay section in now-playing mode -->
-        <div class="section">
-          <div class="section-header-row">
-            <div class="header-with-icon">
-              <Infinity size={14} />
-              <h3 class="section-header">Autoplay</h3>
-            </div>
-            <span class="section-subtitle">Similar music will keep playing</span>
-          </div>
-          <div class="empty-state autoplay-empty" use:fadeIn={{ duration: 300 }}>
-            <Radio size={20} strokeWidth={1.5} />
-            <span>Coming soon</span>
-          </div>
-        </div>
-        
-      {:else if $railMode === 'up-next'}
-        <div class="section">
-          <div class="section-header-row">
-            <h3 class="section-header">Up Next</h3>
-            <span class="item-count-label">{$upNextTracks.length} tracks</span>
-          </div>
-          {#if $upNextTracks.length > 0}
-            <div class="queue-list">
-              <VList data={$upNextTracks} getKey={(item: { track_id: number }) => item.track_id} itemSize={52}>
-                {#snippet children(item: { track_id: number; title?: string; artist?: string })}
-                  <div 
-                    class="queue-item"
-                    role="button"
-                    tabindex="0"
-                    ondblclick={() => playNow(item.track_id)}
-                    onkeydown={(e) => handleKeydown(e, item.track_id)}
-                  >
-                    <div class="q-thumb-placeholder"></div>
-                    <div class="q-info">
-                      <span class="q-title">{item.title || '—'}</span>
-                      <span class="q-artist">{item.artist || '—'}</span>
-                    </div>
-                  </div>
-                {/snippet}
-              </VList>
-            </div>
-          {:else}
-            <div class="empty-state" use:fadeIn={{ duration: 300 }}>
-              <ListMusic size={24} strokeWidth={1.5} />
-              <span>Queue is empty</span>
-            </div>
-          {/if}
-        </div>
-        
-      {:else if $railMode === 'autoplay'}
-        <div class="section">
-          <div class="section-header-row">
-            <div class="header-with-icon">
-              <Infinity size={14} />
-              <h3 class="section-header">Autoplay</h3>
-            </div>
-          </div>
-          <div class="empty-state" use:fadeIn={{ duration: 300 }}>
-            <Radio size={24} strokeWidth={1.5} />
-            <span>Autoplay coming soon</span>
-            <span class="empty-hint">Similar music will play when your queue ends</span>
-          </div>
         </div>
         
       {:else if $railMode === 'lyrics'}
@@ -309,7 +360,7 @@
   }
 
   /* ============================================
-     CIDER-STYLE TOP PILL HEADER
+     HEADER
      ============================================ */
   .rail-header {
     padding: 12px 16px;
@@ -329,7 +380,6 @@
     background: var(--surface-1);
     padding: 4px;
     border-radius: 999px;
-    border: 1px solid var(--glass-border);
   }
 
   .pill-icon {
@@ -362,7 +412,6 @@
     font-size: 12px;
     color: var(--text-secondary);
     white-space: nowrap;
-    border: 1px solid var(--glass-border);
   }
 
   /* ============================================
@@ -383,45 +432,217 @@
     gap: 8px;
   }
 
-  /* ============================================
-     SECTION HEADERS - CIDER NEUTRAL STYLE
-     ============================================ */
   .section-header {
     margin: 0;
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
   }
 
-  .section-header-row {
+  /* ============================================
+     ALBUM INFO CARD
+     ============================================ */
+  .album-info-card {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 8px;
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+    border: 1px solid var(--glass-border);
+  }
+
+  .album-thumb {
+    width: 56px;
+    height: 56px;
+    border-radius: 4px;
+    object-fit: cover;
+    background: #222;
+    flex-shrink: 0;
+  }
+
+  .album-thumb-placeholder {
+    width: 56px;
+    height: 56px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+    flex-shrink: 0;
+  }
+
+  .album-info {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 2px;
   }
 
-  .section-subtitle {
+  .album-artist {
+    font-size: 13px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .album-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .album-meta {
     font-size: 12px;
     color: var(--text-tertiary);
-  }
-
-  .header-with-icon {
     display: flex;
-    align-items: center;
-    gap: 6px;
-    color: rgba(255, 255, 255, 0.9);
+    gap: 4px;
+    flex-wrap: wrap;
   }
 
-  .header-with-icon .section-header {
-    margin: 0;
-  }
-
-  .item-count-label {
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.4);
+  .meta-dot {
+    opacity: 0.5;
   }
 
   /* ============================================
-     EMPTY STATE - SUBTLE, NO DASHED BORDER
+     TRACK LIST
+     ============================================ */
+  .track-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  .disc-divider {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    padding: 8px 4px 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--glass-border);
+    margin-bottom: 4px;
+  }
+
+  .track-row {
+    display: grid;
+    grid-template-columns: 28px 1fr auto;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 4px;
+    border-radius: 4px;
+    cursor: default;
+    transition: background var(--motion-fast) var(--ease-out);
+    font-size: 13px;
+  }
+
+  .track-row:hover {
+    background: var(--surface-hover);
+  }
+
+  .track-row:focus {
+    background: var(--surface-2);
+    outline: none;
+    box-shadow: inset 0 0 0 1px var(--accent-medium);
+  }
+
+  .track-row.playing {
+    color: var(--theme-accent);
+  }
+
+  .track-row.playing .track-no {
+    color: var(--theme-accent);
+  }
+
+  .track-no {
+    text-align: right;
+    color: var(--text-tertiary);
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .track-no :global(.playing-icon) {
+    color: var(--theme-accent);
+  }
+
+  .track-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-primary);
+  }
+
+  .track-artist {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-tertiary);
+    font-size: 12px;
+    text-align: right;
+  }
+
+  /* ============================================
+     TRACK INFORMATION
+     ============================================ */
+  .track-info-section {
+    gap: 12px;
+  }
+
+  .track-info-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .info-row {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .info-row .info-value.title {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 14px;
+  }
+
+  .info-row.format {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+  }
+
+  /* ============================================
+     LARGE ARTWORK
+     ============================================ */
+  .large-artwork-container {
+    margin-top: 12px;
+  }
+
+  .large-artwork {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 8px;
+    object-fit: cover;
+    background: #222;
+  }
+
+  .large-artwork-placeholder {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+  }
+
+  /* ============================================
+     EMPTY STATE
      ============================================ */
   .empty-state {
     color: var(--text-tertiary);
@@ -434,7 +655,6 @@
     justify-content: center;
     gap: 8px;
     background: var(--surface-1);
-    border: 1px solid var(--glass-border);
     border-radius: var(--radius-md);
   }
 
@@ -443,140 +663,11 @@
     color: var(--text-disabled);
   }
 
-  .empty-state .empty-hint {
-    font-size: 11px;
-    color: var(--text-disabled);
-    margin-top: -4px;
-  }
-
-  .autoplay-empty {
-    padding: 20px 16px;
-  }
-
-  .autoplay-description {
-    color: rgba(255, 255, 255, 0.45);
-    font-size: 13px;
-    margin: 0 0 8px 0;
-  }
-
-  /* ============================================
-     NOW PLAYING CARD
-     ============================================ */
-  .now-playing-card {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    padding: 8px;
-    border-radius: 8px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
-    border: 1px solid var(--glass-border);
-    box-shadow: var(--shadow-1);
-  }
-
-  .np-artwork {
-    width: 48px;
-    height: 48px;
-    border-radius: 6px;
-    object-fit: cover;
-    background: #222;
-  }
-
-  .np-artwork-placeholder {
-    width: 48px;
-    height: 48px;
-    border-radius: 6px;
-    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
-  }
-
-  .np-info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .np-title {
-    font-weight: 600;
-    font-size: 14px;
-    color: rgba(255, 255, 255, 0.95);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-bottom: 2px;
-  }
-
-  .np-artist {
+  .loading-state {
+    color: var(--text-tertiary);
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.5);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /* ============================================
-     QUEUE LIST - WITH THUMBNAILS
-     ============================================ */
-  .queue-list {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .queue-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 8px;
-    border-radius: 6px;
-    cursor: default;
-    transition: background var(--motion-fast) var(--ease-out);
-    height: 52px;
-    box-sizing: border-box;
-  }
-
-  .queue-item:hover {
-    background: var(--surface-hover);
-  }
-
-  .queue-item:focus {
-    background: var(--surface-2);
-    outline: none;
-    box-shadow: inset 0 0 0 1px var(--accent-medium);
-  }
-
-  .q-thumb-placeholder {
-    width: 40px;
-    height: 40px;
-    border-radius: 4px;
-    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
-    flex-shrink: 0;
-  }
-
-  .q-info {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    justify-content: center;
-    gap: 2px;
-  }
-
-  .q-title {
-    font-size: 13px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: rgba(255, 255, 255, 0.9);
-  }
-
-  .q-artist {
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.45);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .autoplay-item {
-    opacity: 0.7;
+    padding: 16px;
+    text-align: center;
   }
 
   /* ============================================
@@ -648,10 +739,11 @@
     color: rgba(255, 255, 255, 0.35);
   }
 
+  /* ============================================
+     ANIMATIONS
+     ============================================ */
   .mode-pill button:nth-child(1) { animation-delay: 0ms; }
   .mode-pill button:nth-child(2) { animation-delay: 30ms; }
-  .mode-pill button:nth-child(3) { animation-delay: 60ms; }
-  .mode-pill button:nth-child(4) { animation-delay: 90ms; }
 
   @keyframes fadeSlideIn {
     from {
