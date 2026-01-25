@@ -4,8 +4,19 @@ import { onMount } from 'svelte';
   import { currentRouteName } from './lib/state/route';
   import { initPlaybackListeners } from './lib/state/playback';
   import { initArtworkStore } from './lib/state/artwork';
-  import { initRailResponsive } from './lib/state/rightRail';
+  import { initRailResponsive, isRailOpen } from './lib/state/rightRail';
   import { loadEffectsSettings } from './lib/state/effects';
+
+  // Suppress benign ResizeObserver loop errors (common with virtualized lists)
+  if (typeof window !== 'undefined') {
+    const resizeObserverErr = (e: ErrorEvent) => {
+      if (e.message?.includes('ResizeObserver loop')) {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      }
+    };
+    window.addEventListener('error', resizeObserverErr);
+  }
   
   import TopBar from './lib/components/TopBar.svelte';
   import BackgroundLayer from './lib/components/BackgroundLayer.svelte';
@@ -46,6 +57,10 @@ onMount(async () => {
       // Still log for browser dev
       console.log('first_interactive');
     }
+  });
+
+  $effect(() => {
+    document.documentElement.style.setProperty('--layout-rail-open', $isRailOpen ? '1' : '0');
   });
 </script>
 

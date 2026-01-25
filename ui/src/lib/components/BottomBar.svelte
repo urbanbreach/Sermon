@@ -10,6 +10,10 @@
   import { isRailOpen } from '../state/rightRail';
   import { pressScale, hoverScale } from '../utils/animations';
   import { SkipBack, Pause, Play, SkipForward, Volume2, Shuffle, Repeat } from '@lucide/svelte';
+  
+  import { 
+    glassMainBlur, glassMainBg
+  } from '../state/effects';
 
   let isUnity = $derived($audioDebug?.policy === 'strict' && $audioDebug?.output_mode === 'exclusive');
 
@@ -80,83 +84,89 @@
   </div>
 {/if}
 
-<div class="bottom-bar" class:rail-open={$isRailOpen} data-testid="glass-panel">
-  <!-- ROW 1: Progress Row -->
-  <div class="progress-row">
-    <span class="time-label current">{currentTimeDisplay}</span>
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div 
-      class="progress-track"
-      bind:this={progressTrackEl}
-      onmousedown={handleTrackMouseDown}
-    >
+<div class="bottom-bar-wrapper">
+  <div class="bottom-bar" data-testid="glass-panel" style="--bar-blur: {$glassMainBlur}px; --bar-bg: {$glassMainBg};">
+    <!-- ROW 1: Progress Row -->
+    <div class="progress-row">
+      <span class="time-label current">{currentTimeDisplay}</span>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div 
-        class="progress-fill" 
-        style="width: {visualProgress * 100}%; transition: {isDragging ? 'none' : 'width 0.15s linear'}"
+        class="progress-track"
+        bind:this={progressTrackEl}
+        onmousedown={handleTrackMouseDown}
       >
-        <div class="progress-thumb"></div>
+        <div 
+          class="progress-fill" 
+          style="width: {visualProgress * 100}%; transition: {isDragging ? 'none' : 'width 0.15s linear'}"
+        >
+          <div class="progress-thumb"></div>
+        </div>
       </div>
+      <span class="time-label remaining">{remainingTimeDisplay}</span>
     </div>
-    <span class="time-label remaining">{remainingTimeDisplay}</span>
-  </div>
-  
-  <!-- ROW 2: Controls Row -->
-  <div class="controls-row">
-    <!-- LEFT: Transport + Action Icons -->
-    <div class="left-cluster">
-      <div class="transport-controls">
-        <button class="ctrl-btn small" title="Shuffle" use:pressScale={{ scale: 0.95 }}><Shuffle size={16} /></button>
-        <button class="ctrl-btn" onclick={previous} title="Previous" use:pressScale={{ scale: 0.95 }}><SkipBack size={20} fill="currentColor" /></button>
-        <button class="ctrl-btn play" onclick={togglePlayPause} title={$playbackState === 'playing' ? 'Pause' : 'Play'} use:pressScale>
-          {#if $playbackState === 'playing'}
-            <Pause size={22} fill="currentColor" />
-          {:else}
-            <Play size={22} fill="currentColor" />
-          {/if}
-        </button>
-        <button class="ctrl-btn" onclick={next} title="Next" use:pressScale={{ scale: 0.95 }}><SkipForward size={20} fill="currentColor" /></button>
-        <button class="ctrl-btn small" title="Repeat" use:pressScale={{ scale: 0.95 }}><Repeat size={16} /></button>
-      </div>
+    
+    <!-- ROW 2: Controls Row -->
+    <div class="controls-row">
+      <!-- LEFT: Transport + Action Icons -->
+      <div class="left-cluster">
+        <div class="transport-controls">
+          <button class="ctrl-btn small" title="Shuffle" use:pressScale={{ scale: 0.95 }}><Shuffle size={16} /></button>
+          <button class="ctrl-btn" onclick={previous} title="Previous" use:pressScale={{ scale: 0.95 }}><SkipBack size={20} fill="currentColor" /></button>
+          <button class="ctrl-btn play" onclick={togglePlayPause} title={$playbackState === 'playing' ? 'Pause' : 'Play'} use:pressScale>
+            {#if $playbackState === 'playing'}
+              <Pause size={22} fill="currentColor" />
+            {:else}
+              <Play size={22} fill="currentColor" />
+            {/if}
+          </button>
+          <button class="ctrl-btn" onclick={next} title="Next" use:pressScale={{ scale: 0.95 }}><SkipForward size={20} fill="currentColor" /></button>
+          <button class="ctrl-btn small" title="Repeat" use:pressScale={{ scale: 0.95 }}><Repeat size={16} /></button>
+        </div>
 
-    </div>
-    
-    <!-- CENTER: Now Playing Pill -->
-    <div 
-      class="now-playing-pill" 
-      onclick={openNowPlaying} 
-      role="button" 
-      tabindex="0" 
-      onkeypress={handleKey}
-      use:hoverScale={{ scale: 1.02 }}
-    >
-      {#if $currentArtworkUrl}
-        <img src={$currentArtworkUrl} alt="" class="pill-artwork" />
-      {:else}
-        <div class="pill-artwork-placeholder"></div>
-      {/if}
-      <div class="pill-info">
-        <span class="pill-title">{$currentTrack?.title || 'Nothing Playing'}</span>
-        <span class="pill-artist">{$currentTrack?.artist || 'Select a track'}</span>
       </div>
-    </div>
-    
-    <!-- RIGHT: Volume -->
-    <div class="right-cluster" onclick={(e) => e.stopPropagation()}>
-      <div class="volume-control">
-        {#if isUnity}
-          <span class="vol-label-unity">Unity</span>
+      
+      <!-- CENTER: Now Playing Pill -->
+      <div 
+        class="now-playing-pill" 
+        onclick={openNowPlaying} 
+        role="button" 
+        tabindex="0" 
+        onkeypress={handleKey}
+        use:hoverScale={{ scale: 1.02 }}
+      >
+        {#if $currentArtworkUrl}
+          <img src={$currentArtworkUrl} alt="" class="pill-artwork" />
         {:else}
-          <Volume2 size={18} />
+          <div class="pill-artwork-placeholder"></div>
         {/if}
-        <input 
-          type="range" 
-          min="0" 
-          max="1" 
-          step="0.01" 
-          value={isUnity ? 1.0 : $volume} 
-          disabled={isUnity}
-          oninput={(e) => setVolume(e.currentTarget.valueAsNumber)} 
-        />
+        <div class="pill-info">
+          <span class="pill-title">{$currentTrack?.title || 'Nothing Playing'}</span>
+          <span class="pill-artist">{$currentTrack?.artist || 'Select a track'}</span>
+        </div>
+      </div>
+      
+      <!-- RIGHT: Volume -->
+      <div class="right-cluster" onclick={(e) => e.stopPropagation()}>
+        <div class="volume-control">
+          {#if isUnity}
+            <span class="vol-label-unity">Unity</span>
+          {:else}
+            <Volume2 size={18} />
+          {/if}
+          <input 
+            type="range" 
+            min="0" 
+            max="1" 
+            step="0.01" 
+            value={isUnity ? 1.0 : $volume} 
+            disabled={isUnity}
+            aria-label="Volume"
+            aria-valuenow={isUnity ? 1 : $volume}
+            aria-valuemin={0}
+            aria-valuemax={1}
+            oninput={(e) => setVolume(e.currentTarget.valueAsNumber)} 
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -194,25 +204,31 @@
   }
 
   /* ===== BOTTOM BAR CONTAINER ===== */
-  .bottom-bar {
-    /* Dynamic positioning - aligns with content area */
-    position: absolute;
+  /* Wrapper handles the positioning and transitions */
+  .bottom-bar-wrapper {
+    position: fixed;
     bottom: 0;
-    left: 0;
-    right: 0;
-    
-    /* Two-row layout */
+    left: var(--layout-bar-left);
+    right: var(--layout-bar-right);
     height: var(--layout-player-height, 88px);
+    transition: left var(--motion-medium) var(--ease-out), 
+                right var(--motion-medium) var(--ease-out);
+    z-index: 10;
+  }
+
+  /* Glass effect using CSS backdrop-filter */
+  .bottom-bar {
+    height: 100%;
+    width: 100%;
     display: flex;
     flex-direction: column;
     
-    /* Flat minimal style - reduced glass effect */
-    background: rgba(18, 18, 22, 0.85);
-    backdrop-filter: blur(12px);
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-    
-    /* CRITICAL: Ensure bottom bar is above main-body for click events */
-    z-index: 10;
+    /* Glassmorphism effect */
+    background: var(--bar-bg, rgba(18, 18, 22, 0.75));
+    backdrop-filter: blur(var(--bar-blur, 16px));
+    -webkit-backdrop-filter: blur(var(--bar-blur, 16px));
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.15);
   }
 
   /* ===== ROW 1: PROGRESS ===== */

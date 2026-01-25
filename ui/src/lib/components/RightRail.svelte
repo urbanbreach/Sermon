@@ -34,13 +34,6 @@
       playNow(trackId);
     }
   }
-  
-  // Mock autoplay suggestions
-  const autoplaySuggestions = [
-    { title: 'Similar Track 1', artist: 'Artist Name' },
-    { title: 'Similar Track 2', artist: 'Another Artist' },
-    { title: 'Similar Track 3', artist: 'Third Artist' },
-  ];
 </script>
 
 {#if $isRailOpen}
@@ -177,16 +170,9 @@
             </div>
             <span class="section-subtitle">Similar music will keep playing</span>
           </div>
-          <div class="queue-list">
-            {#each autoplaySuggestions as suggestion}
-              <div class="queue-item autoplay-item">
-                <div class="q-thumb-placeholder"></div>
-                <div class="q-info">
-                  <span class="q-title">{suggestion.title}</span>
-                  <span class="q-artist">{suggestion.artist}</span>
-                </div>
-              </div>
-            {/each}
+          <div class="empty-state autoplay-empty" use:fadeIn={{ duration: 300 }}>
+            <Radio size={20} strokeWidth={1.5} />
+            <span>Coming soon</span>
           </div>
         </div>
         
@@ -232,17 +218,10 @@
               <h3 class="section-header">Autoplay</h3>
             </div>
           </div>
-          <p class="autoplay-description">Similar music will play when your queue ends.</p>
-          <div class="queue-list">
-            {#each autoplaySuggestions as suggestion}
-              <div class="queue-item autoplay-item">
-                <div class="q-thumb-placeholder"></div>
-                <div class="q-info">
-                  <span class="q-title">{suggestion.title}</span>
-                  <span class="q-artist">{suggestion.artist}</span>
-                </div>
-              </div>
-            {/each}
+          <div class="empty-state" use:fadeIn={{ duration: 300 }}>
+            <Radio size={24} strokeWidth={1.5} />
+            <span>Autoplay coming soon</span>
+            <span class="empty-hint">Similar music will play when your queue ends</span>
           </div>
         </div>
         
@@ -462,6 +441,16 @@
   .empty-state :global(svg) {
     opacity: 0.5;
     color: var(--text-disabled);
+  }
+
+  .empty-state .empty-hint {
+    font-size: 11px;
+    color: var(--text-disabled);
+    margin-top: -4px;
+  }
+
+  .autoplay-empty {
+    padding: 20px 16px;
   }
 
   .autoplay-description {
