@@ -7,6 +7,24 @@
   --layout-rail-width: 320px;
   --layout-header-height: 44px;
   --layout-player-height: 88px;
+  
+  /* Liquid Glass Bar positioning */
+  --layout-rail-open: 0; /* 0 or 1, toggled by JS */
+  /* Bottom bar spans full width - sidebars overlay it */
+  --layout-bar-left: 0;
+  --layout-bar-right: 0;
+
+  /* Liquid Glass effect defaults */
+  --glass-main-blur: 22px;
+  --glass-edge-blur: 14px;
+  --glass-edge-width: 22px;
+  --glass-main-bg: rgba(20, 20, 24, 0.38);
+  --glass-edge-bg: rgba(255, 255, 255, 0.12);
+  --glass-sheen-blur: 18px;
+  --glass-sheen-bg: rgba(255, 255, 255, 0.22);
+  --glass-sheen-width: 30px;
+  --glass-edge-gradient-width: 28px;
+
   --layout-bottom-bar-progress-height: 28px;
   
   /* Spacing scale */

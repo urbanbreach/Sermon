@@ -132,8 +132,7 @@ onMount(async () => {
     flex: 1;
     overflow: hidden;
     position: relative;
-    z-index: 1;
-    /* Reserve space for bottom bar using margin instead of padding */
+    z-index: 10;
     margin-bottom: var(--layout-player-height, 88px);
   }
 

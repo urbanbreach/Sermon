@@ -1,12 +1,12 @@
 <script lang="ts">
   import { canGoBack, canGoForward, goBack, goForward } from '../state/route';
   import { toggleRail, isRailOpen } from '../state/rightRail';
+  import { viewTitle } from '../state/viewTitle';
   import { pressScale } from '../utils/animations';
   import { ChevronLeft, ChevronRight, PanelRight } from '@lucide/svelte';
 </script>
 
 <div class="top-bar">
-  <!-- Navigation Buttons - No container, just floating buttons -->
   <div class="nav-buttons">
     <button 
       class="nav-btn" 
@@ -28,7 +28,10 @@
     </button>
   </div>
 
-  <!-- Rail Toggle - Single button, no pill -->
+  {#if $viewTitle}
+    <h1 class="view-title">{$viewTitle}</h1>
+  {/if}
+
   <button 
     class="nav-btn rail-toggle" 
     class:active={$isRailOpen}
@@ -64,6 +67,18 @@
     align-items: center;
     gap: var(--space-1);
     -webkit-app-region: no-drag;
+  }
+
+  .view-title {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+    white-space: nowrap;
+    pointer-events: none;
   }
 
   .nav-btn {

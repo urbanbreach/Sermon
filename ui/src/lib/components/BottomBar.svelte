@@ -17,6 +17,8 @@
 
   let isUnity = $derived($audioDebug?.policy === 'strict' && $audioDebug?.output_mode === 'exclusive');
 
+  let isEmpty = $derived(!$currentTrack);
+
   // Interactive Seek State
   let isDragging = $state(false);
   let dragProgress = $state(0);
@@ -106,7 +108,7 @@
     </div>
     
     <!-- ROW 2: Controls Row -->
-    <div class="controls-row">
+    <div class="controls-row" class:empty={isEmpty}>
       <!-- LEFT: Transport + Action Icons -->
       <div class="left-cluster">
         <div class="transport-controls">
@@ -203,17 +205,13 @@
     font-size: 12px;
   }
 
-  /* ===== BOTTOM BAR CONTAINER ===== */
-  /* Wrapper handles the positioning and transitions */
   .bottom-bar-wrapper {
     position: fixed;
     bottom: 0;
-    left: var(--layout-bar-left);
-    right: var(--layout-bar-right);
+    left: 0;
+    right: 0;
     height: var(--layout-player-height, 88px);
-    transition: left var(--motion-medium) var(--ease-out), 
-                right var(--motion-medium) var(--ease-out);
-    z-index: 10;
+    z-index: 5;
   }
 
   /* Glass effect using CSS backdrop-filter */
@@ -495,5 +493,14 @@
     text-transform: uppercase;
     font-weight: 600;
     letter-spacing: 0.5px;
+  }
+
+  /* Empty state: dim controls when nothing is playing */
+  .controls-row.empty .transport-controls {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .controls-row.empty .now-playing-pill {
+    opacity: 0.6;
   }
 </style>
