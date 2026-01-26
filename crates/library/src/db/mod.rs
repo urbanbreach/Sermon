@@ -5,7 +5,7 @@ use crate::models::{
     AlbumCursor, AlbumListItem, ArtistCursor, ArtistListItem, LibraryFolder, LibraryStats,
     OffsetCursor, Page, SearchHit, SearchSuggestResponse, TrackRow,
 };
-use rusqlite::{Connection, OptionalExtension, Row, params};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 use std::path::Path;
 
 pub fn open_db(path: &Path) -> Result<Connection, LibraryError> {
@@ -57,6 +57,8 @@ fn map_track(row: &Row) -> rusqlite::Result<TrackRow> {
         bit_depth: row.get("bit_depth")?,
         channels: row.get("channels")?,
         duration_ms: row.get("duration_ms")?,
+        dsd_rate_hz: row.get("dsd_rate_hz")?,
+        dsd_channels: row.get("dsd_channels")?,
         is_missing: row.get("is_missing")?,
         missing_since_ms: row.get("missing_since_ms")?,
     })
@@ -117,6 +119,7 @@ pub fn upsert_track(conn: &Connection, track: &TrackRow) -> Result<i64, LibraryE
                 hash = ?, title = ?, artist = ?, album = ?, album_artist = ?,
                 track_no = ?, disc_no = ?, year = ?, genre = ?,
                 codec = ?, container = ?, sample_rate = ?, bit_depth = ?, channels = ?, duration_ms = ?,
+                dsd_rate_hz = ?, dsd_channels = ?,
                 is_missing = ?, missing_since_ms = ?
              WHERE id = ?",
             params![
@@ -124,6 +127,7 @@ pub fn upsert_track(conn: &Connection, track: &TrackRow) -> Result<i64, LibraryE
                 track.hash, track.title, track.artist, track.album, track.album_artist,
                 track.track_no, track.disc_no, track.year, track.genre,
                 track.codec, track.container, track.sample_rate, track.bit_depth, track.channels, track.duration_ms,
+                track.dsd_rate_hz, track.dsd_channels,
                 track.is_missing, track.missing_since_ms,
                 id
             ]
@@ -137,13 +141,15 @@ pub fn upsert_track(conn: &Connection, track: &TrackRow) -> Result<i64, LibraryE
                 volume_serial, file_id, mtime_ms, size_bytes, hash,
                 title, artist, album, album_artist, track_no, disc_no, year, genre,
                 codec, container, sample_rate, bit_depth, channels, duration_ms,
+                dsd_rate_hz, dsd_channels,
                 is_missing, missing_since_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 track.library_folder_id, track.path, track.path_display, track.path_lossy, track.identity_source,
                 track.volume_serial, track.file_id, track.mtime_ms, track.size_bytes, track.hash,
                 track.title, track.artist, track.album, track.album_artist, track.track_no, track.disc_no, track.year, track.genre,
                 track.codec, track.container, track.sample_rate, track.bit_depth, track.channels, track.duration_ms,
+                track.dsd_rate_hz, track.dsd_channels,
                 track.is_missing, track.missing_since_ms
             ]
         )?;
@@ -287,9 +293,124 @@ pub fn get_audio_output_timing(conn: &Connection) -> String {
     }
 }
 
+pub fn get_audio_output_asio_driver(conn: &Connection) -> Option<String> {
+    match get_setting(conn, "audio.output.asio_driver") {
+        Ok(Some(v)) if !v.is_empty() => Some(v),
+        _ => None,
+    }
+}
+
 pub fn get_track_by_id(conn: &Connection, id: i64) -> Result<TrackRow, LibraryError> {
     conn.query_row("SELECT * FROM tracks WHERE id = ?", params![id], map_track)
         .map_err(LibraryError::from)
+}
+
+// ============================================================================
+// Folder Management (Library Preferences Redesign)
+// ============================================================================
+
+/// Get a folder by its ID
+pub fn get_folder_by_id(
+    conn: &Connection,
+    folder_id: i64,
+) -> Result<Option<LibraryFolder>, LibraryError> {
+    conn.query_row(
+        "SELECT * FROM library_folders WHERE id = ?",
+        params![folder_id],
+        |row| {
+            Ok(LibraryFolder {
+                id: row.get("id")?,
+                path: row.get("path")?,
+                enabled: row.get("enabled")?,
+                status: row.get("status")?,
+                last_error: row.get("last_error")?,
+                options_json: row.get("options_json")?,
+            })
+        },
+    )
+    .optional()
+    .map_err(LibraryError::from)
+}
+
+/// Remove a library folder and all its associated tracks
+/// Also cleans up the scan_state entry for this folder
+pub fn remove_folder(conn: &Connection, folder_id: i64) -> Result<(), LibraryError> {
+    // Delete all tracks in this folder
+    conn.execute(
+        "DELETE FROM tracks WHERE library_folder_id = ?",
+        params![folder_id],
+    )?;
+
+    // Delete scan_state entry (if exists)
+    conn.execute(
+        "DELETE FROM scan_state WHERE folder_id = ?",
+        params![folder_id],
+    )?;
+
+    // Delete the folder itself
+    let deleted = conn.execute(
+        "DELETE FROM library_folders WHERE id = ?",
+        params![folder_id],
+    )?;
+
+    if deleted == 0 {
+        return Err(LibraryError::NotFound(format!("Folder ID {}", folder_id)));
+    }
+
+    Ok(())
+}
+
+/// Toggle the enabled status of a folder
+/// Returns the updated folder
+pub fn update_folder_enabled(
+    conn: &Connection,
+    folder_id: i64,
+    enabled: bool,
+) -> Result<LibraryFolder, LibraryError> {
+    let updated = conn.execute(
+        "UPDATE library_folders SET enabled = ? WHERE id = ?",
+        params![enabled, folder_id],
+    )?;
+
+    if updated == 0 {
+        return Err(LibraryError::NotFound(format!("Folder ID {}", folder_id)));
+    }
+
+    get_folder_by_id(conn, folder_id)?
+        .ok_or_else(|| LibraryError::NotFound(format!("Folder ID {}", folder_id)))
+}
+
+/// Update folder options (exclude patterns, extensions, etc.)
+/// Takes the FolderOptions struct, serializes to JSON, and updates options_json column
+pub fn update_folder_options(
+    conn: &Connection,
+    folder_id: i64,
+    options: &crate::models::FolderOptions,
+) -> Result<LibraryFolder, LibraryError> {
+    let options_json = serde_json::to_string(options)
+        .map_err(|e| LibraryError::Other(format!("Failed to serialize options: {}", e)))?;
+
+    let updated = conn.execute(
+        "UPDATE library_folders SET options_json = ? WHERE id = ?",
+        params![options_json, folder_id],
+    )?;
+
+    if updated == 0 {
+        return Err(LibraryError::NotFound(format!("Folder ID {}", folder_id)));
+    }
+
+    get_folder_by_id(conn, folder_id)?
+        .ok_or_else(|| LibraryError::NotFound(format!("Folder ID {}", folder_id)))
+}
+
+/// Get count of tracks in a folder
+pub fn get_folder_track_count(conn: &Connection, folder_id: i64) -> Result<i64, LibraryError> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM tracks WHERE library_folder_id = ? AND is_missing = 0",
+        params![folder_id],
+        |row| row.get(0),
+    )
+    .map_err(LibraryError::from)
 }
 
 // ============================================================================

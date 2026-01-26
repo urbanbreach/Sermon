@@ -68,5 +68,6 @@ pub enum PlaybackCommand {
         policy: String,
         fade: bool,
         timing: String,
+        asio_driver: Option<String>,
     },
 }

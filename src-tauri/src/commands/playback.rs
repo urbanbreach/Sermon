@@ -1,8 +1,9 @@
 use crate::state::{AudioState, LibraryState, PlaybackCommand};
 use audio_engine::device::list_devices;
 use library::{
-    apply_migrations, get_audio_output_fade, get_audio_output_mode, get_audio_output_policy,
-    get_audio_output_timing, get_track_by_id, open_db, set_missing, set_setting,
+    apply_migrations, get_audio_output_asio_driver, get_audio_output_fade, get_audio_output_mode,
+    get_audio_output_policy, get_audio_output_timing, get_track_by_id, open_db, set_missing,
+    set_setting,
 };
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -38,6 +39,8 @@ pub struct TrackEventData {
     pub channels: Option<u16>,
     pub codec: Option<String>,
     pub container: Option<String>,
+    pub dsd_rate_hz: Option<u32>,
+    pub dsd_channels: Option<u16>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -95,6 +98,9 @@ pub struct AudioFormatData {
     pub codec: Option<String>,
     pub container: Option<String>,
     pub valid_bits: Option<u16>,
+    pub is_dsd: bool,
+    pub dsd_rate_hz: Option<u32>,
+    pub dop_rate_hz: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -121,6 +127,27 @@ pub struct AudioDeviceInfoResponse {
     pub id: String,
     pub name: String,
     pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AsioDriverInfo {
+    pub name: String,
+}
+
+#[tauri::command]
+#[cfg(windows)]
+pub fn cmd_list_asio_drivers() -> Vec<AsioDriverInfo> {
+    use audio_engine::asio_device::list_asio_drivers;
+    list_asio_drivers()
+        .into_iter()
+        .map(|d| AsioDriverInfo { name: d.name })
+        .collect()
+}
+
+#[tauri::command]
+#[cfg(not(windows))]
+pub fn cmd_list_asio_drivers() -> Vec<AsioDriverInfo> {
+    Vec::new() // ASIO not available on non-Windows
 }
 
 // -----------------
@@ -393,10 +420,11 @@ pub fn cmd_volume_set(audio_state: State<'_, AudioState>, volume: f32) -> Result
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioOutputSettings {
-    pub mode: String,   // "exclusive" | "shared"
+    pub mode: String,   // "exclusive" | "shared" | "asio"
     pub policy: String, // "strict" | "compatibility"
     pub fade: bool,
-    pub timing: String, // "event" | "polling"
+    pub timing: String,              // "event" | "polling"
+    pub asio_driver: Option<String>, // ASIO driver name when mode is "asio"
 }
 
 #[tauri::command]
@@ -410,6 +438,7 @@ pub fn cmd_output_get_settings(
         policy: get_audio_output_policy(&conn),
         fade: get_audio_output_fade(&conn),
         timing: get_audio_output_timing(&conn),
+        asio_driver: get_audio_output_asio_driver(&conn),
     })
 }
 
@@ -430,6 +459,9 @@ pub fn cmd_output_set_settings(
     )
     .map_err(|e| e.to_string())?;
     set_setting(&conn, "audio.output.timing", &settings.timing).map_err(|e| e.to_string())?;
+    if let Some(ref driver) = settings.asio_driver {
+        set_setting(&conn, "audio.output.asio_driver", driver).map_err(|e| e.to_string())?;
+    }
 
     // 2. Notify audio thread
     audio_state
@@ -439,6 +471,7 @@ pub fn cmd_output_set_settings(
             policy: settings.policy,
             fade: settings.fade,
             timing: settings.timing,
+            asio_driver: settings.asio_driver,
         })
         .map_err(|e| e.to_string())?;
 

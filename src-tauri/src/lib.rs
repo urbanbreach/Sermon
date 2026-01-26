@@ -14,11 +14,12 @@ use commands::{
     cmd_artwork_get_best_for_album, cmd_artwork_get_best_for_track, cmd_artwork_get_bytes,
     cmd_artwork_search_candidates, cmd_artwork_select_candidate_for_album, cmd_library_add_folder,
     cmd_library_get_raw_tags, cmd_library_get_stats, cmd_library_get_track_by_id, cmd_library_list_album_tracks_page,
-
     cmd_library_list_albums_page, cmd_library_list_artist_tracks_page,
     cmd_library_list_artists_page, cmd_library_list_folders, cmd_library_list_tracks,
     cmd_library_list_tracks_page, cmd_library_search_albums_page, cmd_library_search_artists_page,
     cmd_library_search_suggest, cmd_library_search_tracks_page, cmd_library_update_track_tags,
+    cmd_library_remove_folder, cmd_library_update_folder_enabled, cmd_library_update_folder_options,
+    cmd_library_get_folder_track_count, cmd_list_asio_drivers,
     cmd_output_get_settings, cmd_output_list_devices, cmd_output_set_device,
     cmd_output_set_settings, cmd_playback_next, cmd_playback_pause, cmd_playback_previous,
     cmd_playback_resume, cmd_playback_seek, cmd_playback_start, cmd_playback_stop, cmd_queue_add,
@@ -191,6 +192,10 @@ pub fn run() {
             cmd_library_list_tracks,
             cmd_library_get_track_by_id,
             cmd_library_list_tracks_page,
+            cmd_library_remove_folder,
+            cmd_library_update_folder_enabled,
+            cmd_library_update_folder_options,
+            cmd_library_get_folder_track_count,
 
             cmd_library_list_albums_page,
             cmd_library_list_artists_page,
@@ -215,6 +220,7 @@ pub fn run() {
             cmd_queue_add,
             cmd_queue_set_and_play,
             cmd_output_list_devices,
+            cmd_list_asio_drivers,
             cmd_output_set_device,
             cmd_output_get_settings,
             cmd_output_set_settings,
@@ -248,7 +254,7 @@ struct AudioPlayback {
     output_sample_rate: u32,
     output_channels: u16,
     end_of_track: bool,         // Track if decoder has finished
-    output_mode: String,        // "exclusive" or "shared"
+    output_mode: String,        // "exclusive" or "shared" or "asio"
     policy: String,             // "strict" or "compatibility"
     gain_mode: String,          // "unity" or "software"
     conversion: Option<String>, // None, "pad_16_to_24", "shared_fallback"
@@ -256,6 +262,15 @@ struct AudioPlayback {
     fade_state: Option<FadeState>,
     timing_mode: String, // "event" or "polling"
     buffer_size_ms: u32, // Ring buffer size in milliseconds (from preferences)
+    // DSD playback state
+    is_dsd_playback: bool,
+    dsd_dop_enabled: bool,
+    dsd_dop_strict: bool,
+    dop_ring_buffer: Option<audio_engine::output::DopRingBuffer>,
+    dsd_decoder: Option<audio_engine::DsdDecoder>,
+    dop_packer: Option<audio_engine::DopPacker>,
+    // ASIO state
+    asio_driver: Option<String>,
 }
 
 struct FadeState {
@@ -288,6 +303,13 @@ impl AudioPlayback {
             fade_state: None,
             timing_mode: "polling".to_string(), // Default to polling for USB compatibility
             buffer_size_ms: 500, // Default buffer size, will be overwritten from settings
+            is_dsd_playback: false,
+            dsd_dop_enabled: false,
+            dsd_dop_strict: true,
+            dop_ring_buffer: None,
+            dsd_decoder: None,
+            dop_packer: None,
+            asio_driver: None,
         }
     }
 
@@ -447,9 +469,69 @@ impl AudioPlayback {
         Ok(())
     }
 
+    fn open_output_for_dop_format(
+        &mut self,
+        dsd_rate: u32,
+        channels: u16,
+    ) -> Result<(), String> {
+        use audio_engine::device::{get_default_device, get_device_by_id};
+        use audio_engine::dop::dop_sample_rate;
+        use audio_engine::output::WasapiOutput;
+
+        let dop_rate = dop_sample_rate(dsd_rate);
+
+        if let Some(ref mut output) = self.output {
+            let _ = output.stop();
+        }
+        self.output = None;
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        info!(
+            dsd_rate = dsd_rate,
+            dop_rate = dop_rate,
+            channels = channels,
+            "Opening DoP output (exclusive 24-bit)"
+        );
+
+        let device = if self.device_id == "default" {
+            get_default_device().map_err(|e| e.to_string())?
+        } else {
+            get_device_by_id(&self.device_id).map_err(|e| e.to_string())?
+        };
+
+        match WasapiOutput::open_device_exclusive_with_format(
+            &device,
+            dop_rate,
+            channels,
+            24,
+            &self.timing_mode,
+        ) {
+            Ok(output) => {
+                self.output_sample_rate = output.sample_rate();
+                self.output_channels = output.channels();
+                self.output = Some(OutputBackend::Wasapi(output));
+                self.conversion = None;
+                info!("Opened DoP exclusive output successfully");
+                Ok(())
+            }
+            Err(e) => {
+                warn!("DoP exclusive mode failed: {}", e);
+                if self.dsd_dop_strict {
+                    Err(format!("dop_unsupported_format: {}", e))
+                } else {
+                    Err(format!("dop_conversion_unavailable: DSD->PCM conversion not implemented"))
+                }
+            }
+        }
+    }
+
     fn start_playback(&mut self, track: &TrackInfo) -> Result<(), String> {
         let track_path = Path::new(&track.path);
-        // Open decoder first to get its format
+
+        if track.is_dsd() {
+            return self.start_dsd_playback(track);
+        }
+
         let decoder = AudioDecoder::open(track_path).map_err(|e| e.to_string())?;
 
         // Get decoder format
@@ -505,10 +587,58 @@ impl AudioPlayback {
         Ok(())
     }
 
+    fn start_dsd_playback(&mut self, track: &TrackInfo) -> Result<(), String> {
+        use audio_engine::output::DopRingBuffer;
+        use audio_engine::{DopPacker, DsdDecoder};
+
+        if !self.dsd_dop_enabled {
+            return Err("dop_disabled: DoP playback is disabled in settings".to_string());
+        }
+
+        let track_path = Path::new(&track.path);
+        let dsd_rate = track.dsd_rate_hz.ok_or("Missing DSD rate")?;
+        let dsd_channels = track.dsd_channels.unwrap_or(2);
+
+        info!(
+            path = %track_path.display(),
+            dsd_rate = dsd_rate,
+            dsd_channels = dsd_channels,
+            "Starting DSD playback via DoP"
+        );
+
+        let dsd_decoder = DsdDecoder::open(track_path).map_err(|e| e.to_string())?;
+
+        self.open_output_for_dop_format(dsd_rate, dsd_channels)?;
+
+        let dop_rate = audio_engine::dop::dop_sample_rate(dsd_rate);
+        self.dop_ring_buffer = Some(DopRingBuffer::new(
+            dop_rate,
+            dsd_channels as usize,
+            self.buffer_size_ms,
+        ));
+
+        self.dsd_decoder = Some(dsd_decoder);
+        self.dop_packer = Some(DopPacker::new(dsd_channels as usize));
+        self.is_dsd_playback = true;
+        self.decoder = None;
+        self.ring_buffer = None;
+        self.end_of_track = false;
+
+        if let Some(ref mut output) = self.output {
+            output.start().map_err(|e| e.to_string())?;
+        }
+
+        Ok(())
+    }
+
     fn stop_playback(&mut self) {
         self.decoder = None;
         self.ring_buffer = None;
         self.end_of_track = false;
+        self.is_dsd_playback = false;
+        self.dsd_decoder = None;
+        self.dop_packer = None;
+        self.dop_ring_buffer = None;
         if let Some(ref mut output) = self.output {
             let _ = output.stop();
         }
@@ -575,6 +705,83 @@ impl AudioPlayback {
         Ok(true)
     }
 
+    fn fill_dop_ring_buffer(&mut self) -> Result<bool, String> {
+        let dsd_decoder = match self.dsd_decoder.as_mut() {
+            Some(d) => d,
+            None => return Ok(false),
+        };
+
+        let dop_ring_buffer = match self.dop_ring_buffer.as_mut() {
+            Some(rb) => rb,
+            None => return Ok(false),
+        };
+
+        let dop_packer = match self.dop_packer.as_mut() {
+            Some(p) => p,
+            None => return Ok(false),
+        };
+
+        let target_frames = dop_ring_buffer.capacity_frames() / 2;
+
+        while dop_ring_buffer.available_frames() < target_frames {
+            let dsd_bytes = match dsd_decoder.read_block() {
+                Ok(Some(bytes)) => bytes,
+                Ok(None) => {
+                    self.end_of_track = true;
+                    return Ok(dop_ring_buffer.available_frames() > 0);
+                }
+                Err(e) => {
+                    return Err(format!("DSD decode error: {}", e));
+                }
+            };
+
+            if dsd_bytes.is_empty() {
+                continue;
+            }
+
+            let dop_samples = dop_packer.pack(&dsd_bytes);
+            dop_ring_buffer.push(&dop_samples);
+        }
+
+        Ok(true)
+    }
+
+    fn process_dop_audio(&mut self) -> Result<bool, String> {
+        let output = match self.output.as_mut() {
+            Some(o) => o,
+            None => return Err("No output device".to_string()),
+        };
+
+        let dop_ring_buffer = match self.dop_ring_buffer.as_mut() {
+            Some(rb) => rb,
+            None => return Err("No DoP ring buffer".to_string()),
+        };
+
+        let available = dop_ring_buffer.available_frames();
+        if available == 0 {
+            if self.end_of_track {
+                return Ok(false);
+            }
+            return Ok(true);
+        }
+
+        let samples_to_write = available * self.output_channels as usize;
+        let dop_samples = dop_ring_buffer.pop(samples_to_write);
+
+        match output.write_raw_dop(&dop_samples) {
+            Ok(_frames_written) => {
+                if self.end_of_track && dop_ring_buffer.available_frames() == 0 {
+                    return Ok(false);
+                }
+                Ok(true)
+            }
+            Err(audio_engine::output::OutputError::DeviceInvalidated) => {
+                Err("Device invalidated".to_string())
+            }
+            Err(e) => Err(format!("DoP output error: {}", e)),
+        }
+    }
+
     fn effective_volume(&self, volume: f32) -> f32 {
         if let Some(ref output) = self.output {
             if output.is_exclusive() && self.policy == "strict" {
@@ -590,11 +797,14 @@ impl AudioPlayback {
 
     /// Process audio: fill buffer, then write to WASAPI. Returns true if playback should continue.
     fn process_audio(&mut self, volume: f32) -> Result<bool, String> {
+        if self.is_dsd_playback {
+            return self.process_dop_audio();
+        }
+
         if self.decoder.is_none() {
             return Ok(false);
         }
 
-        // Determine effective volume
         let eff_vol = self.effective_volume(volume);
 
         let output = match self.output.as_mut() {
@@ -607,10 +817,8 @@ impl AudioPlayback {
             None => return Err("No ring buffer".to_string()),
         };
 
-        // Write from ring buffer to WASAPI
         match output.write_from_buffer(ring_buffer, eff_vol) {
             Ok(_frames_written) => {
-                // Check if we're done (end of track and buffer empty)
                 if self.end_of_track && ring_buffer.available_frames() == 0 {
                     return Ok(false);
                 }
@@ -682,6 +890,13 @@ fn spawn_audio_thread(
             if playback.output_mode == "exclusive" && playback.policy == "strict" {
                 playback.gain_mode = "unity".to_string();
             }
+            // Load DSD settings
+            if let Ok(Some(dop_enabled)) = library::get_setting(&conn, "devices.dsd_dop_enabled") {
+                playback.dsd_dop_enabled = dop_enabled == "on";
+            }
+            if let Ok(Some(dop_strict)) = library::get_setting(&conn, "devices.dsd_dop_strict") {
+                playback.dsd_dop_strict = dop_strict == "on";
+            }
         }
 
         // Try to open default output at startup
@@ -721,8 +936,13 @@ fn spawn_audio_thread(
                     };
 
                     if is_playing {
-                        // First, fill the ring buffer with decoded samples
-                        if let Err(e) = playback.fill_ring_buffer() {
+                        let fill_result = if playback.is_dsd_playback {
+                            playback.fill_dop_ring_buffer()
+                        } else {
+                            playback.fill_ring_buffer()
+                        };
+
+                        if let Err(e) = fill_result {
                             error!("Failed to fill ring buffer: {}", e);
                             let track_id = {
                                 let engine = engine.lock();
@@ -735,7 +955,6 @@ fn spawn_audio_thread(
                             continue;
                         }
 
-                        // Then write from ring buffer to WASAPI
                         match playback.process_audio(volume) {
                             Ok(true) => {
                                 // Continue playing
@@ -1047,10 +1266,11 @@ fn handle_playback_command(
             policy,
             fade,
             timing,
+            asio_driver,
         } => {
             info!(
-                "Received output settings update: mode={}, policy={}, fade={}, timing={}",
-                mode, policy, fade, timing
+                "Received output settings update: mode={}, policy={}, fade={}, timing={}, asio_driver={:?}",
+                mode, policy, fade, timing, asio_driver
             );
 
             let mut changed = false;
@@ -1062,6 +1282,11 @@ fn handle_playback_command(
 
             if playback.timing_mode != timing {
                 playback.timing_mode = timing.clone();
+                changed = true;
+            }
+
+            if playback.asio_driver != asio_driver {
+                playback.asio_driver = asio_driver.clone();
                 changed = true;
             }
 
@@ -1149,6 +1374,8 @@ fn resolve_track(db_path: &PathBuf, track_id: i64) -> Result<TrackInfo, String> 
         channels: row.channels.and_then(|v| u16::try_from(v).ok()),
         codec: row.codec,
         container: row.container,
+        dsd_rate_hz: row.dsd_rate_hz.and_then(|v| u32::try_from(v).ok()),
+        dsd_channels: row.dsd_channels.and_then(|v| u16::try_from(v).ok()),
     })
 }
 
@@ -1198,6 +1425,8 @@ fn emit_now_playing(app: &tauri::AppHandle, engine: &Arc<Mutex<audio_engine::Eng
         channels: session.track.channels,
         codec: session.track.codec.clone(),
         container: session.track.container.clone(),
+        dsd_rate_hz: session.track.dsd_rate_hz,
+        dsd_channels: session.track.dsd_channels,
     };
 
     let _ = app.emit(
@@ -1376,6 +1605,9 @@ fn emit_audio_debug(
         codec: track.and_then(|t| t.codec.clone()),
         container: track.and_then(|t| t.container.clone()),
         valid_bits: None, // Decode format doesn't distinguish valid bits
+        is_dsd: track.and_then(|t| t.dsd_rate_hz).is_some(),
+        dsd_rate_hz: track.and_then(|t| t.dsd_rate_hz),
+        dop_rate_hz: track.and_then(|t| t.dsd_rate_hz).map(|r| r / 16),
     };
 
     let output_format = AudioFormatData {
@@ -1389,6 +1621,17 @@ fn emit_audio_debug(
         codec: None,
         container: playback.conversion.clone(),
         valid_bits: playback.output.as_ref().map(|o| o.valid_bits()),
+        is_dsd: playback.is_dsd_playback,
+        dsd_rate_hz: if playback.is_dsd_playback {
+            track.and_then(|t| t.dsd_rate_hz)
+        } else {
+            None
+        },
+        dop_rate_hz: if playback.is_dsd_playback {
+            Some(playback.output_sample_rate)
+        } else {
+            None
+        },
     };
 
     let (device_id, device_name) = device
@@ -1437,6 +1680,18 @@ fn parse_playback_error(e: &str) -> (String, String) {
             "exclusive_unsupported_format".to_string(),
             msg.trim().to_string(),
         );
+    }
+    if let Some(msg) = e.strip_prefix("dop_disabled:") {
+        return ("dop_disabled".to_string(), msg.trim().to_string());
+    }
+    if let Some(msg) = e.strip_prefix("dop_unsupported_format:") {
+        return ("dop_unsupported_format".to_string(), msg.trim().to_string());
+    }
+    if let Some(msg) = e.strip_prefix("dop_conversion_unavailable:") {
+        return ("dop_conversion_unavailable".to_string(), msg.trim().to_string());
+    }
+    if let Some(msg) = e.strip_prefix("dop_dst_unsupported:") {
+        return ("dop_dst_unsupported".to_string(), msg.trim().to_string());
     }
     ("decode_error".to_string(), e.to_string())
 }
