@@ -26,6 +26,13 @@
 | R022 | **Buffer Size Change Without Restart**<br>User changes buffer size but doesn't restart, leading to confusion about why it's not applied. | UI Lead | **Clear UX**: Warning banner in PlayerPrefs.svelte persists until restart. Hint text explains restart requirement. | Mitigated - M07 |
 | R023 | **Scan-on-Startup User Confusion**<br>User disables scan-on-startup but doesn't understand why new files aren't appearing. | UI Lead | **Documentation**: Settings documentation explains behavior. Future: Add manual scan button to Library category. | Open - M07 |
 | R024 | **Export Diagnostics Privacy**<br>Diagnostics export could contain sensitive information (file paths, device names). | Backend Lead | **Minimal data**: Export only settings and system info needed for debugging. No track data, no file paths beyond device names. User controls when/where to save. | Mitigated - M07 |
+| R025 | **DoP to Non-DoP DAC**<br>Enabling DoP on a DAC that doesn't support it produces static/noise instead of audio. | Backend Lead | **Opt-in + Strict mode**: DoP disabled by default. Strict mode verifies DAC support before playback. Clear error messages guide users. | Mitigated - M08 |
+| R026 | **DST Compressed DFF Files**<br>DFF files with DST compression cannot be decoded without a DST decompressor. | Backend Lead | **Clear error**: Detect DST-compressed files and show specific error explaining limitation. Future: Add DST decoder dependency. | Open - M08 |
+| R027 | **DSD Rate Mismatch**<br>User's DAC may not support high DoP rates (352.8 kHz for DSD128, 705.6 kHz for DSD256). | Backend Lead | **Format negotiation**: Query DAC for supported rates. Clear error when rate unsupported. Most DACs support at least DSD64. | Open - M08 |
+| R028 | **ASIO driver crash/hang during playback**<br>Third-party ASIO drivers can be unstable and cause the audio thread or application to hang. | Backend Lead | **Watchdog timer**: Implement a watchdog to detect unresponsive audio threads. Provide clear error messages and guidance on driver updates. | Open |
+| R029 | **Build toolchain complexity (LLVM requirement)**<br>The `asio-sys` crate requires LLVM/Clang to generate bindings, increasing barrier for contributors and CI complexity. | DevOps | **Environment documentation**: Document the LLVM dependency clearly. Ensure CI runners have required toolchains pre-installed. | Open |
+| R030 | **ASIO driver in use by another application**<br>ASIO is strictly exclusive. If another app is using the driver, initialization will fail. | Backend Lead | **Device availability check**: Detect busy drivers and show clear error message. Offer fallback to WASAPI. | Open |
+| R031 | **DoP over ASIO format incompatibility**<br>Some ASIO drivers require specific sample rates or bit depths to accept DoP data, causing unpredictable behavior if not met. | Backend Lead | **Strict format negotiation**: Verify driver capabilities before starting DoP playback. Implement robust error reporting. | Open |
 
 ## Milestone 01 Burn-Down Notes
 
@@ -53,3 +60,9 @@
 - **R022 Mitigated**: PlayerPrefs.svelte displays persistent warning banner when buffer size changes. Clear restart instruction provided.
 - **R023 Open**: Scan-on-startup toggle works but users may not understand implications. Future milestone should add manual scan button.
 - **R024 Mitigated**: Export diagnostics contains only system info, audio device, and settings keys/values. No file paths or track data included.
+
+## Milestone 08 Burn-Down Notes
+
+- **R025 Mitigated**: DoP disabled by default. Strict mode (enabled by default) requires DAC confirmation. UI provides clear enable/disable toggles in Preferences → Devices.
+- **R026 Open**: DST-compressed DFF files not supported. Detection not yet implemented - future milestone should add DST detection and clear error message.
+- **R027 Open**: High-rate DoP depends on DAC capabilities. Error messages implemented for unsupported rates. Most content is DSD64 which works with most DACs.
