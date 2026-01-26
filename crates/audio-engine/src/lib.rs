@@ -4,6 +4,8 @@
 //! Symphonia for decoding and WASAPI for output.
 
 #[cfg(windows)]
+pub mod asio;
+#[cfg(windows)]
 pub mod asio_device;
 pub mod decode;
 pub mod device;

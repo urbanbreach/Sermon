@@ -16,5 +16,8 @@ parking_lot = "0.12"
 dsf = "0.2"
 dff-meta = "0.1"
 
+# Lock-free ring buffer for ASIO callback thread safety
+ringbuf = "0.4"
+
 [target.'cfg(windows)'.dependencies]
 asio-sys = "0.2.5"

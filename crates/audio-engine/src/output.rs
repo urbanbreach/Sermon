@@ -3,8 +3,8 @@ use std::collections::VecDeque;
 use thiserror::Error;
 use tracing::{info, trace, warn};
 use wasapi::{
-    AudioClient, AudioRenderClient, Device, DeviceEnumerator, Direction, Handle, SampleType,
-    StreamMode, WasapiError, WaveFormat, initialize_mta,
+    initialize_mta, AudioClient, AudioRenderClient, Device, DeviceEnumerator, Direction, Handle,
+    SampleType, StreamMode, WasapiError, WaveFormat,
 };
 
 const AUDCLNT_E_DEVICE_INVALIDATED: u32 = 0x8889_0004;
@@ -28,6 +28,18 @@ pub enum OutputError {
 
     #[error("Format not supported in exclusive mode")]
     ExclusiveUnsupportedFormat,
+
+    #[error("ASIO error: {0}")]
+    Asio(String),
+
+    #[error("ASIO driver not found: {0}")]
+    AsioDriverNotFound(String),
+
+    #[error("ASIO driver load failed: {0}")]
+    AsioDriverLoadFailed(String),
+
+    #[error("ASIO unsupported format: {0}")]
+    AsioUnsupportedFormat(String),
 }
 
 /// WASAPI output configured for a specific source format.
@@ -674,6 +686,53 @@ impl WasapiOutput {
             Err(err) => Err(map_wasapi_error(err)),
         }
     }
+
+    pub fn write_raw_dop(&mut self, dop_samples: &[u32]) -> Result<usize, OutputError> {
+        if !self.started {
+            self.start()?;
+        }
+
+        let channels = self.channels as usize;
+        if channels == 0 || dop_samples.is_empty() {
+            return Ok(0);
+        }
+
+        if self.is_exclusive && self.timing_mode == "event" {
+            if !self.wait_for_buffer_request(100) {
+                return Ok(0);
+            }
+        }
+
+        let available_frames = self.available_frames()?;
+        if available_frames == 0 {
+            return Ok(0);
+        }
+
+        let input_frames = dop_samples.len() / channels;
+        let frames_to_write = input_frames.min(available_frames as usize);
+        let samples_to_write = frames_to_write * channels;
+
+        if frames_to_write == 0 {
+            return Ok(0);
+        }
+
+        let mut data = Vec::with_capacity(samples_to_write * 4);
+        for &sample in &dop_samples[..samples_to_write] {
+            data.extend_from_slice(&sample.to_le_bytes());
+        }
+
+        match self
+            .render_client
+            .write_to_device(frames_to_write, &data, None)
+        {
+            Ok(()) => Ok(frames_to_write),
+            Err(err) if is_device_invalidated(&err) => {
+                let _ = self.stop();
+                Err(OutputError::DeviceInvalidated)
+            }
+            Err(err) => Err(map_wasapi_error(err)),
+        }
+    }
 }
 
 fn init_com() -> Result<(), OutputError> {
@@ -846,6 +905,99 @@ impl AudioRingBuffer {
     }
 }
 
+pub struct DopRingBuffer {
+    channels: usize,
+    capacity_samples: usize,
+    buf: VecDeque<u32>,
+}
+
+impl DopRingBuffer {
+    pub fn new(dop_rate: u32, channels: usize, capacity_ms: u32) -> Self {
+        let channels = channels.max(1);
+        let capacity_frames = ((dop_rate as u64 * capacity_ms as u64) / 1000).max(1) as usize;
+        let capacity_samples = capacity_frames.saturating_mul(channels).max(channels);
+
+        Self {
+            channels,
+            capacity_samples,
+            buf: VecDeque::with_capacity(capacity_samples),
+        }
+    }
+
+    pub fn channels(&self) -> usize {
+        self.channels
+    }
+
+    pub fn capacity_frames(&self) -> usize {
+        self.capacity_samples / self.channels
+    }
+
+    pub fn available_frames(&self) -> usize {
+        self.buf.len() / self.channels
+    }
+
+    pub fn push(&mut self, samples: &[u32]) {
+        if samples.is_empty() {
+            return;
+        }
+
+        let frame_aligned_len = samples.len() / self.channels * self.channels;
+        if frame_aligned_len == 0 {
+            return;
+        }
+        let samples = &samples[..frame_aligned_len];
+
+        if samples.len() >= self.capacity_samples {
+            warn!(
+                capacity_samples = self.capacity_samples,
+                incoming_samples = samples.len(),
+                "DoP ring buffer overflow: dropping old samples"
+            );
+            self.buf.clear();
+            self.buf.extend(
+                samples[samples.len() - self.capacity_samples..]
+                    .iter()
+                    .copied(),
+            );
+            return;
+        }
+
+        let overflow = self
+            .buf
+            .len()
+            .saturating_add(samples.len())
+            .saturating_sub(self.capacity_samples);
+
+        if overflow > 0 {
+            warn!(
+                overflow_samples = overflow,
+                capacity_samples = self.capacity_samples,
+                "DoP ring buffer overflow: dropping oldest samples"
+            );
+            for _ in 0..overflow {
+                self.buf.pop_front();
+            }
+        }
+
+        self.buf.extend(samples.iter().copied());
+    }
+
+    pub fn pop(&mut self, count: usize) -> Vec<u32> {
+        let take = count.min(self.buf.len());
+        let mut out = Vec::with_capacity(take);
+        for _ in 0..take {
+            if let Some(s) = self.buf.pop_front() {
+                out.push(s);
+            }
+        }
+        out
+    }
+
+    pub fn clear(&mut self) {
+        self.buf.clear();
+    }
+}
+
 /// Convert f32 samples to 16-bit PCM (little-endian bytes)
 pub fn f32_to_i16_le(samples: &[f32], volume: f32) -> Vec<u8> {
     let vol = if volume.is_finite() {
@@ -950,6 +1102,7 @@ pub trait AudioOutput {
         ring_buffer: &mut AudioRingBuffer,
         volume: f32,
     ) -> Result<usize, OutputError>;
+    fn write_raw_dop(&mut self, dop_samples: &[u32]) -> Result<usize, OutputError>;
 }
 
 impl AudioOutput for WasapiOutput {
@@ -991,6 +1144,10 @@ impl AudioOutput for WasapiOutput {
         volume: f32,
     ) -> Result<usize, OutputError> {
         self.write_from_buffer(ring_buffer, volume)
+    }
+
+    fn write_raw_dop(&mut self, dop_samples: &[u32]) -> Result<usize, OutputError> {
+        self.write_raw_dop(dop_samples)
     }
 }
 
@@ -1091,11 +1248,21 @@ impl AudioOutput for NullSinkOutput {
 
         Ok(available)
     }
+
+    fn write_raw_dop(&mut self, dop_samples: &[u32]) -> Result<usize, OutputError> {
+        if !self.started {
+            self.start()?;
+        }
+        let frames = dop_samples.len() / self.channels as usize;
+        Ok(frames)
+    }
 }
 
 pub enum OutputBackend {
     Wasapi(WasapiOutput),
     NullSink(NullSinkOutput),
+    #[cfg(windows)]
+    Asio(crate::asio::AsioOutput),
 }
 
 impl AudioOutput for OutputBackend {
@@ -1103,6 +1270,8 @@ impl AudioOutput for OutputBackend {
         match self {
             OutputBackend::Wasapi(o) => o.start(),
             OutputBackend::NullSink(o) => o.start(),
+            #[cfg(windows)]
+            OutputBackend::Asio(o) => o.start(),
         }
     }
 
@@ -1110,6 +1279,8 @@ impl AudioOutput for OutputBackend {
         match self {
             OutputBackend::Wasapi(o) => o.stop(),
             OutputBackend::NullSink(o) => o.stop(),
+            #[cfg(windows)]
+            OutputBackend::Asio(o) => o.stop(),
         }
     }
 
@@ -1117,6 +1288,8 @@ impl AudioOutput for OutputBackend {
         match self {
             OutputBackend::Wasapi(o) => o.sample_rate(),
             OutputBackend::NullSink(o) => o.sample_rate(),
+            #[cfg(windows)]
+            OutputBackend::Asio(o) => o.sample_rate(),
         }
     }
 
@@ -1124,6 +1297,8 @@ impl AudioOutput for OutputBackend {
         match self {
             OutputBackend::Wasapi(o) => o.channels(),
             OutputBackend::NullSink(o) => o.channels(),
+            #[cfg(windows)]
+            OutputBackend::Asio(o) => o.channels(),
         }
     }
 
@@ -1131,6 +1306,8 @@ impl AudioOutput for OutputBackend {
         match self {
             OutputBackend::Wasapi(o) => o.bit_depth(),
             OutputBackend::NullSink(o) => o.bit_depth(),
+            #[cfg(windows)]
+            OutputBackend::Asio(o) => o.bit_depth(),
         }
     }
 
@@ -1138,6 +1315,8 @@ impl AudioOutput for OutputBackend {
         match self {
             OutputBackend::Wasapi(o) => o.valid_bits(),
             OutputBackend::NullSink(o) => o.valid_bits(),
+            #[cfg(windows)]
+            OutputBackend::Asio(o) => o.valid_bits(),
         }
     }
 
@@ -1145,6 +1324,8 @@ impl AudioOutput for OutputBackend {
         match self {
             OutputBackend::Wasapi(o) => o.is_exclusive(),
             OutputBackend::NullSink(o) => o.is_exclusive(),
+            #[cfg(windows)]
+            OutputBackend::Asio(o) => o.is_exclusive(),
         }
     }
 
@@ -1152,6 +1333,8 @@ impl AudioOutput for OutputBackend {
         match self {
             OutputBackend::Wasapi(o) => o.write_samples(samples, volume),
             OutputBackend::NullSink(o) => o.write_samples(samples, volume),
+            #[cfg(windows)]
+            OutputBackend::Asio(o) => o.write_samples(samples, volume),
         }
     }
 
@@ -1163,6 +1346,17 @@ impl AudioOutput for OutputBackend {
         match self {
             OutputBackend::Wasapi(o) => o.write_from_buffer(ring_buffer, volume),
             OutputBackend::NullSink(o) => o.write_from_buffer(ring_buffer, volume),
+            #[cfg(windows)]
+            OutputBackend::Asio(o) => o.write_from_buffer(ring_buffer, volume),
+        }
+    }
+
+    fn write_raw_dop(&mut self, dop_samples: &[u32]) -> Result<usize, OutputError> {
+        match self {
+            OutputBackend::Wasapi(o) => o.write_raw_dop(dop_samples),
+            OutputBackend::NullSink(o) => o.write_raw_dop(dop_samples),
+            #[cfg(windows)]
+            OutputBackend::Asio(o) => o.write_raw_dop(dop_samples),
         }
     }
 }
