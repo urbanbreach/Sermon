@@ -85,3 +85,7 @@ export async function getOutputSettings(): Promise<AudioOutputSettings> {
 export async function setOutputSettings(settings: AudioOutputSettings): Promise<void> {
   return invoke('cmd_output_set_settings', { settings });
 }
+
+export async function openAsioControlPanel(driverName: string): Promise<void> {
+  return invoke('cmd_open_asio_control_panel', { driverName });
+}

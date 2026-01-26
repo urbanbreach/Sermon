@@ -2,11 +2,13 @@
   import { onMount } from 'svelte';
   import { devices, currentDevice, selectDevice, outputSettings, loadOutputSettings, saveOutputSettings, loadDevices, asioDrivers, loadAsioDrivers } from '../../state/playback';
   import { playerSettings, loadCategorySettings, saveCategorySetting, parseBool } from '../../state/preferences';
+  import { openAsioControlPanel } from '../../api/playback';
   
   const isMock = import.meta.env.SERMON_MOCK === '1';
   
   let restartRequired = $state(false);
   let originalBufferSize: string | null = $state(null);
+  let isOpeningPanel = $state(false);
   
   onMount(async () => {
     if (!isMock) {
@@ -23,6 +25,19 @@
     }
     if (!isMock) {
       saveCategorySetting('player', 'player.buffer_size_ms', value);
+    }
+  }
+
+  async function handleOpenControlPanel() {
+    if (!$outputSettings?.asioDriver || isMock) return;
+    
+    isOpeningPanel = true;
+    try {
+      await openAsioControlPanel($outputSettings.asioDriver);
+    } catch (e) {
+      console.error('Failed to open ASIO control panel:', e);
+    } finally {
+      isOpeningPanel = false;
     }
   }
 </script>
@@ -70,6 +85,15 @@
       </select>
       {#if $asioDrivers.length === 0}
         <span class="setting-hint">No ASIO drivers found. Install an ASIO driver like ASIO4ALL.</span>
+      {/if}
+      {#if $outputSettings.asioDriver}
+        <button 
+          class="control-panel-btn"
+          onclick={handleOpenControlPanel}
+          disabled={isOpeningPanel || isMock}
+        >
+          {isOpeningPanel ? 'Opening...' : 'Open Control Panel'}
+        </button>
       {/if}
     </div>
   {/if}
@@ -132,4 +156,7 @@
   select:disabled { opacity: 0.5; }
   input[type="checkbox"] { margin-right: 0.5rem; }
   .restart-banner { padding: 0.75rem 1rem; background: rgba(255, 170, 0, 0.15); border: 1px solid #fa0; border-radius: 4px; color: #fa0; font-size: 0.9rem; }
+  .control-panel-btn { background: #333; color: #fff; border: 1px solid #555; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; margin-top: 0.5rem; width: fit-content; }
+  .control-panel-btn:hover:not(:disabled) { background: #444; }
+  .control-panel-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

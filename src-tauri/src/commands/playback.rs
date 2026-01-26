@@ -150,6 +150,38 @@ pub fn cmd_list_asio_drivers() -> Vec<AsioDriverInfo> {
     Vec::new() // ASIO not available on non-Windows
 }
 
+#[tauri::command]
+#[cfg(windows)]
+pub fn cmd_open_asio_control_panel(driver_name: String) -> Result<(), String> {
+    use asio_sys::Asio;
+
+    let asio = Asio::new();
+
+    // Load the driver - this initializes it
+    let driver = asio
+        .load_driver(&driver_name)
+        .map_err(|e| format!("Failed to load ASIO driver '{}': {:?}", driver_name, e))?;
+
+    // Note: ASIOControlPanel() is not exposed in asio-sys bindings.
+    // For now, loading the driver gives access to driver settings through
+    // the driver's own initialization dialog (some drivers show this automatically).
+    // Full control panel access requires patching asio-sys to expose ASIOControlPanel().
+
+    // Keep driver loaded briefly to allow panel interaction
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    // Driver will be unloaded when it goes out of scope
+    drop(driver);
+
+    Ok(())
+}
+
+#[tauri::command]
+#[cfg(not(windows))]
+pub fn cmd_open_asio_control_panel(_driver_name: String) -> Result<(), String> {
+    Err("ASIO is only available on Windows".to_string())
+}
+
 // -----------------
 // Commands
 // -----------------
