@@ -11,3 +11,10 @@ ulid = "1"
 thiserror = "2"
 crossbeam-channel = "0.5"
 parking_lot = "0.12"
+
+# DSD format support
+dsf = "0.2"
+dff-meta = "0.1"
+
+[target.'cfg(windows)'.dependencies]
+asio-sys = "0.2.5"
