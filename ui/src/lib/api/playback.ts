@@ -7,10 +7,19 @@ export interface AudioDeviceInfo {
 }
 
 export interface AudioOutputSettings {
-  mode: 'exclusive' | 'shared';
+  mode: 'exclusive' | 'shared' | 'asio';
   policy: 'strict' | 'compatibility';
   fade: boolean;
   timing: 'event' | 'polling';
+  asioDriver?: string;
+}
+
+export interface AsioDriverInfo {
+  name: string;
+}
+
+export async function listAsioDrivers(): Promise<AsioDriverInfo[]> {
+  return invoke('cmd_list_asio_drivers');
 }
 
 export async function playbackStart(trackId: number): Promise<void> {

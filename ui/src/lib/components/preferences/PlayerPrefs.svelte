@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { devices, currentDevice, selectDevice, outputSettings, loadOutputSettings, saveOutputSettings, loadDevices } from '../../state/playback';
+  import { devices, currentDevice, selectDevice, outputSettings, loadOutputSettings, saveOutputSettings, loadDevices, asioDrivers, loadAsioDrivers } from '../../state/playback';
   import { playerSettings, loadCategorySettings, saveCategorySetting, parseBool } from '../../state/preferences';
   
   const isMock = import.meta.env.SERMON_MOCK === '1';
@@ -10,7 +10,7 @@
   
   onMount(async () => {
     if (!isMock) {
-      await Promise.all([loadDevices(), loadOutputSettings(), loadCategorySettings('player')]);
+      await Promise.all([loadDevices(), loadOutputSettings(), loadCategorySettings('player'), loadAsioDrivers()]);
     }
   });
   
@@ -47,14 +47,34 @@
   </div>
 
   {#if $outputSettings}
-    <div class="setting">
-      <label for="output-mode">Output Mode</label>
-      <select id="output-mode" value={$outputSettings.mode} onchange={(e) => saveOutputSettings({ ...$outputSettings!, mode: e.currentTarget.value as 'exclusive' | 'shared' })} disabled={isMock}>
-        <option value="shared">Shared (Windows Mixer)</option>
-        <option value="exclusive">Exclusive (Bit-Perfect)</option>
-      </select>
-    </div>
+  <div class="setting">
+    <label for="output-mode">Output Mode</label>
+    <select id="output-mode" value={$outputSettings.mode} onchange={(e) => {
+      const newMode = e.currentTarget.value as 'exclusive' | 'shared' | 'asio';
+      saveOutputSettings({ ...$outputSettings!, mode: newMode });
+    }} disabled={isMock}>
+      <option value="shared">Shared (Windows Mixer)</option>
+      <option value="exclusive">Exclusive (Bit-Perfect)</option>
+      <option value="asio">ASIO (Professional)</option>
+    </select>
+  </div>
 
+  {#if $outputSettings.mode === 'asio'}
+    <div class="setting">
+      <label for="asio-driver">ASIO Driver</label>
+      <select id="asio-driver" value={$outputSettings.asioDriver || ''} onchange={(e) => saveOutputSettings({ ...$outputSettings!, asioDriver: e.currentTarget.value })} disabled={isMock}>
+        <option value="">Select Driver...</option>
+        {#each $asioDrivers as driver}
+          <option value={driver.name}>{driver.name}</option>
+        {/each}
+      </select>
+      {#if $asioDrivers.length === 0}
+        <span class="setting-hint">No ASIO drivers found. Install an ASIO driver like ASIO4ALL.</span>
+      {/if}
+    </div>
+  {/if}
+
+  {#if $outputSettings.mode !== 'asio'}
     <div class="setting">
       <label for="output-policy">Policy</label>
       <select id="output-policy" value={$outputSettings.policy} onchange={(e) => saveOutputSettings({ ...$outputSettings!, policy: e.currentTarget.value as 'strict' | 'compatibility' })} disabled={isMock}>
@@ -70,8 +90,9 @@
         <option value="event">Event-Driven</option>
       </select>
     </div>
+  {/if}
 
-    <div class="setting">
+  <div class="setting">
       <label>
         <input type="checkbox" checked={$outputSettings.fade} onchange={(e) => saveOutputSettings({ ...$outputSettings!, fade: e.currentTarget.checked })} disabled={isMock} />
         Enable fade on format switch

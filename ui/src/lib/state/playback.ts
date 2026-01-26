@@ -9,7 +9,7 @@ import type {
   TrackEventData, QueueItemData, TrackMarkedMissingEvent
 } from '../types/playback';
 import * as api from '../api/playback';
-import type { AudioOutputSettings } from '../api/playback';
+import type { AudioOutputSettings, AsioDriverInfo } from '../api/playback';
 import { Fixtures } from '../data/fixtures';
 
 // Core state
@@ -27,6 +27,7 @@ export const currentIndex = writable<number | null>(null);
 export const currentDevice = writable<{ id: string; name: string; isDefault: boolean } | null>(null);
 export const devices = writable<api.AudioDeviceInfo[]>([]);
 export const outputSettings = writable<AudioOutputSettings | null>(null);
+export const asioDrivers = writable<AsioDriverInfo[]>([]);
 
 // Audio debug
 export const audioDebug = writable<AudioDebugEvent | null>(null);
@@ -123,6 +124,15 @@ export async function loadDevices() {
     devices.set(list);
   } catch (e) {
     console.error('Failed to load devices:', e);
+  }
+}
+
+export async function loadAsioDrivers() {
+  try {
+    const list = await api.listAsioDrivers();
+    asioDrivers.set(list);
+  } catch (e) {
+    console.error('Failed to load ASIO drivers:', e);
   }
 }
 
