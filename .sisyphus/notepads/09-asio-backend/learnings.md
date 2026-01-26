@@ -15,3 +15,10 @@
 - Module gated with `#[cfg(windows)]` in lib.rs - won't compile on non-Windows.
 - Enumeration only reads registry, doesn't initialize/load drivers (cheap operation).
 - Returns empty vec if no ASIO drivers installed - no panic.
+
+## Task 5: DoP pipeline integration with AsioOutput
+- AsioOutput uses f32 ring buffer, so DoP u32 samples must be converted.
+- Conversion formula: `(dop_sample << 8) as i32` shifts 24-bit DoP to top bits, then normalize by dividing by 2^31.
+- This preserves DoP marker bytes (0x05/0xFA) through the f32 representation.
+- Reverse conversion: `(f32 * 2^31) as i32` then `>> 8` recovers original 24-bit DoP value.
+- Test verifies round-trip marker and DSD byte preservation without ASIO driver dependency.

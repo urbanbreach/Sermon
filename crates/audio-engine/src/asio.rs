@@ -171,7 +171,25 @@ impl crate::output::AudioOutput for AsioOutput {
             return Ok(0);
         }
 
-        let frames = dop_samples.len() / channels;
+        // Convert DoP u32 samples to f32 for the ring buffer.
+        // DoP format: bits 0-7 = dsd_byte0, bits 8-15 = dsd_byte1, bits 16-23 = marker
+        // We shift the 24-bit DoP value to the top 24 bits of an i32, then normalize.
+        // This preserves the bit pattern through the f32 ring buffer.
+        let mut written = 0;
+        for &dop_sample in dop_samples {
+            // Shift 24-bit DoP sample to top 24 bits of i32
+            let i32_sample = (dop_sample << 8) as i32;
+            // Normalize to [-1.0, 1.0) range
+            let f32_sample = (i32_sample as f32) / 2147483648.0;
+
+            if self.producer.try_push(f32_sample).is_err() {
+                warn!("ASIO ring buffer full, dropping DoP sample");
+                break;
+            }
+            written += 1;
+        }
+
+        let frames = written / channels;
         Ok(frames)
     }
 }
@@ -221,6 +239,48 @@ mod tests {
             assert_eq!(output.channels(), 2);
             assert_eq!(output.bit_depth(), 32);
             assert_eq!(output.valid_bits(), 24);
+        }
+    }
+
+    #[test]
+    fn test_dop_through_asio_preserves_markers() {
+        use crate::dop::{DOP_MARKER_A, DOP_MARKER_B};
+
+        let dop_samples: Vec<u32> = vec![
+            0x00_05_11_22, // marker 0x05, dsd bytes 0x22, 0x11
+            0x00_05_33_44, // marker 0x05, dsd bytes 0x44, 0x33
+            0x00_FA_55_66, // marker 0xFA, dsd bytes 0x66, 0x55
+            0x00_FA_77_88, // marker 0xFA, dsd bytes 0x88, 0x77
+        ];
+
+        for &dop_sample in &dop_samples {
+            let marker = ((dop_sample >> 16) & 0xFF) as u8;
+            assert!(
+                marker == DOP_MARKER_A || marker == DOP_MARKER_B,
+                "Input marker {:#04x} should be 0x05 or 0xFA",
+                marker
+            );
+
+            let i32_sample = (dop_sample << 8) as i32;
+            let f32_sample = (i32_sample as f32) / 2147483648.0;
+
+            let recovered_i32 = (f32_sample * 2147483648.0) as i32;
+            let recovered_u32 = (recovered_i32 as u32) >> 8;
+
+            let recovered_marker = ((recovered_u32 >> 16) & 0xFF) as u8;
+            assert_eq!(
+                recovered_marker, marker,
+                "Marker mismatch: expected {:#04x}, got {:#04x}",
+                marker, recovered_marker
+            );
+
+            let original_dsd = dop_sample & 0xFFFF;
+            let recovered_dsd = recovered_u32 & 0xFFFF;
+            assert_eq!(
+                recovered_dsd, original_dsd,
+                "DSD bytes mismatch: expected {:#06x}, got {:#06x}",
+                original_dsd, recovered_dsd
+            );
         }
     }
 }
