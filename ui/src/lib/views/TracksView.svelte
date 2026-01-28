@@ -66,8 +66,8 @@
   }
 
   function handleTrackDoubleClick(track: TrackRow, trackIndex: number) {
-    if (track.is_missing) return;
-    const validTracks = $tracks.filter(t => !t.is_missing);
+    if (track.isMissing) return;
+    const validTracks = $tracks.filter(t => !t.isMissing);
     const trackIds = validTracks.map(t => t.id);
     const startIndex = validTracks.findIndex(t => t.id === track.id);
     if (startIndex >= 0 && trackIds.length > 0) {
@@ -140,7 +140,7 @@
           {#snippet children(track: TrackRow, i: number)}
             <div 
               class="track-row"
-              class:missing={track.is_missing} 
+              class:missing={track.isMissing} 
               class:playing={$currentTrack?.id === track.id}
               ondblclick={() => handleTrackDoubleClick(track, i)}
               role="row"
@@ -159,7 +159,7 @@
               <div class="col-artist cell">{track.artist || '—'}</div>
               <div class="col-album cell">{track.album || '—'}</div>
               <div class="col-genre cell">{track.genre || '—'}</div>
-              <div class="col-time cell">{formatDuration(track.duration_ms)}</div>
+              <div class="col-time cell">{formatDuration(track.durationMs)}</div>
               <div class="col-actions cell">
                 <button 
                   class="ellipsis-btn" 

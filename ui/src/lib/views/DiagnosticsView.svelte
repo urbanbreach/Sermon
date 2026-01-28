@@ -145,7 +145,7 @@
               {/if}
             </div>
             <div>{debug?.output_format?.channels || 0} ch</div>
-            <div class="sub">WASAPI</div>
+            <div class="sub">{debug?.output_mode === 'asio' ? 'ASIO' : 'WASAPI'}</div>
           </div>
         </div>
       </div>

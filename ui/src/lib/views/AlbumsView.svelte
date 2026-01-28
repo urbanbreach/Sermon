@@ -4,6 +4,7 @@
   import type { AlbumListItem, AlbumCursor } from '../types/library';
   import { navigate } from '../state/route';
   import { setViewTitle } from '../state/viewTitle';
+  import { setAlphabetSelector, clearAlphabetSelector } from '../state/alphabetSelector';
   import { Fixtures } from '../data/fixtures';
   import { getArtworkBestForAlbum, getArtworkBytes } from '../api/artwork';
   import ArtworkPickerModal from '../components/ArtworkPickerModal.svelte';
@@ -25,6 +26,7 @@
 
   // Virtualization state
   let containerWidth = $state(0);
+  let vlistRef: VList<typeof rows[0]> | undefined = $state();
   
   // Compute columns based on container width (min 160px + 20px gap)
   // containerWidth - 32 accounts for 1rem (16px) padding on each side
@@ -40,6 +42,15 @@
     return res;
   });
 
+  let alphabetItems = $derived(albums.map(a => ({ sortKey: a.albumArtistSort })));
+
+  function handleAlphabetSelect(index: number) {
+    const rowIndex = Math.floor(index / columns);
+    if (vlistRef) {
+      vlistRef.scrollToIndex(rowIndex, { align: 'start', smooth: true });
+    }
+  }
+
   function getAlbumKey(album: AlbumListItem): string {
     return `${album.albumArtistSort}||${album.albumTitleSort}`;
   }
@@ -52,6 +63,14 @@
 
   onDestroy(() => {
     setViewTitle('');
+    clearAlphabetSelector();
+  });
+
+  // Update alphabet selector in TopBar whenever albums change
+  $effect(() => {
+    if (albums.length > 0) {
+      setAlphabetSelector(alphabetItems, handleAlphabetSelect);
+    }
   });
 
   async function loadMore() {
@@ -70,17 +89,13 @@
     }
   }
 
-  // Debounced scroll handler to prevent freezing
-  let scrollTimeout: ReturnType<typeof setTimeout> | null = null;
-  function handleScroll(e: Event) {
-    if (scrollTimeout) clearTimeout(scrollTimeout);
-    scrollTimeout = setTimeout(() => {
-      const target = e.target as HTMLElement;
-      const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
-      if (remaining < 800 && hasMore && !loading) {
-        loadMore();
-      }
-    }, 150);
+  // VList range change handler for infinite scroll
+  function handleRangeChange(startIndex: number, endIndex: number) {
+    // Load more when approaching end of list
+    const rowsRemaining = rows.length - endIndex;
+    if (rowsRemaining < 5 && hasMore && !loading) {
+      loadMore();
+    }
   }
 
   function handleAlbumClick(album: AlbumListItem) {
@@ -144,7 +159,6 @@
 
 <div 
   class="view-container" 
-  onscroll={handleScroll}
   bind:clientWidth={containerWidth}
 >
   {#if !initialLoadComplete && albums.length === 0}
@@ -161,7 +175,7 @@
     </div>
   {:else}
     <div class="list-wrapper">
-      <VList data={rows} getKey={(row) => getAlbumKey(row[0])}>
+      <VList bind:this={vlistRef} data={rows} getKey={(row) => getAlbumKey(row[0])}>
         {#snippet children(row)}
           <div class="grid-row" style="grid-template-columns: repeat({columns}, 1fr)">
             {#each row as album, i (getAlbumKey(album))}
@@ -249,18 +263,43 @@
   
   .list-wrapper {
     flex: 1;
+    padding-top: 0; /* Padding moved inside virtua scroll container */
   }
-
+  
+  /* Allow hover scale shadow to overflow the scroll container top edge.
+     Virtua generates: div[overflow:auto] > div > div > grid-rows
+     We add padding inside the scroll container and use negative margin on 
+     the first grid row to maintain scroll start position. */
+  .list-wrapper :global(> div) {
+    /* The virtua scroll container - add internal padding for hover scale expansion.
+       contain: strict creates a paint boundary that clips at the content-box edge.
+       Cards scale(1.02) which expands ~2.3px upward. 20px padding ensures no clipping. */
+    padding-top: 20px !important;
+  }
+  
+  .list-wrapper :global(> div > div),
+  .list-wrapper :global(> div > div > div) {
+    overflow: visible !important;
+  }
+  
+  /* Add top margin to first visible row for hover scale expansion.
+     The first div[position:absolute] is the first virtualized chunk.
+     Using padding on inner containers won't work due to contain: size. */
+  .list-wrapper :global(> div > div > div:first-child) {
+    margin-top: 4px !important;
+  }
+  
   .grid-row {
     display: grid;
     gap: 20px;
     margin-bottom: 20px;
     padding-right: 1rem;
+    overflow: visible;
   }
 
   .card {
     background: transparent;
-    border-radius: var(--radius-sm, 10px);
+    border-radius: var(--artwork-radius-albums, 10px);
     border: 1px solid transparent;
     box-shadow: none;
     overflow: hidden;
@@ -268,8 +307,7 @@
     flex-direction: column;
     cursor: pointer;
     position: relative;
-    will-change: transform, box-shadow;
-    transition: all var(--motion-fast) var(--ease-out);
+    transition: box-shadow var(--motion-fast) var(--ease-out);
   }
 
   .card:hover {
@@ -348,7 +386,7 @@
     align-items: center;
     justify-content: center;
     color: #555;
-    border-radius: 10px;
+    border-radius: var(--artwork-radius-albums, 10px);
     position: relative;
   }
 
@@ -356,7 +394,7 @@
     width: 100%;
     aspect-ratio: 1;
     overflow: hidden;
-    border-radius: 10px;
+    border-radius: var(--artwork-radius-albums, 10px);
     position: relative;
   }
 

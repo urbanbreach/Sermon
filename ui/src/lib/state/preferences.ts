@@ -39,19 +39,26 @@ export interface AppearanceSettings {
   'ui.theme.accent_color': string;
 }
 
-export type PreferenceCategory = 'player' | 'library' | 'internet' | 'appearance';
+export interface DevicesSettings {
+  'devices.dsd_dop_enabled': string;
+  'devices.dsd_dop_strict': string;
+}
+
+export type PreferenceCategory = 'player' | 'library' | 'internet' | 'appearance' | 'devices';
 
 export type CategorySettings = 
   | PlayerSettings 
   | LibrarySettings 
   | InternetSettings 
-  | AppearanceSettings;
+  | AppearanceSettings
+  | DevicesSettings;
 
 // Stores for each category
 export const playerSettings = writable<PlayerSettings | null>(null);
 export const librarySettings = writable<LibrarySettings | null>(null);
 export const internetSettings = writable<InternetSettings | null>(null);
 export const appearanceSettings = writable<AppearanceSettings | null>(null);
+export const devicesSettings = writable<DevicesSettings | null>(null);
 
 // Loading state
 export const preferencesLoading = writable<boolean>(false);
@@ -83,6 +90,9 @@ export async function loadCategorySettings(category: PreferenceCategory): Promis
         break;
       case 'appearance':
         appearanceSettings.set(settings as unknown as AppearanceSettings);
+        break;
+      case 'devices':
+        devicesSettings.set(settings as unknown as DevicesSettings);
         break;
     }
   } catch (e) {
@@ -128,7 +138,7 @@ export async function resetCategoryToDefaults(category: PreferenceCategory): Pro
 // Load all categories at once (for initial load)
 export async function loadAllPreferences(): Promise<void> {
   const categories: PreferenceCategory[] = [
-    'player', 'library', 'internet', 'appearance'
+    'player', 'library', 'internet', 'appearance', 'devices'
   ];
   
   await Promise.all(categories.map(cat => loadCategorySettings(cat)));

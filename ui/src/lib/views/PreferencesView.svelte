@@ -4,13 +4,14 @@
   import LibraryPrefs from '../components/preferences/LibraryPrefs.svelte';
   import InternetPrefs from '../components/preferences/InternetPrefs.svelte';
   import AppearancePrefs from '../components/preferences/AppearancePrefs.svelte';
+  import DevicesPrefs from '../components/preferences/DevicesPrefs.svelte';
   import { resetCategoryToDefaults } from '../state/preferences';
   import { loadEffectsSettings } from '../state/effects';
-  import { Settings, Volume2, Library, Globe, Palette, RotateCcw, Check, X } from '@lucide/svelte';
+  import { Settings, Volume2, Library, Globe, Palette, RotateCcw, Check, X, Disc } from '@lucide/svelte';
   
   const isMock = import.meta.env.SERMON_MOCK === '1';
   
-  type PreferenceCategory = 'player' | 'library' | 'internet' | 'appearance';
+  type PreferenceCategory = 'player' | 'library' | 'internet' | 'appearance' | 'devices';
   
   let activeCategory: PreferenceCategory = $state('player');
   let statusMessage: string = $state('');
@@ -18,6 +19,7 @@
   
   const categories: { id: PreferenceCategory; label: string; icon: typeof Settings }[] = [
     { id: 'player', label: 'Player', icon: Volume2 },
+    { id: 'devices', label: 'Devices', icon: Disc },
     { id: 'library', label: 'Library', icon: Library },
     { id: 'internet', label: 'Internet', icon: Globe },
     { id: 'appearance', label: 'Appearance', icon: Palette },
@@ -73,6 +75,8 @@
     <div class="prefs-body">
       {#if activeCategory === 'player'}
         <PlayerPrefs />
+      {:else if activeCategory === 'devices'}
+        <DevicesPrefs />
       {:else if activeCategory === 'library'}
         <LibraryPrefs />
       {:else if activeCategory === 'internet'}

@@ -3,6 +3,7 @@
   import { currentTrack, currentTrackFull, playNow } from '../state/playback';
   import { currentArtworkUrl } from '../state/artwork';
   import { currentLyrics, lyricsContext } from '../state/lyrics';
+  import { railSplitRatio } from '../state/effects';
   import { navigate } from '../state/route';
   import { Disc3, MicVocal, Maximize2, Volume2 } from '@lucide/svelte';
   import { derived } from 'svelte/store';
@@ -11,6 +12,9 @@
   import { fadeIn, pressScale } from '../utils/animations';
   import { VList } from 'virtua/svelte';
   import type { TrackRow } from '../types/library';
+  import VerticalResizeHandle from './VerticalResizeHandle.svelte';
+  
+  let railContentHeight = $state(0);
   
   function goFullscreenLyrics() {
     navigate({ name: 'lyrics-fullscreen' });
@@ -30,19 +34,48 @@
     if (!track) return '';
     const parts: string[] = [];
     
+    // DSD detection - show DSD rate instead of PCM info
+    if (track.dsdRateHz) {
+      // Map DSD rate to common names
+      const dsdRate = track.dsdRateHz;
+      let dsdName: string;
+      if (dsdRate <= 2900000) dsdName = 'DSD64';
+      else if (dsdRate <= 5700000) dsdName = 'DSD128';
+      else if (dsdRate <= 11400000) dsdName = 'DSD256';
+      else dsdName = 'DSD512';
+      
+      parts.push(dsdName);
+      
+      // Show DSD rate in MHz
+      const mhz = dsdRate / 1000000;
+      parts.push(`${mhz.toFixed(4)} MHz`);
+      
+      // Channels
+      if (track.dsdChannels) {
+        parts.push(track.dsdChannels === 2 ? 'Stereo' : track.dsdChannels === 1 ? 'Mono' : `${track.dsdChannels}ch`);
+      }
+      
+      // Duration
+      if (track.durationMs) {
+        parts.push(formatDuration(track.durationMs));
+      }
+      
+      return parts.join(', ');
+    }
+    
     // Codec
     if (track.codec) {
       parts.push(track.codec.toUpperCase());
     }
     
     // Bit depth
-    if (track.bit_depth) {
-      parts.push(`${track.bit_depth} bit`);
+    if (track.bitDepth) {
+      parts.push(`${track.bitDepth} bit`);
     }
     
     // Sample rate
-    if (track.sample_rate) {
-      const kHz = track.sample_rate / 1000;
+    if (track.sampleRate) {
+      const kHz = track.sampleRate / 1000;
       parts.push(`${kHz} kHz`);
     }
     
@@ -52,8 +85,8 @@
     }
     
     // Duration
-    if (track.duration_ms) {
-      parts.push(formatDuration(track.duration_ms));
+    if (track.durationMs) {
+      parts.push(formatDuration(track.durationMs));
     }
     
     return parts.join(', ');
@@ -61,7 +94,7 @@
 
   // Helper: Check if album has multiple discs
   function hasMultipleDiscs(tracks: TrackRow[]): boolean {
-    const discs = new Set(tracks.map(t => t.disc_no ?? 1));
+    const discs = new Set(tracks.map(t => t.discNo ?? 1));
     return discs.size > 1 || (discs.size === 1 && !discs.has(1));
   }
 
@@ -75,7 +108,7 @@
     const groups = new Map<number, TrackRow[]>();
     
     for (const track of tracks) {
-      const discNo = track.disc_no ?? 1;
+      const discNo = track.discNo ?? 1;
       if (!groups.has(discNo)) {
         groups.set(discNo, []);
       }
@@ -153,12 +186,10 @@
     </div>
     
     <!-- Content based on mode -->
-    <div class="rail-content" use:fadeIn={{ duration: 200, delay: 100 }}>
+    <div class="rail-content" bind:clientHeight={railContentHeight} use:fadeIn={{ duration: 200, delay: 100 }}>
       {#if $railMode === 'now-playing' || $railMode === 'up-next'}
         <!-- Playing Tracks Section -->
-        <div class="section playing-tracks-section">
-          <h3 class="section-header">Playing Tracks</h3>
-          
+        <div class="section playing-tracks-section" style="height: {Math.floor(railContentHeight * $railSplitRatio)}px;">
           {#if $currentTrackFull}
             <!-- Album Info Card -->
             <div class="album-info-card">
@@ -168,7 +199,7 @@
                 <div class="album-thumb-placeholder"></div>
               {/if}
               <div class="album-info">
-                <div class="album-artist">{$currentTrackFull.album_artist || $currentTrackFull.artist || '—'}</div>
+                <div class="album-artist">{$currentTrackFull.albumArtist || $currentTrackFull.artist || '—'}</div>
                 <div class="album-title">{$currentTrackFull.album || 'Unknown Album'}</div>
                 <div class="album-meta">
                   {#if $currentTrackFull.year}
@@ -207,7 +238,7 @@
                         {#if isPlaying}
                           <Volume2 size={14} class="playing-icon" />
                         {:else}
-                          {track.track_no ?? '—'}
+                          {track.trackNo ?? '—'}
                         {/if}
                       </span>
                       <span class="track-title">{track.title || '—'}</span>
@@ -230,10 +261,10 @@
           {/if}
         </div>
 
+        <VerticalResizeHandle containerHeight={railContentHeight} />
+
         <!-- Track Information Section -->
         <div class="section track-info-section">
-          <h3 class="section-header">Track Information</h3>
-          
           {#if $currentTrackFull}
             <div class="track-info-list">
               <div class="info-row">
@@ -363,14 +394,14 @@
      HEADER
      ============================================ */
   .rail-header {
-    padding: 12px 16px;
+    padding: 8px 12px;
     -webkit-app-region: no-drag;
   }
 
   .header-pills {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
   }
 
   .mode-pill {
@@ -419,17 +450,41 @@
      ============================================ */
   .rail-content {
     flex: 1;
-    overflow-y: auto;
-    padding: 0 16px 80px 16px;
+    overflow: hidden;
+    padding: 0 12px 12px 12px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 6px;
+    min-height: 0;
   }
 
   .section {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 4px;
+    min-height: 0;
+  }
+
+  .playing-tracks-section {
+    flex: none;
+    min-height: 80px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .playing-tracks-section .track-list {
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .track-info-section {
+    flex: 1;
+    min-height: 80px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
 
   .section-header {
@@ -446,27 +501,27 @@
      ============================================ */
   .album-info-card {
     display: flex;
-    gap: 12px;
+    gap: 8px;
     align-items: flex-start;
-    padding: 8px;
-    border-radius: 8px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+    padding: 6px;
+    border-radius: 6px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
     border: 1px solid var(--glass-border);
   }
 
   .album-thumb {
-    width: 56px;
-    height: 56px;
-    border-radius: 4px;
+    width: 48px;
+    height: 48px;
+    border-radius: 3px;
     object-fit: cover;
     background: #222;
     flex-shrink: 0;
   }
 
   .album-thumb-placeholder {
-    width: 56px;
-    height: 56px;
-    border-radius: 4px;
+    width: 48px;
+    height: 48px;
+    border-radius: 3px;
     background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
     flex-shrink: 0;
   }
@@ -476,11 +531,11 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 1px;
   }
 
   .album-artist {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
@@ -488,7 +543,7 @@
   }
 
   .album-title {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     color: var(--text-secondary);
     white-space: nowrap;
@@ -497,7 +552,7 @@
   }
 
   .album-meta {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-tertiary);
     display: flex;
     gap: 4px;
@@ -515,31 +570,30 @@
     display: flex;
     flex-direction: column;
     gap: 0;
-    max-height: 280px;
-    overflow-y: auto;
   }
 
   .disc-divider {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
     color: var(--text-tertiary);
-    padding: 8px 4px 4px;
+    padding: 6px 4px 3px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     border-bottom: 1px solid var(--glass-border);
-    margin-bottom: 4px;
+    margin-bottom: 3px;
   }
 
   .track-row {
     display: grid;
-    grid-template-columns: 28px 1fr auto;
-    gap: 8px;
+    grid-template-columns: 20px 1fr auto;
+    gap: 4px;
     align-items: center;
-    padding: 6px 4px;
-    border-radius: 4px;
+    padding: 2px 2px;
+    border-radius: 3px;
     cursor: default;
     transition: background var(--motion-fast) var(--ease-out);
-    font-size: 13px;
+    font-size: 12px;
+    line-height: 1.3;
   }
 
   .track-row:hover {
@@ -563,7 +617,7 @@
   .track-no {
     text-align: right;
     color: var(--text-tertiary);
-    font-size: 12px;
+    font-size: 11px;
     display: flex;
     align-items: center;
     justify-content: flex-end;
@@ -578,6 +632,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     color: var(--text-primary);
+    font-size: 12px;
   }
 
   .track-artist {
@@ -585,37 +640,34 @@
     overflow: hidden;
     text-overflow: ellipsis;
     color: var(--text-tertiary);
-    font-size: 12px;
+    font-size: 11px;
     text-align: right;
   }
 
   /* ============================================
      TRACK INFORMATION
      ============================================ */
-  .track-info-section {
-    gap: 12px;
-  }
-
   .track-info-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
   }
 
   .info-row {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--text-secondary);
+    line-height: 1.3;
   }
 
   .info-row .info-value.title {
     font-weight: 600;
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: 13px;
   }
 
   .info-row.format {
-    margin-top: 4px;
-    font-size: 11px;
+    margin-top: 2px;
+    font-size: 10px;
     color: var(--text-tertiary);
   }
 
@@ -623,21 +675,28 @@
      LARGE ARTWORK
      ============================================ */
   .large-artwork-container {
-    margin-top: 12px;
+    margin-top: 8px;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
   }
 
   .large-artwork {
     width: 100%;
-    aspect-ratio: 1;
-    border-radius: 8px;
-    object-fit: cover;
-    background: #222;
+    height: auto;
+    max-height: 100%;
+    border-radius: var(--artwork-radius-sidebar, 6px);
+    object-fit: contain;
   }
 
   .large-artwork-placeholder {
     width: 100%;
+    height: auto;
+    max-height: 100%;
     aspect-ratio: 1;
-    border-radius: 8px;
+    border-radius: var(--artwork-radius-sidebar, 6px);
     background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
   }
 

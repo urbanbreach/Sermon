@@ -36,11 +36,11 @@
   
   // Derived album info
   let albumDisplay = $derived(tracks.length > 0 ? (tracks[0].album || 'Unknown Album') : 'Loading...');
-  let artistDisplay = $derived(tracks.length > 0 ? (tracks[0].album_artist || tracks[0].artist || 'Unknown Artist') : '');
+  let artistDisplay = $derived(tracks.length > 0 ? (tracks[0].albumArtist || tracks[0].artist || 'Unknown Artist') : '');
   let artistInitial = $derived(artistDisplay ? artistDisplay[0].toUpperCase() : '?');
   let year = $derived(tracks.length > 0 ? tracks[0].year : undefined);
   let totalTracks = $derived(tracks.length);
-  let totalDuration = $derived(tracks.reduce((acc, t) => acc + (t.duration_ms || 0), 0));
+  let totalDuration = $derived(tracks.reduce((acc, t) => acc + (t.durationMs || 0), 0));
 
   let sortLabel = $derived(sortField === 'album' ? 'Track #' : sortField === 'title' ? 'Title' : 'Artist');
   let directionLabel = $derived(sortDirection === 'asc' ? 'Ascending' : 'Descending');
@@ -49,7 +49,7 @@
   let sortedTracks = $derived.by(() => {
     return [...tracks].sort((a, b) => {
       let cmp = 0;
-      if (sortField === 'album') cmp = (a.track_no || 0) - (b.track_no || 0);
+      if (sortField === 'album') cmp = (a.trackNo || 0) - (b.trackNo || 0);
       else if (sortField === 'title') cmp = (a.title || '').localeCompare(b.title || '');
       else if (sortField === 'artist') cmp = (a.artist || '').localeCompare(b.artist || '');
       return sortDirection === 'asc' ? cmp : -cmp;
@@ -160,7 +160,7 @@
   }
 
   function handlePlayAlbum() {
-    const validTracks = filteredTracks.filter(t => t.id && !t.is_missing);
+    const validTracks = filteredTracks.filter(t => t.id && !t.isMissing);
     if (validTracks.length > 0) {
       const trackIds = validTracks.map(t => t.id);
       playNowWithQueue(trackIds, 0);
@@ -168,8 +168,8 @@
   }
 
   function handleTrackDoubleClick(track: TrackRow) {
-    if (track.is_missing || !track.id) return;
-    const validTracks = filteredTracks.filter(t => t.id && !t.is_missing);
+    if (track.isMissing || !track.id) return;
+    const validTracks = filteredTracks.filter(t => t.id && !t.isMissing);
     const trackIds = validTracks.map(t => t.id);
     const startIndex = validTracks.findIndex(t => t.id === track.id);
     if (startIndex >= 0) {
@@ -179,7 +179,7 @@
 
   function handleAddAlbumToQueue() {
     filteredTracks.forEach(track => {
-      if (track.id && !track.is_missing) {
+      if (track.id && !track.isMissing) {
         addToQueue(track.id);
       }
     });
@@ -274,8 +274,8 @@
       <table>
         <tbody>
           {#each filteredTracks as track}
-            <tr class:missing={track.is_missing} ondblclick={() => handleTrackDoubleClick(track)}>
-              <td class="col-num">{track.track_no || '-'}</td>
+            <tr class:missing={track.isMissing} ondblclick={() => handleTrackDoubleClick(track)}>
+              <td class="col-num">{track.trackNo || '-'}</td>
               <td class="col-title">
                   <div class="title-cell">
                       {track.title || '—'}
@@ -284,7 +284,7 @@
                       {/if}
                   </div>
               </td>
-              <td class="col-duration">{formatDuration(track.duration_ms)}</td>
+              <td class="col-duration">{formatDuration(track.durationMs)}</td>
               <td class="col-actions">
                  <button class="row-more-btn" title="Track options" onclick={(e) => { e.stopPropagation(); }}>
                     <MoreHorizontal size={16} />
@@ -319,7 +319,7 @@
   .artwork {
     width: 280px;
     height: 280px;
-    border-radius: 12px;
+    border-radius: var(--artwork-radius-album-detail, 12px);
     box-shadow: 0 8px 24px rgba(0,0,0,0.3);
     flex-shrink: 0;
     overflow: hidden;
@@ -335,7 +335,7 @@
     width: 280px;
     height: 280px;
     background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
-    border-radius: 12px;
+    border-radius: var(--artwork-radius-album-detail, 12px);
     display: flex;
     align-items: center;
     justify-content: center;

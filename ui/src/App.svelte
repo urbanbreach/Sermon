@@ -5,7 +5,7 @@ import { onMount } from 'svelte';
   import { initPlaybackListeners } from './lib/state/playback';
   import { initArtworkStore } from './lib/state/artwork';
   import { initRailResponsive, isRailOpen } from './lib/state/rightRail';
-  import { loadEffectsSettings } from './lib/state/effects';
+  import { loadEffectsSettings, sidebarVisible } from './lib/state/effects';
 
   // Suppress benign ResizeObserver loop errors (common with virtualized lists)
   if (typeof window !== 'undefined') {
@@ -36,6 +36,7 @@ import { onMount } from 'svelte';
   import LyricsView from './lib/views/LyricsView.svelte';
 
   import RightRail from './lib/components/RightRail.svelte';
+  import ResizeHandle from './lib/components/ResizeHandle.svelte';
 
 onMount(async () => {
     initPlaybackListeners();
@@ -74,8 +75,10 @@ onMount(async () => {
     <TopBar />
     
     <div class="main-body">
-      <LeftNav />
-      <div class="divider-v"></div>
+      {#if $sidebarVisible}
+        <LeftNav />
+        <ResizeHandle side="left" minWidth={180} maxWidth={450} />
+      {/if}
       
       <main class="content-area">
         <div class="content-row">
@@ -103,7 +106,7 @@ onMount(async () => {
             {/if}
 </div>
 
-          <div class="divider-v"></div>
+          <ResizeHandle side="right" minWidth={280} maxWidth={500} />
           <RightRail />
         </div>
       </main>
@@ -155,7 +158,8 @@ onMount(async () => {
   .view-viewport {
     flex: 1;
     position: relative;
-    overflow: hidden;
+    overflow: clip;
+    overflow-clip-margin: content-box 6px; /* Buffer for hover effects that may extend beyond content */
     display: flex;
     flex-direction: column;
   }

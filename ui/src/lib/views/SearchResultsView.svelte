@@ -265,7 +265,7 @@
                 </div>
               </div>
               <div class="track-meta">
-                <span class="duration">{formatTime(track.duration_ms)}</span>
+                <span class="duration">{formatTime(track.durationMs)}</span>
                 <button class="queue-btn" onclick={(e) => handleTrackQueue(track, e)} title="Add to Queue">+</button>
               </div>
             </div>

@@ -5,6 +5,7 @@
   import type { ArtistListItem, ArtistCursor } from '../types/library';
   import { navigate } from '../state/route';
   import { setViewTitle } from '../state/viewTitle';
+  import { setAlphabetSelector, clearAlphabetSelector } from '../state/alphabetSelector';
 
   let artists: ArtistListItem[] = $state([]);
   let loading = $state(false);
@@ -12,6 +13,15 @@
   let hasMore = $state(true);
   let initialLoadComplete = $state(false);
   let scrollContainer: HTMLElement | undefined = $state();
+  let vlistRef: VList<ArtistListItem> | undefined = $state();
+
+  let alphabetItems = $derived(artists.map(a => ({ sortKey: a.artistSort })));
+
+  function handleAlphabetSelect(index: number) {
+    if (vlistRef) {
+      vlistRef.scrollToIndex(index, { align: 'start', smooth: true });
+    }
+  }
 
   onMount(async () => {
     setViewTitle('Artists');
@@ -21,6 +31,14 @@
 
   onDestroy(() => {
     setViewTitle('');
+    clearAlphabetSelector();
+  });
+
+  // Update alphabet selector in TopBar whenever artists change
+  $effect(() => {
+    if (artists.length > 0) {
+      setAlphabetSelector(alphabetItems, handleAlphabetSelect);
+    }
   });
 
   async function loadMore() {
@@ -68,9 +86,9 @@
     <div class="loading-state">Loading...</div>
   {:else if artists.length === 0}
     <div class="empty-state">No artists found</div>
-  {:else}
+{:else}
     <div class="list-wrapper">
-      <VList data={artists} itemSize={52}>
+      <VList bind:this={vlistRef} data={artists} itemSize={52}>
         {#snippet children(artist: ArtistListItem)}
           <div 
             class="item"

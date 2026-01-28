@@ -67,14 +67,14 @@
         const map = new Map<string, ArtistAlbum>();
         
         for (const track of tracks) {
-          const albumKey = `${(track.album_artist || track.artist || '').toLowerCase()}|${(track.album || '').toLowerCase()}`;
+          const albumKey = `${(track.albumArtist || track.artist || '').toLowerCase()}|${(track.album || '').toLowerCase()}`;
           
           if (!map.has(albumKey)) {
             map.set(albumKey, {
               albumTitleDisplay: track.album || 'Unknown Album',
-              albumArtistDisplay: track.album_artist || track.artist || 'Unknown Artist',
+              albumArtistDisplay: track.albumArtist || track.artist || 'Unknown Artist',
               albumTitleSort: (track.album || 'unknown album').toLowerCase(),
-              albumArtistSort: (track.album_artist || track.artist || 'unknown artist').toLowerCase(),
+              albumArtistSort: (track.albumArtist || track.artist || 'unknown artist').toLowerCase(),
               year: track.year,
               trackCount: 0,
               tracks: []

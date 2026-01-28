@@ -74,7 +74,7 @@ export function loadAlbumTracksIfNeeded(): void {
     return;
   }
 
-  const artist = (track.album_artist || track.artist || 'unknown artist').trim().toLowerCase();
+  const artist = (track.albumArtist || track.artist || 'unknown artist').trim().toLowerCase();
   const album = (track.album || 'unknown album').trim().toLowerCase();
   const newKey = `${artist}||${album}`;
 

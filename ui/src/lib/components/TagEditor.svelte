@@ -46,20 +46,20 @@
       title = track.title ?? '';
       artist = track.artist ?? '';
       album = track.album ?? '';
-      albumArtist = track.album_artist ?? '';
+      albumArtist = track.albumArtist ?? '';
       genre = track.genre ?? '';
-      trackNo = track.track_no?.toString() ?? '';
-      discNo = track.disc_no?.toString() ?? '';
+      trackNo = track.trackNo?.toString() ?? '';
+      discNo = track.discNo?.toString() ?? '';
       year = track.year?.toString() ?? '';
       
       originalValues = {
         title: track.title ?? '',
         artist: track.artist ?? '',
         album: track.album ?? '',
-        albumArtist: track.album_artist ?? '',
+        albumArtist: track.albumArtist ?? '',
         genre: track.genre ?? '',
-        trackNo: track.track_no?.toString() ?? '',
-        discNo: track.disc_no?.toString() ?? '',
+        trackNo: track.trackNo?.toString() ?? '',
+        discNo: track.discNo?.toString() ?? '',
         year: track.year?.toString() ?? '',
       };
       
