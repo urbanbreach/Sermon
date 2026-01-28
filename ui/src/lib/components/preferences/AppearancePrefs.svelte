@@ -4,10 +4,14 @@
     reduceEffects, themeBlur, themeGlow, themeBorderHighlight,
     blurPx, glowStrength, borderStrength, bgIntensity, bgNoiseOpacity, bgCrossfadeMs,
     bgStaticColor, bgDynamicLibrary, bgDynamicNowPlaying, bgDynamicAlbumDetail,
-    accentColor,
+    accentColor, sidebarVisible, waveformColor,
+    artworkRoundedSidebar, artworkRoundedAlbums, artworkRoundedAlbumDetail,
+    bottomBarWaveformSeekbar,
     setReduceEffects, setThemeBlur, setThemeGlow, setThemeBorderHighlight,
     setBgStaticColor, setBgDynamicLibrary, setBgDynamicNowPlaying, setBgDynamicAlbumDetail,
-    setAccentColor,
+    setAccentColor, setSidebarVisible, setWaveformColor,
+    setArtworkRoundedSidebar, setArtworkRoundedAlbums, setArtworkRoundedAlbumDetail,
+    setBottomBarWaveformSeekbar,
     glassMainBlur, glassEdgeBlur, glassEdgeWidth, glassMainBg, glassEdgeBg,
     glassSheenBlur, glassSheenBg, glassSheenWidth, glassEdgeGradientWidth,
     setGlassMainBlur, setGlassEdgeBlur, setGlassEdgeWidth, setGlassMainBg, setGlassEdgeBg,
@@ -68,6 +72,109 @@
 </script>
 
 <div class="category-content">
+  <div class="setting-group">
+    <h3>Layout</h3>
+    
+    <div class="setting">
+      <label>
+        <input 
+          type="checkbox" 
+          checked={$bottomBarWaveformSeekbar}
+          onchange={(e) => setBottomBarWaveformSeekbar(e.currentTarget.checked)}
+          disabled={isMock}
+        />
+        Waveform Seekbar
+      </label>
+      <span class="setting-hint">Use waveform visualization in bottom bar progress (MusicBee-style)</span>
+    </div>
+
+    {#if $bottomBarWaveformSeekbar}
+      <div class="setting color-setting" style="margin-left: 1.5rem; margin-top: -0.5rem; margin-bottom: 0.5rem;">
+        <label for="waveform-color">Waveform Color</label>
+        <div class="color-picker-row">
+          <input 
+            type="color" 
+            id="waveform-color"
+            value={$waveformColor}
+            onchange={(e) => setWaveformColor(e.currentTarget.value)}
+            disabled={isMock}
+          />
+          <span class="color-value">{$waveformColor}</span>
+        </div>
+        <span class="setting-hint">Color of the played portion in waveform seekbar</span>
+      </div>
+    {/if}
+  </div>
+
+  <div class="setting">
+    <label data-testid="appearance-toggle-reduce">
+      <input 
+        type="checkbox" 
+        checked={$reduceEffects}
+        onchange={(e) => setReduceEffects(e.currentTarget.checked)}
+        disabled={isMock}
+      />
+      Reduce Effects
+    </label>
+    <span class="setting-hint">Disables blur, glow, and animation effects for better performance</span>
+  </div>
+
+  <div class="setting">
+    <label>
+      <input 
+        type="checkbox" 
+        checked={$sidebarVisible}
+        onchange={(e) => setSidebarVisible(e.currentTarget.checked)}
+        disabled={isMock}
+      />
+      Show Sidebar
+    </label>
+    <span class="setting-hint">When hidden, navigation moves to the top bar</span>
+  </div>
+
+  <div class="setting-group">
+    <h3>Cover Art</h3>
+    
+    <div class="setting">
+      <label>
+        <input 
+          type="checkbox" 
+          checked={$artworkRoundedSidebar}
+          onchange={(e) => setArtworkRoundedSidebar(e.currentTarget.checked)}
+          disabled={isMock}
+        />
+        Rounded Corners in Sidebar
+      </label>
+      <span class="setting-hint">Apply rounded corners to the large artwork in the right sidebar</span>
+    </div>
+
+    <div class="setting">
+      <label>
+        <input 
+          type="checkbox" 
+          checked={$artworkRoundedAlbums}
+          onchange={(e) => setArtworkRoundedAlbums(e.currentTarget.checked)}
+          disabled={isMock}
+        />
+        Rounded Corners on Album Grid
+      </label>
+      <span class="setting-hint">Apply rounded corners to album covers on the Albums page</span>
+    </div>
+
+    <div class="setting">
+      <label>
+        <input 
+          type="checkbox" 
+          checked={$artworkRoundedAlbumDetail}
+          onchange={(e) => setArtworkRoundedAlbumDetail(e.currentTarget.checked)}
+          disabled={isMock}
+        />
+        Rounded Corners on Album Detail
+      </label>
+      <span class="setting-hint">Apply rounded corners to the artwork on individual album pages</span>
+    </div>
+  </div>
+
   <div class="setting">
     <label data-testid="appearance-toggle-reduce">
       <input 

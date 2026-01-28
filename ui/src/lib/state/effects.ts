@@ -24,8 +24,14 @@ const KEYS = {
   BACKGROUND_DYNAMIC_NOW_PLAYING: 'ui.background.dynamic_now_playing',
   BACKGROUND_DYNAMIC_ALBUM_DETAIL: 'ui.background.dynamic_album_detail',
   ACCENT_COLOR: 'ui.theme.accent_color',
+  WAVEFORM_SEEKBAR: 'ui.bottombar.waveform_seekbar',
+  WAVEFORM_COLOR: 'ui.bottombar.waveform_color',
   PROVIDER_ITUNES: 'artwork.provider.itunes',
   PROVIDER_DEEZER: 'artwork.provider.deezer',
+  SIDEBAR_VISIBLE: 'ui.sidebar.visible',
+  ARTWORK_ROUNDED_SIDEBAR: 'ui.artwork.rounded_sidebar',
+  ARTWORK_ROUNDED_ALBUMS: 'ui.artwork.rounded_albums',
+  ARTWORK_ROUNDED_ALBUM_DETAIL: 'ui.artwork.rounded_album_detail',
   
   // Liquid Glass keys
   GLASS_MAIN_BLUR: 'ui.theme.glass.main_blur',
@@ -61,10 +67,18 @@ export const bgDynamicAlbumDetail = writable<boolean>(true);
 
 // Accent/highlight color
 export const accentColor = writable<string>('#4aafff');
+export const bottomBarWaveformSeekbar = writable<boolean>(false);
+export const waveformColor = writable<string>('#4aafff');
 
 // Artwork provider toggles
 export const providerItunes = writable<boolean>(true);
 export const providerDeezer = writable<boolean>(true);
+
+// Layout and Artwork UI stores
+export const sidebarVisible = writable<boolean>(true);
+export const artworkRoundedSidebar = writable<boolean>(true);
+export const artworkRoundedAlbums = writable<boolean>(true);
+export const artworkRoundedAlbumDetail = writable<boolean>(true);
 
 // Liquid Glass Stores
 export const glassMainBlur = writable<number>(22);
@@ -114,7 +128,8 @@ export async function loadEffectsSettings(): Promise<void> {
     blurPxVal, glowStrengthVal, borderStrengthVal,
     bgIntensityVal, bgNoiseOpacityVal, bgCrossfadeMsVal,
     bgStaticColorVal, bgDynamicLibraryVal, bgDynamicNowPlayingVal, bgDynamicAlbumDetailVal,
-    accentColorVal,
+    accentColorVal, waveformSeekbarVal, waveformColorVal,
+    sidebarVisibleVal, roundedSidebarVal, roundedAlbumsVal, roundedAlbumDetailVal,
     glassMainBlurVal, glassEdgeBlurVal, glassEdgeWidthVal, glassMainBgVal, glassEdgeBgVal,
     glassSheenBlurVal, glassSheenBgVal, glassSheenWidthVal, glassEdgeGradientWidthVal
   ] = await Promise.all([
@@ -135,6 +150,12 @@ export async function loadEffectsSettings(): Promise<void> {
     getSetting(KEYS.BACKGROUND_DYNAMIC_NOW_PLAYING),
     getSetting(KEYS.BACKGROUND_DYNAMIC_ALBUM_DETAIL),
     getSetting(KEYS.ACCENT_COLOR),
+    getSetting(KEYS.WAVEFORM_SEEKBAR),
+    getSetting(KEYS.WAVEFORM_COLOR),
+    getSetting(KEYS.SIDEBAR_VISIBLE),
+    getSetting(KEYS.ARTWORK_ROUNDED_SIDEBAR),
+    getSetting(KEYS.ARTWORK_ROUNDED_ALBUMS),
+    getSetting(KEYS.ARTWORK_ROUNDED_ALBUM_DETAIL),
     getSetting(KEYS.GLASS_MAIN_BLUR),
     getSetting(KEYS.GLASS_EDGE_BLUR),
     getSetting(KEYS.GLASS_EDGE_WIDTH),
@@ -169,6 +190,14 @@ export async function loadEffectsSettings(): Promise<void> {
 
   // Accent color
   accentColor.set(accentColorVal || '#4aafff');
+  bottomBarWaveformSeekbar.set(parseBool(waveformSeekbarVal, false));
+  waveformColor.set(waveformColorVal || get(accentColor));
+
+  // Layout and Artwork stores
+  sidebarVisible.set(parseBool(sidebarVisibleVal, true));
+  artworkRoundedSidebar.set(parseBool(roundedSidebarVal, true));
+  artworkRoundedAlbums.set(parseBool(roundedAlbumsVal, true));
+  artworkRoundedAlbumDetail.set(parseBool(roundedAlbumDetailVal, true));
 
   // Liquid Glass stores
   glassMainBlur.set(parseNum(glassMainBlurVal, 22));
@@ -245,6 +274,36 @@ export async function setAccentColor(value: string): Promise<void> {
   accentColor.set(value);
   await setSetting(KEYS.ACCENT_COLOR, value);
   applyAppearanceToCSS();
+}
+
+export async function setBottomBarWaveformSeekbar(value: boolean): Promise<void> {
+  bottomBarWaveformSeekbar.set(value);
+  await setSetting(KEYS.WAVEFORM_SEEKBAR, value ? 'on' : 'off');
+}
+
+export async function setWaveformColor(value: string): Promise<void> {
+  waveformColor.set(value);
+  await setSetting(KEYS.WAVEFORM_COLOR, value);
+}
+
+export async function setSidebarVisible(value: boolean): Promise<void> {
+  sidebarVisible.set(value);
+  await setSetting(KEYS.SIDEBAR_VISIBLE, value ? 'on' : 'off');
+}
+
+export async function setArtworkRoundedSidebar(value: boolean): Promise<void> {
+  artworkRoundedSidebar.set(value);
+  await setSetting(KEYS.ARTWORK_ROUNDED_SIDEBAR, value ? 'on' : 'off');
+}
+
+export async function setArtworkRoundedAlbums(value: boolean): Promise<void> {
+  artworkRoundedAlbums.set(value);
+  await setSetting(KEYS.ARTWORK_ROUNDED_ALBUMS, value ? 'on' : 'off');
+}
+
+export async function setArtworkRoundedAlbumDetail(value: boolean): Promise<void> {
+  artworkRoundedAlbumDetail.set(value);
+  await setSetting(KEYS.ARTWORK_ROUNDED_ALBUM_DETAIL, value ? 'on' : 'off');
 }
 
 // Liquid Glass Setters
@@ -402,6 +461,12 @@ export function syncAppearanceToEffects(settings: Record<string, string>): void 
   bgDynamicNowPlaying.set(settings['ui.background.dynamic_now_playing'] !== 'off');
   bgDynamicAlbumDetail.set(settings['ui.background.dynamic_album_detail'] !== 'off');
   accentColor.set(settings['ui.theme.accent_color'] || '#4aafff');
+  bottomBarWaveformSeekbar.set(settings['ui.bottombar.waveform_seekbar'] === 'on');
+  waveformColor.set(settings['ui.bottombar.waveform_color'] || get(accentColor));
+  sidebarVisible.set(settings['ui.sidebar.visible'] !== 'off');
+  artworkRoundedSidebar.set(settings['ui.artwork.rounded_sidebar'] !== 'off');
+  artworkRoundedAlbums.set(settings['ui.artwork.rounded_albums'] !== 'off');
+  artworkRoundedAlbumDetail.set(settings['ui.artwork.rounded_album_detail'] !== 'off');
   
   // Liquid Glass
   glassMainBlur.set(parseNum(settings['ui.theme.glass.main_blur'], 22));
