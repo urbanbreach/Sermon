@@ -99,11 +99,40 @@
 
 <div class="bottom-bar-wrapper">
   <div class="bottom-bar" data-testid="glass-panel" style="--bar-blur: {$glassMainBlur}px; --bar-bg: {$glassMainBg};">
-    <!-- ROW 1: Progress Row -->
-    <div class="progress-row">
-      <span class="time-label current">{currentTimeDisplay}</span>
-      {#if $bottomBarWaveformSeekbar && $waveformPeaks.status === 'ready'}
-        <div class="waveform-container">
+    {#if $bottomBarWaveformSeekbar && $waveformPeaks.status === 'ready'}
+      <!-- WAVEFORM MODE: Single-row MusicBee-like layout -->
+      <div class="waveform-single-row" class:empty={isEmpty}>
+        <!-- Compact Now Playing -->
+        <div 
+          class="compact-now-playing"
+          onclick={openNowPlaying}
+          role="button"
+          tabindex="0"
+          onkeypress={handleKey}
+        >
+          {#if $currentArtworkUrl}
+            <img src={$currentArtworkUrl} alt="" class="compact-artwork" />
+          {:else}
+            <div class="compact-artwork-placeholder"></div>
+          {/if}
+          <span class="compact-title">{$currentTrack?.title || 'Nothing Playing'}</span>
+        </div>
+
+        <!-- Transport Controls (no shuffle/repeat) -->
+        <div class="waveform-transport">
+          <button class="ctrl-btn" onclick={previous} title="Previous" use:pressScale={{ scale: 0.95 }}><SkipBack size={18} fill="currentColor" /></button>
+          <button class="ctrl-btn play waveform-play" onclick={togglePlayPause} title={$playbackState === 'playing' ? 'Pause' : 'Play'} use:pressScale>
+            {#if $playbackState === 'playing'}
+              <Pause size={20} fill="currentColor" />
+            {:else}
+              <Play size={20} fill="currentColor" />
+            {/if}
+          </button>
+          <button class="ctrl-btn" onclick={next} title="Next" use:pressScale={{ scale: 0.95 }}><SkipForward size={18} fill="currentColor" /></button>
+        </div>
+
+        <!-- Waveform Seekbar (center, flexible) -->
+        <div class="waveform-center">
           <WaveformSeekbar 
             peaks={$waveformPeaks.peaksU8} 
             progress={visualProgress} 
@@ -111,7 +140,36 @@
             on:seek={(e) => seek(e.detail.ms)}
           />
         </div>
-      {:else}
+
+        <!-- Time Labels + Volume -->
+        <div class="waveform-right">
+          <span class="time-compact">{currentTimeDisplay}</span>
+          <span class="time-separator">/</span>
+          <span class="time-compact remaining">{remainingTimeDisplay}</span>
+          <div class="volume-control-compact">
+            {#if isUnity}
+              <span class="vol-label-unity">Unity</span>
+            {:else}
+              <Volume2 size={16} />
+            {/if}
+            <input 
+              type="range" 
+              min="0" 
+              max="1" 
+              step="0.01" 
+              value={isUnity ? 1.0 : $volume} 
+              disabled={isUnity}
+              aria-label="Volume"
+              oninput={(e) => setVolume(e.currentTarget.valueAsNumber)} 
+            />
+          </div>
+        </div>
+      </div>
+    {:else}
+      <!-- DEFAULT MODE: 2-row layout -->
+      <!-- ROW 1: Progress Row -->
+      <div class="progress-row">
+        <span class="time-label current">{currentTimeDisplay}</span>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div 
           class="progress-track"
@@ -125,74 +183,74 @@
             <div class="progress-thumb"></div>
           </div>
         </div>
-      {/if}
-      <span class="time-label remaining">{remainingTimeDisplay}</span>
-    </div>
-    
-    <!-- ROW 2: Controls Row -->
-    <div class="controls-row" class:empty={isEmpty}>
-      <!-- LEFT: Transport + Action Icons -->
-      <div class="left-cluster">
-        <div class="transport-controls">
-          <button class="ctrl-btn small" title="Shuffle" use:pressScale={{ scale: 0.95 }}><Shuffle size={16} /></button>
-          <button class="ctrl-btn" onclick={previous} title="Previous" use:pressScale={{ scale: 0.95 }}><SkipBack size={20} fill="currentColor" /></button>
-          <button class="ctrl-btn play" onclick={togglePlayPause} title={$playbackState === 'playing' ? 'Pause' : 'Play'} use:pressScale>
-            {#if $playbackState === 'playing'}
-              <Pause size={22} fill="currentColor" />
-            {:else}
-              <Play size={22} fill="currentColor" />
-            {/if}
-          </button>
-          <button class="ctrl-btn" onclick={next} title="Next" use:pressScale={{ scale: 0.95 }}><SkipForward size={20} fill="currentColor" /></button>
-          <button class="ctrl-btn small" title="Repeat" use:pressScale={{ scale: 0.95 }}><Repeat size={16} /></button>
-        </div>
+        <span class="time-label remaining">{remainingTimeDisplay}</span>
+      </div>
+      
+      <!-- ROW 2: Controls Row -->
+      <div class="controls-row" class:empty={isEmpty}>
+        <!-- LEFT: Transport + Action Icons -->
+        <div class="left-cluster">
+          <div class="transport-controls">
+            <button class="ctrl-btn small" title="Shuffle" use:pressScale={{ scale: 0.95 }}><Shuffle size={16} /></button>
+            <button class="ctrl-btn" onclick={previous} title="Previous" use:pressScale={{ scale: 0.95 }}><SkipBack size={20} fill="currentColor" /></button>
+            <button class="ctrl-btn play" onclick={togglePlayPause} title={$playbackState === 'playing' ? 'Pause' : 'Play'} use:pressScale>
+              {#if $playbackState === 'playing'}
+                <Pause size={22} fill="currentColor" />
+              {:else}
+                <Play size={22} fill="currentColor" />
+              {/if}
+            </button>
+            <button class="ctrl-btn" onclick={next} title="Next" use:pressScale={{ scale: 0.95 }}><SkipForward size={20} fill="currentColor" /></button>
+            <button class="ctrl-btn small" title="Repeat" use:pressScale={{ scale: 0.95 }}><Repeat size={16} /></button>
+          </div>
 
-      </div>
-      
-      <!-- CENTER: Now Playing Pill -->
-      <div 
-        class="now-playing-pill" 
-        onclick={openNowPlaying} 
-        role="button" 
-        tabindex="0" 
-        onkeypress={handleKey}
-        use:hoverScale={{ scale: 1.02 }}
-      >
-        {#if $currentArtworkUrl}
-          <img src={$currentArtworkUrl} alt="" class="pill-artwork" />
-        {:else}
-          <div class="pill-artwork-placeholder"></div>
-        {/if}
-        <div class="pill-info">
-          <span class="pill-title">{$currentTrack?.title || 'Nothing Playing'}</span>
-          <span class="pill-artist">{$currentTrack?.artist || 'Select a track'}</span>
         </div>
-      </div>
-      
-      <!-- RIGHT: Volume -->
-      <div class="right-cluster" onclick={(e) => e.stopPropagation()}>
-        <div class="volume-control">
-          {#if isUnity}
-            <span class="vol-label-unity">Unity</span>
+        
+        <!-- CENTER: Now Playing Pill -->
+        <div 
+          class="now-playing-pill" 
+          onclick={openNowPlaying} 
+          role="button" 
+          tabindex="0" 
+          onkeypress={handleKey}
+          use:hoverScale={{ scale: 1.02 }}
+        >
+          {#if $currentArtworkUrl}
+            <img src={$currentArtworkUrl} alt="" class="pill-artwork" />
           {:else}
-            <Volume2 size={18} />
+            <div class="pill-artwork-placeholder"></div>
           {/if}
-          <input 
-            type="range" 
-            min="0" 
-            max="1" 
-            step="0.01" 
-            value={isUnity ? 1.0 : $volume} 
-            disabled={isUnity}
-            aria-label="Volume"
-            aria-valuenow={isUnity ? 1 : $volume}
-            aria-valuemin={0}
-            aria-valuemax={1}
-            oninput={(e) => setVolume(e.currentTarget.valueAsNumber)} 
-          />
+          <div class="pill-info">
+            <span class="pill-title">{$currentTrack?.title || 'Nothing Playing'}</span>
+            <span class="pill-artist">{$currentTrack?.artist || 'Select a track'}</span>
+          </div>
+        </div>
+        
+        <!-- RIGHT: Volume -->
+        <div class="right-cluster" onclick={(e) => e.stopPropagation()}>
+          <div class="volume-control">
+            {#if isUnity}
+              <span class="vol-label-unity">Unity</span>
+            {:else}
+              <Volume2 size={18} />
+            {/if}
+            <input 
+              type="range" 
+              min="0" 
+              max="1" 
+              step="0.01" 
+              value={isUnity ? 1.0 : $volume} 
+              disabled={isUnity}
+              aria-label="Volume"
+              aria-valuenow={isUnity ? 1 : $volume}
+              aria-valuemin={0}
+              aria-valuemax={1}
+              oninput={(e) => setVolume(e.currentTarget.valueAsNumber)} 
+            />
+          </div>
         </div>
       </div>
-    </div>
+    {/if}
   </div>
 </div>
 
@@ -530,5 +588,138 @@
   }
   .controls-row.empty .now-playing-pill {
     opacity: 0.6;
+  }
+
+  /* ===== WAVEFORM SINGLE-ROW MODE ===== */
+  .waveform-single-row {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 16px;
+  }
+
+  .waveform-single-row.empty .waveform-transport {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  /* Compact Now Playing */
+  .compact-now-playing {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px 4px 4px;
+    background: var(--surface-1);
+    border: 1px solid var(--glass-border);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all var(--motion-fast) var(--ease-out);
+    min-width: 120px;
+    max-width: 180px;
+    flex-shrink: 0;
+  }
+  .compact-now-playing:hover {
+    background: var(--surface-hover);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .compact-artwork {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .compact-artwork-placeholder {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    flex-shrink: 0;
+  }
+
+  .compact-title {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Waveform Transport */
+  .waveform-transport {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .ctrl-btn.waveform-play {
+    width: 36px;
+    height: 36px;
+  }
+
+  /* Waveform Center (flexible) */
+  .waveform-center {
+    flex: 1;
+    min-width: 200px;
+    height: 48px;
+  }
+
+  /* Waveform Right (time + volume) */
+  .waveform-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .time-compact {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+    min-width: 32px;
+  }
+  .time-compact.remaining {
+    color: var(--text-tertiary);
+  }
+
+  .time-separator {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    opacity: 0.5;
+  }
+
+  .volume-control-compact {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-tertiary);
+    margin-left: 8px;
+  }
+
+  .volume-control-compact input[type=range] {
+    width: 80px;
+    height: 4px;
+    background: var(--surface-1);
+    border-radius: 2px;
+    appearance: none;
+    cursor: pointer;
+  }
+  .volume-control-compact input[type=range]::-webkit-slider-thumb {
+    appearance: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: var(--shadow-1);
+    border: 1px solid rgba(0, 0, 0, 0.15);
+  }
+  .volume-control-compact input[type=range]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>
