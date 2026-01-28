@@ -4,12 +4,12 @@
     reduceEffects, themeBlur, themeGlow, themeBorderHighlight,
     blurPx, glowStrength, borderStrength, bgIntensity, bgNoiseOpacity, bgCrossfadeMs,
     bgStaticColor, bgDynamicLibrary, bgDynamicNowPlaying, bgDynamicAlbumDetail,
-    accentColor, sidebarVisible, waveformColor,
+    accentColor, sidebarVisible, waveformColor, bottomBarWaveformStyle,
     artworkRoundedSidebar, artworkRoundedAlbums, artworkRoundedAlbumDetail,
     bottomBarWaveformSeekbar,
     setReduceEffects, setThemeBlur, setThemeGlow, setThemeBorderHighlight,
     setBgStaticColor, setBgDynamicLibrary, setBgDynamicNowPlaying, setBgDynamicAlbumDetail,
-    setAccentColor, setSidebarVisible, setWaveformColor,
+    setAccentColor, setSidebarVisible, setWaveformColor, setBottomBarWaveformStyle,
     setArtworkRoundedSidebar, setArtworkRoundedAlbums, setArtworkRoundedAlbumDetail,
     setBottomBarWaveformSeekbar,
     glassMainBlur, glassEdgeBlur, glassEdgeWidth, glassMainBg, glassEdgeBg,
@@ -102,6 +102,35 @@
           <span class="color-value">{$waveformColor}</span>
         </div>
         <span class="setting-hint">Color of the played portion in waveform seekbar</span>
+      </div>
+
+      <div class="setting style-setting" style="margin-left: 1.5rem; margin-top: 0.5rem; margin-bottom: 0.5rem;">
+        <span class="setting-label">Waveform Style</span>
+        <div class="radio-group">
+          <label class="radio-label">
+            <input 
+              type="radio" 
+              name="waveform-style" 
+              value="pills" 
+              checked={$bottomBarWaveformStyle === 'pills'} 
+              onchange={() => setBottomBarWaveformStyle('pills')}
+              disabled={isMock}
+            />
+            Pills
+          </label>
+          <label class="radio-label">
+            <input 
+              type="radio" 
+              name="waveform-style" 
+              value="raw" 
+              checked={$bottomBarWaveformStyle === 'raw'} 
+              onchange={() => setBottomBarWaveformStyle('raw')}
+              disabled={isMock}
+            />
+            Raw
+          </label>
+        </div>
+        <span class="setting-hint">Pills uses rounded bars; Raw uses thin vertical lines</span>
       </div>
     {/if}
 
@@ -484,7 +513,7 @@
 <style>
   .category-content { display: flex; flex-direction: column; gap: 1rem; }
   .setting { display: flex; flex-direction: column; gap: 0.5rem; }
-  .setting label { color: #ccc; }
+  .setting label, .setting-label { color: #ccc; }
   .setting-hint { font-size: 0.8rem; color: #888; }
   
   .setting-group {
@@ -544,6 +573,26 @@
     font-family: monospace;
     font-size: 0.9rem;
     color: #888;
+  }
+  
+  .radio-group {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 0.25rem;
+  }
+
+  .radio-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: #ccc;
+  }
+
+  .radio-label input[type="radio"] {
+    margin: 0;
+    accent-color: #4af;
   }
   
   input[type="checkbox"] { margin-right: 0.5rem; }

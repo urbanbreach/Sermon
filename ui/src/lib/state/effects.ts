@@ -26,6 +26,7 @@ const KEYS = {
   ACCENT_COLOR: 'ui.theme.accent_color',
   WAVEFORM_SEEKBAR: 'ui.bottombar.waveform_seekbar',
   WAVEFORM_COLOR: 'ui.bottombar.waveform_color',
+  WAVEFORM_STYLE: 'ui.bottombar.waveform_style',
   PROVIDER_ITUNES: 'artwork.provider.itunes',
   PROVIDER_DEEZER: 'artwork.provider.deezer',
   SIDEBAR_VISIBLE: 'ui.sidebar.visible',
@@ -69,6 +70,7 @@ export const bgDynamicAlbumDetail = writable<boolean>(true);
 export const accentColor = writable<string>('#4aafff');
 export const bottomBarWaveformSeekbar = writable<boolean>(false);
 export const waveformColor = writable<string>('#4aafff');
+export const bottomBarWaveformStyle = writable<'pills' | 'raw'>('pills');
 
 // Artwork provider toggles
 export const providerItunes = writable<boolean>(true);
@@ -133,7 +135,7 @@ export async function loadEffectsSettings(): Promise<void> {
     blurPxVal, glowStrengthVal, borderStrengthVal,
     bgIntensityVal, bgNoiseOpacityVal, bgCrossfadeMsVal,
     bgStaticColorVal, bgDynamicLibraryVal, bgDynamicNowPlayingVal, bgDynamicAlbumDetailVal,
-    accentColorVal, waveformSeekbarVal, waveformColorVal,
+    accentColorVal, waveformSeekbarVal, waveformColorVal, waveformStyleVal,
     sidebarVisibleVal, roundedSidebarVal, roundedAlbumsVal, roundedAlbumDetailVal,
     glassMainBlurVal, glassEdgeBlurVal, glassEdgeWidthVal, glassMainBgVal, glassEdgeBgVal,
     glassSheenBlurVal, glassSheenBgVal, glassSheenWidthVal, glassEdgeGradientWidthVal
@@ -157,6 +159,7 @@ export async function loadEffectsSettings(): Promise<void> {
     getSetting(KEYS.ACCENT_COLOR),
     getSetting(KEYS.WAVEFORM_SEEKBAR),
     getSetting(KEYS.WAVEFORM_COLOR),
+    getSetting(KEYS.WAVEFORM_STYLE),
     getSetting(KEYS.SIDEBAR_VISIBLE),
     getSetting(KEYS.ARTWORK_ROUNDED_SIDEBAR),
     getSetting(KEYS.ARTWORK_ROUNDED_ALBUMS),
@@ -197,6 +200,7 @@ export async function loadEffectsSettings(): Promise<void> {
   accentColor.set(accentColorVal || '#4aafff');
   bottomBarWaveformSeekbar.set(parseBool(waveformSeekbarVal, false));
   waveformColor.set(waveformColorVal || get(accentColor));
+  bottomBarWaveformStyle.set((waveformStyleVal as 'pills' | 'raw') || 'pills');
 
   // Layout and Artwork stores
   sidebarVisible.set(parseBool(sidebarVisibleVal, true));
@@ -289,6 +293,11 @@ export async function setBottomBarWaveformSeekbar(value: boolean): Promise<void>
 export async function setWaveformColor(value: string): Promise<void> {
   waveformColor.set(value);
   await setSetting(KEYS.WAVEFORM_COLOR, value);
+}
+
+export async function setBottomBarWaveformStyle(value: 'pills' | 'raw'): Promise<void> {
+  bottomBarWaveformStyle.set(value);
+  await setSetting(KEYS.WAVEFORM_STYLE, value);
 }
 
 export async function setSidebarVisible(value: boolean): Promise<void> {
@@ -490,6 +499,7 @@ export function syncAppearanceToEffects(settings: Record<string, string>): void 
   accentColor.set(settings['ui.theme.accent_color'] || '#4aafff');
   bottomBarWaveformSeekbar.set(settings['ui.bottombar.waveform_seekbar'] === 'on');
   waveformColor.set(settings['ui.bottombar.waveform_color'] || get(accentColor));
+  bottomBarWaveformStyle.set((settings['ui.bottombar.waveform_style'] as 'pills' | 'raw') || 'pills');
   sidebarVisible.set(settings['ui.sidebar.visible'] !== 'off');
   artworkRoundedSidebar.set(settings['ui.artwork.rounded_sidebar'] !== 'off');
   artworkRoundedAlbums.set(settings['ui.artwork.rounded_albums'] !== 'off');
