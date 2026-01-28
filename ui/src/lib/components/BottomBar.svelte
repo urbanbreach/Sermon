@@ -10,10 +10,21 @@
   import { isRailOpen } from '../state/rightRail';
   import { pressScale, hoverScale } from '../utils/animations';
   import { SkipBack, Pause, Play, SkipForward, Volume2, Shuffle, Repeat } from '@lucide/svelte';
+  import WaveformSeekbar from './WaveformSeekbar.svelte';
+  import { waveformPeaks, loadWaveformPeaks, clearWaveformPeaks } from '../state/waveform';
   
   import { 
-    glassMainBlur, glassMainBg
+    glassMainBlur, glassMainBg, bottomBarWaveformSeekbar
   } from '../state/effects';
+
+  // Load waveform when track changes
+  $effect(() => {
+    if ($currentTrack?.id && $bottomBarWaveformSeekbar) {
+      loadWaveformPeaks($currentTrack.id);
+    } else {
+      clearWaveformPeaks();
+    }
+  });
 
   let isUnity = $derived($audioDebug?.policy === 'strict' && $audioDebug?.output_mode === 'exclusive');
 
@@ -91,19 +102,30 @@
     <!-- ROW 1: Progress Row -->
     <div class="progress-row">
       <span class="time-label current">{currentTimeDisplay}</span>
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div 
-        class="progress-track"
-        bind:this={progressTrackEl}
-        onmousedown={handleTrackMouseDown}
-      >
-        <div 
-          class="progress-fill" 
-          style="width: {visualProgress * 100}%; transition: {isDragging ? 'none' : 'width 0.15s linear'}"
-        >
-          <div class="progress-thumb"></div>
+      {#if $bottomBarWaveformSeekbar && $waveformPeaks.status === 'ready'}
+        <div class="waveform-container">
+          <WaveformSeekbar 
+            peaks={$waveformPeaks.peaksU8} 
+            progress={visualProgress} 
+            durationMs={$durationMs}
+            on:seek={(e) => seek(e.detail.ms)}
+          />
         </div>
-      </div>
+      {:else}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div 
+          class="progress-track"
+          bind:this={progressTrackEl}
+          onmousedown={handleTrackMouseDown}
+        >
+          <div 
+            class="progress-fill" 
+            style="width: {visualProgress * 100}%; transition: {isDragging ? 'none' : 'width 0.15s linear'}"
+          >
+            <div class="progress-thumb"></div>
+          </div>
+        </div>
+      {/if}
       <span class="time-label remaining">{remainingTimeDisplay}</span>
     </div>
     
@@ -255,6 +277,12 @@
     cursor: pointer;
     position: relative;
     transition: height var(--motion-fast) var(--ease-out);
+  }
+
+  .waveform-container {
+    flex: 1;
+    height: 32px;
+    min-height: 32px;
   }
   
   .progress-track:hover {

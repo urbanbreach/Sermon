@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import { waveformColor } from '../../state/effects';
+  import { waveformColor } from '../state/effects';
   
   interface Props {
     peaks: Uint8Array | null;
