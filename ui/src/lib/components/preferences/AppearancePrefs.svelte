@@ -68,6 +68,40 @@
 </script>
 
 <div class="category-content">
+  <div class="setting-group">
+    <h3>Layout</h3>
+    
+    <div class="setting">
+      <label>
+        <input 
+          type="checkbox" 
+          checked={$bottomBarWaveformSeekbar}
+          onchange={(e) => setBottomBarWaveformSeekbar(e.currentTarget.checked)}
+          disabled={isMock}
+        />
+        Waveform Seekbar
+      </label>
+      <span class="setting-hint">Use waveform visualization in bottom bar progress (MusicBee-style)</span>
+    </div>
+
+    {#if $bottomBarWaveformSeekbar}
+      <div class="setting color-setting" style="margin-left: 1.5rem; margin-top: -0.5rem; margin-bottom: 0.5rem;">
+        <label for="waveform-color">Waveform Color</label>
+        <div class="color-picker-row">
+          <input 
+            type="color" 
+            id="waveform-color"
+            value={$waveformColor}
+            onchange={(e) => setWaveformColor(e.currentTarget.value)}
+            disabled={isMock}
+          />
+          <span class="color-value">{$waveformColor}</span>
+        </div>
+        <span class="setting-hint">Color of the played portion in waveform seekbar</span>
+      </div>
+    {/if}
+  </div>
+
   <div class="setting">
     <label data-testid="appearance-toggle-reduce">
       <input 

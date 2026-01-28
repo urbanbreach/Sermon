@@ -38,6 +38,20 @@ impl ArtworkCacheState {
     }
 }
 
+pub struct WaveformCacheState {
+    pub cache_dir: PathBuf,
+    pub lock: ParkingMutex<()>,
+}
+
+impl WaveformCacheState {
+    pub fn new(cache_dir: PathBuf) -> Self {
+        Self {
+            cache_dir,
+            lock: ParkingMutex::new(()),
+        }
+    }
+}
+
 pub enum PlaybackCommand {
     PlayNow {
         track_id: i64,

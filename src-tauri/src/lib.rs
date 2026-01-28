@@ -23,11 +23,11 @@ use commands::{
     cmd_playback_resume, cmd_playback_seek, cmd_playback_start, cmd_playback_stop, cmd_queue_add,
     cmd_queue_play_now, cmd_queue_set_and_play, cmd_scan_start, cmd_settings_export_diagnostics, cmd_settings_get,
     cmd_settings_get_category, cmd_settings_reset_category, cmd_settings_set,
-    cmd_settings_set_category, cmd_volume_get, cmd_volume_set,
+    cmd_settings_set_category, cmd_volume_get, cmd_volume_set, cmd_waveform_get_peaks,
 };
 use crossbeam_channel::{Receiver, select, tick, unbounded};
 use parking_lot::Mutex;
-use state::{ArtworkCacheState, AudioState, LibraryState, PlaybackCommand};
+use state::{ArtworkCacheState, AudioState, LibraryState, PlaybackCommand, WaveformCacheState};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -119,6 +119,13 @@ pub fn run() {
                 .expect("Failed to create artwork cache directory");
             info!("Artwork cache path: {:?}", artwork_cache_dir);
             app.manage(ArtworkCacheState::new(artwork_cache_dir));
+
+            // Setup waveform cache directory
+            let waveform_cache_dir = app_data_dir.join("waveform-cache");
+            fs::create_dir_all(&waveform_cache_dir)
+                .expect("Failed to create waveform cache directory");
+            info!("Waveform cache path: {:?}", waveform_cache_dir);
+            app.manage(WaveformCacheState::new(waveform_cache_dir));
 
             // Initialize database
             let conn = library::open_db(&db_path).expect("Failed to open database");
@@ -233,6 +240,7 @@ pub fn run() {
             cmd_artwork_embed_to_file,
             cmd_artwork_extract_embedded,
             cmd_artwork_find_folder,
+            cmd_waveform_get_peaks,
             cmd_settings_get,
             cmd_settings_set,
             cmd_settings_get_category,
