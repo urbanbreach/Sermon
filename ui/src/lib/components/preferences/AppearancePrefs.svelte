@@ -119,6 +119,19 @@
     </div>
   </div>
 
+  <div class="setting">
+    <label data-testid="appearance-toggle-reduce">
+      <input 
+        type="checkbox" 
+        checked={$reduceEffects}
+        onchange={(e) => setReduceEffects(e.currentTarget.checked)}
+        disabled={isMock}
+      />
+      Reduce Effects
+    </label>
+    <span class="setting-hint">Disables blur, glow, and animation effects for better performance</span>
+  </div>
+
   <div class="setting-group">
     <h3>Cover Art</h3>
     
