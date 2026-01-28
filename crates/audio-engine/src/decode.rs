@@ -150,6 +150,73 @@ impl AudioDecoder {
         }
     }
 
+    /// Decode next packet into a caller-provided buffer, avoiding allocation.
+    ///
+    /// Clears `out`, then copies decoded samples into it. Reuses internal SampleBuffer.
+    /// Returns `Ok(Some(sample_count))` on success, `Ok(None)` at EOF.
+    pub fn decode_next_into(&mut self, out: &mut Vec<f32>) -> Result<Option<usize>, DecodeError> {
+        loop {
+            let packet = match self.format_reader.next_packet() {
+                Ok(packet) => packet,
+                Err(SymphoniaError::IoError(err))
+                    if err.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
+                    return Ok(None);
+                }
+                Err(SymphoniaError::IoError(err)) => return Err(DecodeError::Io(err)),
+                Err(SymphoniaError::DecodeError(desc)) => {
+                    warn!(%desc, "Skipping malformed packet from demuxer");
+                    continue;
+                }
+                Err(SymphoniaError::ResetRequired) => {
+                    self.decoder.reset();
+                    continue;
+                }
+                Err(err) => return Err(DecodeError::DecoderError(err.to_string())),
+            };
+
+            if packet.track_id() != self.track_id {
+                continue;
+            }
+
+            let decoded = match self.decoder.decode(&packet) {
+                Ok(decoded) => decoded,
+                Err(SymphoniaError::DecodeError(desc)) => {
+                    warn!(%desc, "Skipping undecodable packet");
+                    continue;
+                }
+                Err(SymphoniaError::ResetRequired) => {
+                    self.decoder.reset();
+                    continue;
+                }
+                Err(SymphoniaError::IoError(err)) => return Err(DecodeError::Io(err)),
+                Err(err) => return Err(DecodeError::DecoderError(err.to_string())),
+            };
+
+            let spec = *decoded.spec();
+            self.sample_rate = spec.rate;
+            self.channels = spec.channels.count();
+
+            let required_frames = decoded.capacity();
+            let required_samples = required_frames * self.channels;
+
+            let buffer = match self.sample_buffer.as_mut() {
+                Some(buffer) if buffer.capacity() >= required_samples => buffer,
+                _ => {
+                    self.sample_buffer =
+                        Some(SampleBuffer::<f32>::new(required_frames as u64, spec));
+                    self.sample_buffer.as_mut().expect("just set")
+                }
+            };
+
+            buffer.copy_interleaved_ref(decoded);
+            let samples = buffer.samples();
+            out.clear();
+            out.extend_from_slice(samples);
+            return Ok(Some(samples.len()));
+        }
+    }
+
     pub fn seek(&mut self, position_ms: u64) -> Result<(), DecodeError> {
         let time = Time::from(position_ms as f64 / 1000.0);
 
