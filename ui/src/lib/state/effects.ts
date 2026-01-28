@@ -299,16 +299,19 @@ export async function setSidebarVisible(value: boolean): Promise<void> {
 export async function setArtworkRoundedSidebar(value: boolean): Promise<void> {
   artworkRoundedSidebar.set(value);
   await setSetting(KEYS.ARTWORK_ROUNDED_SIDEBAR, value ? 'on' : 'off');
+  applyAppearanceToCSS();
 }
 
 export async function setArtworkRoundedAlbums(value: boolean): Promise<void> {
   artworkRoundedAlbums.set(value);
   await setSetting(KEYS.ARTWORK_ROUNDED_ALBUMS, value ? 'on' : 'off');
+  applyAppearanceToCSS();
 }
 
 export async function setArtworkRoundedAlbumDetail(value: boolean): Promise<void> {
   artworkRoundedAlbumDetail.set(value);
   await setSetting(KEYS.ARTWORK_ROUNDED_ALBUM_DETAIL, value ? 'on' : 'off');
+  applyAppearanceToCSS();
 }
 
 // Layout dimension setters
@@ -450,6 +453,12 @@ export function applyAppearanceToCSS(): void {
     root.style.setProperty('--theme-accent-g', String(rgb.g));
     root.style.setProperty('--theme-accent-b', String(rgb.b));
   }
+  
+  // Artwork radius CSS variables
+  // When rounded is enabled, use the default radius; when disabled, use 0
+  root.style.setProperty('--artwork-radius-sidebar', get(artworkRoundedSidebar) ? '6px' : '0');
+  root.style.setProperty('--artwork-radius-albums', get(artworkRoundedAlbums) ? '10px' : '0');
+  root.style.setProperty('--artwork-radius-album-detail', get(artworkRoundedAlbumDetail) ? '12px' : '0');
 }
 
 // Helper to convert hex to RGB
