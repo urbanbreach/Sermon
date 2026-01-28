@@ -1684,13 +1684,21 @@ fn handle_playback_command(
 
             emit_audio_debug(app, engine, playback, current_device_info.as_ref());
         }
-        PlaybackCommand::OpenAsioControlPanel => {
+        PlaybackCommand::OpenAsioControlPanel { driver_name } => {
+            // First try to use the active ASIO output if available
             if let Some(ref output) = playback.output {
                 if let Err(e) = output.open_asio_control_panel() {
-                    warn!("Failed to open ASIO control panel: {:?}", e);
+                    warn!("Failed to open ASIO control panel via active output: {:?}", e);
+                    // Fall through to direct method
+                } else {
+                    return; // Success via active output
                 }
-            } else {
-                warn!("Cannot open ASIO control panel: no output device active");
+            }
+            
+            // No active ASIO output or it failed - use direct method
+            info!(driver = %driver_name, "Opening ASIO control panel directly (no active output)");
+            if let Err(e) = audio_engine::open_asio_control_panel_direct(&driver_name) {
+                warn!("Failed to open ASIO control panel directly: {}", e);
             }
         }
     }

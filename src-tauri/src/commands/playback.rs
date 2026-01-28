@@ -154,11 +154,11 @@ pub fn cmd_list_asio_drivers() -> Vec<AsioDriverInfo> {
 #[cfg(windows)]
 pub fn cmd_open_asio_control_panel(
     audio_state: State<'_, AudioState>,
-    _driver_name: String,
+    driver_name: String,
 ) -> Result<(), String> {
     audio_state
         .command_tx
-        .send(PlaybackCommand::OpenAsioControlPanel)
+        .send(PlaybackCommand::OpenAsioControlPanel { driver_name })
         .map_err(|e| e.to_string())?;
     Ok(())
 }

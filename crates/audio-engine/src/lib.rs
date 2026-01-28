@@ -36,3 +36,6 @@ pub use crate::dsd_decode::{
     BIT_REVERSE_TABLE,
 };
 pub use crate::resample::{Resampler, ResamplerQuality};
+
+#[cfg(windows)]
+pub use crate::asio_device::open_asio_control_panel_direct;

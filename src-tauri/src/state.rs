@@ -84,5 +84,7 @@ pub enum PlaybackCommand {
         timing: String,
         asio_driver: Option<String>,
     },
-    OpenAsioControlPanel,
+    OpenAsioControlPanel {
+        driver_name: String,
+    },
 }
