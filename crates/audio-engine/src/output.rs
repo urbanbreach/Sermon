@@ -1103,6 +1103,7 @@ pub trait AudioOutput {
         volume: f32,
     ) -> Result<usize, OutputError>;
     fn write_raw_dop(&mut self, dop_samples: &[u32]) -> Result<usize, OutputError>;
+    fn available_dop_space(&mut self) -> usize;
 }
 
 impl AudioOutput for WasapiOutput {
@@ -1148,6 +1149,10 @@ impl AudioOutput for WasapiOutput {
 
     fn write_raw_dop(&mut self, dop_samples: &[u32]) -> Result<usize, OutputError> {
         self.write_raw_dop(dop_samples)
+    }
+
+    fn available_dop_space(&mut self) -> usize {
+        usize::MAX
     }
 }
 
@@ -1256,6 +1261,10 @@ impl AudioOutput for NullSinkOutput {
         let frames = dop_samples.len() / self.channels as usize;
         Ok(frames)
     }
+
+    fn available_dop_space(&mut self) -> usize {
+        usize::MAX
+    }
 }
 
 pub enum OutputBackend {
@@ -1358,6 +1367,39 @@ impl AudioOutput for OutputBackend {
             #[cfg(windows)]
             OutputBackend::Asio(o) => o.write_raw_dop(dop_samples),
         }
+    }
+
+    fn available_dop_space(&mut self) -> usize {
+        match self {
+            OutputBackend::Wasapi(o) => o.available_dop_space(),
+            OutputBackend::NullSink(o) => o.available_dop_space(),
+            #[cfg(windows)]
+            OutputBackend::Asio(o) => o.available_dop_space(),
+        }
+    }
+}
+
+impl OutputBackend {
+    pub fn clear_ring_buffer(&self) {
+        match self {
+            OutputBackend::Wasapi(_) => {}
+            OutputBackend::NullSink(_) => {}
+            #[cfg(windows)]
+            OutputBackend::Asio(o) => o.clear_ring_buffer(),
+        }
+    }
+
+    #[cfg(windows)]
+    pub fn open_asio_control_panel(&self) -> Result<(), OutputError> {
+        match self {
+            OutputBackend::Asio(o) => o.open_control_panel(),
+            _ => Err(OutputError::Asio("Not an ASIO backend".to_string())),
+        }
+    }
+
+    #[cfg(not(windows))]
+    pub fn open_asio_control_panel(&self) -> Result<(), OutputError> {
+        Err(OutputError::Asio("ASIO not available".to_string()))
     }
 }
 

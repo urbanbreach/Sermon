@@ -194,6 +194,8 @@ fn process_file(
         bit_depth: metadata.bit_depth.map(|v| v as i32),
         channels: metadata.channels.map(|v| v as i32),
         duration_ms: metadata.duration_ms.map(|v| v as i64),
+        dsd_rate_hz: metadata.dsd_rate_hz.map(|v| v as i32),
+        dsd_channels: metadata.dsd_channels.map(|v| v as i32),
         is_missing: false,
         missing_since_ms: None,
     };
@@ -261,6 +263,8 @@ fn collect_eligible_files(
             ".opus".into(),
             ".aiff".into(),
             ".aif".into(),
+            ".dsf".into(),
+            ".dff".into(),
         ]
     } else {
         options

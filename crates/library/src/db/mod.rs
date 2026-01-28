@@ -5,7 +5,7 @@ use crate::models::{
     AlbumCursor, AlbumListItem, ArtistCursor, ArtistListItem, LibraryFolder, LibraryStats,
     OffsetCursor, Page, SearchHit, SearchSuggestResponse, TrackRow,
 };
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 use std::path::Path;
 
 pub fn open_db(path: &Path) -> Result<Connection, LibraryError> {

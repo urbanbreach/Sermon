@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { TrackRow, LibraryFolder, SortBy, SortDirection, SearchSuggestResponse, AlbumListItem, AlbumCursor, Page, ArtistListItem, ArtistCursor, AlbumTrackCursor, OffsetCursor, LibraryStats, UpdateTrackTagsRequest, RawTagsResult } from '../types/library';
+import type { TrackRow, LibraryFolder, SortBy, SortDirection, SearchSuggestResponse, AlbumListItem, AlbumCursor, Page, ArtistListItem, ArtistCursor, AlbumTrackCursor, OffsetCursor, LibraryStats, UpdateTrackTagsRequest, RawTagsResult, FolderOptions } from '../types/library';
 import { Fixtures } from '../data/fixtures';
 
 export async function addFolder(path: string): Promise<LibraryFolder> {
@@ -153,4 +153,24 @@ export async function updateTrackTags(request: UpdateTrackTagsRequest): Promise<
  */
 export async function getRawTags(trackId: number): Promise<RawTagsResult> {
   return invoke('cmd_library_get_raw_tags', { trackId });
+}
+
+// ============================================================================
+// Folder Management API
+// ============================================================================
+
+export async function removeFolder(folderId: number): Promise<void> {
+  return invoke('cmd_library_remove_folder', { folderId });
+}
+
+export async function updateFolderEnabled(folderId: number, enabled: boolean): Promise<void> {
+  return invoke('cmd_library_update_folder_enabled', { folderId, enabled });
+}
+
+export async function updateFolderOptions(folderId: number, options: Partial<FolderOptions>): Promise<void> {
+  return invoke('cmd_library_update_folder_options', { folderId, options });
+}
+
+export async function getFolderTrackCount(folderId: number): Promise<number> {
+  return invoke('cmd_library_get_folder_track_count', { folderId });
 }

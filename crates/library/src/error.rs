@@ -8,4 +8,6 @@ pub enum LibraryError {
     Io(#[from] std::io::Error),
     #[error("Not found: {0}")]
     NotFound(String),
+    #[error("{0}")]
+    Other(String),
 }

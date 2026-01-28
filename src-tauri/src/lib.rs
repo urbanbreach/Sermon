@@ -3,29 +3,33 @@ mod state;
 
 use audio_engine::decode::AudioDecoder;
 use audio_engine::device::{get_default_device, get_device_by_id};
+use audio_engine::gapless_decoder::{AudioFormat, GaplessDecoder, TransitionType};
 use audio_engine::output::{
-    AudioOutput, AudioRingBuffer, OutputBackend, WasapiOutput, convert_channels_interleaved_f32,
+    convert_channels_interleaved_f32, AudioOutput, AudioRingBuffer, OutputBackend, WasapiOutput,
 };
 use audio_engine::{PlaybackState, TrackInfo};
 use commands::{
-    AudioDebugEvent, AudioFormatData, DeviceChangedEvent, NowPlayingEvent, PlaybackErrorEvent,
-    PlaybackPositionEvent, PlaybackStateEvent, QueueChangedEvent, QueueItemData, TrackEventData,
     cmd_artwork_embed_to_file, cmd_artwork_extract_embedded, cmd_artwork_find_folder,
     cmd_artwork_get_best_for_album, cmd_artwork_get_best_for_track, cmd_artwork_get_bytes,
     cmd_artwork_search_candidates, cmd_artwork_select_candidate_for_album, cmd_library_add_folder,
-    cmd_library_get_raw_tags, cmd_library_get_stats, cmd_library_get_track_by_id, cmd_library_list_album_tracks_page,
-    cmd_library_list_albums_page, cmd_library_list_artist_tracks_page,
-    cmd_library_list_artists_page, cmd_library_list_folders, cmd_library_list_tracks,
-    cmd_library_list_tracks_page, cmd_library_remove_folder, cmd_library_update_folder_enabled, cmd_library_update_folder_options,
-    cmd_library_get_folder_track_count, cmd_list_asio_drivers, cmd_open_asio_control_panel,
-    cmd_output_get_settings, cmd_output_list_devices, cmd_output_set_device,
-    cmd_output_set_settings, cmd_playback_next, cmd_playback_pause, cmd_playback_previous,
-    cmd_playback_resume, cmd_playback_seek, cmd_playback_start, cmd_playback_stop, cmd_queue_add,
-    cmd_queue_play_now, cmd_queue_set_and_play, cmd_scan_start, cmd_settings_export_diagnostics, cmd_settings_get,
-    cmd_settings_get_category, cmd_settings_reset_category, cmd_settings_set,
-    cmd_settings_set_category, cmd_volume_get, cmd_volume_set, cmd_waveform_get_peaks,
+    cmd_library_get_folder_track_count, cmd_library_get_raw_tags, cmd_library_get_stats,
+    cmd_library_get_track_by_id, cmd_library_list_album_tracks_page, cmd_library_list_albums_page,
+    cmd_library_list_artist_tracks_page, cmd_library_list_artists_page, cmd_library_list_folders,
+    cmd_library_list_tracks, cmd_library_list_tracks_page, cmd_library_remove_folder,
+    cmd_library_search_albums_page, cmd_library_search_artists_page, cmd_library_search_suggest,
+    cmd_library_search_tracks_page, cmd_library_update_folder_enabled,
+    cmd_library_update_folder_options, cmd_library_update_track_tags, cmd_list_asio_drivers,
+    cmd_open_asio_control_panel, cmd_output_get_settings, cmd_output_list_devices,
+    cmd_output_set_device, cmd_output_set_settings, cmd_playback_next, cmd_playback_pause,
+    cmd_playback_previous, cmd_playback_resume, cmd_playback_seek, cmd_playback_start,
+    cmd_playback_stop, cmd_queue_add, cmd_queue_play_now, cmd_queue_set_and_play, cmd_scan_start,
+    cmd_settings_export_diagnostics, cmd_settings_get, cmd_settings_get_category,
+    cmd_settings_reset_category, cmd_settings_set, cmd_settings_set_category, cmd_volume_get,
+    cmd_volume_set, cmd_waveform_get_peaks, AudioDebugEvent, AudioFormatData, DeviceChangedEvent,
+    NowPlayingEvent, PlaybackErrorEvent, PlaybackPositionEvent, PlaybackStateEvent,
+    QueueChangedEvent, QueueItemData, TrackEventData,
 };
-use crossbeam_channel::{Receiver, select, tick, unbounded};
+use crossbeam_channel::{select, tick, unbounded, Receiver};
 use parking_lot::Mutex;
 use state::{ArtworkCacheState, AudioState, LibraryState, PlaybackCommand, WaveformCacheState};
 use std::fs;
@@ -33,9 +37,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{Emitter, Listener, Manager};
-use tracing::{Level, debug, error, info, warn};
+use tracing::{debug, error, info, warn, Level};
 use tracing_subscriber::{
-    Layer, filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt,
+    filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt, Layer,
 };
 
 pub fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
@@ -142,7 +146,7 @@ pub fn run() {
             std::thread::spawn(move || {
                 // Small delay to let the app fully initialize
                 std::thread::sleep(std::time::Duration::from_millis(500));
-                
+
                 // Check if scan_on_startup is enabled (default: true if setting missing)
                 let scan_enabled = library::open_db(&db_path_clone)
                     .ok()
@@ -150,12 +154,12 @@ pub fn run() {
                     .flatten()
                     .map(|v| v == "on")
                     .unwrap_or(true); // Default: scan if setting missing
-                
+
                 if !scan_enabled {
                     info!("Startup scan disabled by user preference");
                     return;
                 }
-                
+
                 match library::quick_scan(&db_path_clone) {
                     Ok(summary) => {
                         info!(
@@ -167,7 +171,7 @@ pub fn run() {
                             summary.files_restored,
                             summary.elapsed_ms
                         );
-                        
+
                         // Emit event if any changes were made
                         if summary.files_added > 0 || summary.files_marked_missing > 0 || summary.files_restored > 0 {
                             let _ = app_handle.emit("evt_quick_scan_complete", &summary);
@@ -255,6 +259,8 @@ pub fn run() {
 /// Audio playback state held by the audio thread
 struct AudioPlayback {
     decoder: Option<AudioDecoder>,
+    gapless_decoder: Option<GaplessDecoder>,
+    preload_in_progress: bool,
     output: Option<OutputBackend>,
     ring_buffer: Option<AudioRingBuffer>,
     device_id: String, // "default" or specific device ID
@@ -278,6 +284,9 @@ struct AudioPlayback {
     dop_packer: Option<audio_engine::DopPacker>,
     // ASIO state
     asio_driver: Option<String>,
+    // Resampler for ASIO sample rate mismatch
+    resampler: Option<audio_engine::Resampler>,
+    source_sample_rate: u32,
 }
 
 struct FadeState {
@@ -296,6 +305,8 @@ impl AudioPlayback {
     fn new() -> Self {
         Self {
             decoder: None,
+            gapless_decoder: None,
+            preload_in_progress: false,
             output: None,
             ring_buffer: None,
             device_id: "default".to_string(),
@@ -317,6 +328,8 @@ impl AudioPlayback {
             dsd_decoder: None,
             dop_packer: None,
             asio_driver: None,
+            resampler: None,
+            source_sample_rate: 0,
         }
     }
 
@@ -403,7 +416,29 @@ impl AudioPlayback {
             "Opening audio output"
         );
 
-        if self.output_mode == "exclusive" {
+        if self.output_mode == "asio" {
+            // ASIO mode - use AsioOutput
+            use audio_engine::asio::AsioOutput;
+
+            if let Some(ref driver_name) = self.asio_driver {
+                info!(driver = %driver_name, "Opening ASIO output");
+                match AsioOutput::new(driver_name, sample_rate, channels) {
+                    Ok(output) => {
+                        self.output_sample_rate = output.sample_rate();
+                        self.output_channels = output.channels();
+                        self.output = Some(OutputBackend::Asio(output));
+                        self.conversion = None;
+                        info!(driver = %driver_name, "ASIO output opened successfully");
+                    }
+                    Err(e) => {
+                        warn!("ASIO output failed: {:?}", e);
+                        return Err(format!("asio_error: {:?}", e));
+                    }
+                }
+            } else {
+                return Err("asio_no_driver: No ASIO driver selected".to_string());
+            }
+        } else if self.output_mode == "exclusive" {
             // audio_engine::device functions imported locally where needed
             use audio_engine::device::{get_default_device, get_device_by_id};
             use audio_engine::output::WasapiOutput;
@@ -476,14 +511,8 @@ impl AudioPlayback {
         Ok(())
     }
 
-    fn open_output_for_dop_format(
-        &mut self,
-        dsd_rate: u32,
-        channels: u16,
-    ) -> Result<(), String> {
-        use audio_engine::device::{get_default_device, get_device_by_id};
+    fn open_output_for_dop_format(&mut self, dsd_rate: u32, channels: u16) -> Result<(), String> {
         use audio_engine::dop::dop_sample_rate;
-        use audio_engine::output::WasapiOutput;
 
         let dop_rate = dop_sample_rate(dsd_rate);
 
@@ -497,69 +526,178 @@ impl AudioPlayback {
             dsd_rate = dsd_rate,
             dop_rate = dop_rate,
             channels = channels,
-            "Opening DoP output (exclusive 24-bit)"
+            output_mode = %self.output_mode,
+            "Opening DoP output"
         );
 
-        let device = if self.device_id == "default" {
-            get_default_device().map_err(|e| e.to_string())?
-        } else {
-            get_device_by_id(&self.device_id).map_err(|e| e.to_string())?
-        };
+        if self.output_mode == "asio" {
+            use audio_engine::asio::AsioOutput;
 
-        match WasapiOutput::open_device_exclusive_with_format(
-            &device,
-            dop_rate,
-            channels,
-            24,
-            &self.timing_mode,
-        ) {
-            Ok(output) => {
-                self.output_sample_rate = output.sample_rate();
-                self.output_channels = output.channels();
-                self.output = Some(OutputBackend::Wasapi(output));
-                self.conversion = None;
-                info!("Opened DoP exclusive output successfully");
-                Ok(())
+            if let Some(ref driver_name) = self.asio_driver {
+                match AsioOutput::new(driver_name, dop_rate, channels) {
+                    Ok(output) => {
+                        self.output_sample_rate = output.sample_rate();
+                        self.output_channels = output.channels();
+                        self.output = Some(OutputBackend::Asio(output));
+                        self.conversion = None;
+                        info!(driver = %driver_name, "Opened DoP ASIO output successfully");
+                        Ok(())
+                    }
+                    Err(e) => {
+                        warn!("DoP ASIO output failed: {:?}", e);
+                        Err(format!("dop_asio_error: {:?}", e))
+                    }
+                }
+            } else {
+                Err("dop_asio_no_driver: No ASIO driver selected".to_string())
             }
-            Err(e) => {
-                warn!("DoP exclusive mode failed: {}", e);
-                if self.dsd_dop_strict {
-                    Err(format!("dop_unsupported_format: {}", e))
-                } else {
-                    Err(format!("dop_conversion_unavailable: DSD->PCM conversion not implemented"))
+        } else {
+            use audio_engine::device::{get_default_device, get_device_by_id};
+            use audio_engine::output::WasapiOutput;
+
+            let device = if self.device_id == "default" {
+                get_default_device().map_err(|e| e.to_string())?
+            } else {
+                get_device_by_id(&self.device_id).map_err(|e| e.to_string())?
+            };
+
+            match WasapiOutput::open_device_exclusive_with_format(
+                &device,
+                dop_rate,
+                channels,
+                24,
+                &self.timing_mode,
+            ) {
+                Ok(output) => {
+                    self.output_sample_rate = output.sample_rate();
+                    self.output_channels = output.channels();
+                    self.output = Some(OutputBackend::Wasapi(output));
+                    self.conversion = None;
+                    info!("Opened DoP exclusive output successfully");
+                    Ok(())
+                }
+                Err(e) => {
+                    warn!("DoP exclusive mode failed: {}", e);
+                    if self.dsd_dop_strict {
+                        Err(format!("dop_unsupported_format: {}", e))
+                    } else {
+                        Err(format!(
+                            "dop_conversion_unavailable: DSD->PCM conversion not implemented"
+                        ))
+                    }
                 }
             }
         }
     }
 
-    fn start_playback(&mut self, track: &TrackInfo) -> Result<(), String> {
+    fn start_playback(&mut self, track: &TrackInfo, db_path: &PathBuf) -> Result<(), String> {
         let track_path = Path::new(&track.path);
 
         if track.is_dsd() {
             return self.start_dsd_playback(track);
         }
 
-        let decoder = AudioDecoder::open(track_path).map_err(|e| e.to_string())?;
+        // Reset all format-specific state (critical for DSD→PCM transitions)
+        self.reset_playback_state();
 
-        // Get decoder format
-        let sample_rate = decoder.sample_rate();
-        let channels = decoder.channels() as u16;
-        let bit_depth = decoder.bit_depth().map(|b| b as u16);
+        // Clear ASIO ring buffer to prevent stale audio pops
+        if let Some(ref output) = self.output {
+            output.clear_ring_buffer();
+        }
 
-        info!(
-            path = %track_path.display(),
-            sample_rate = sample_rate,
-            channels = channels,
-            bit_depth = ?bit_depth,
-            "Starting playback"
-        );
+        // Check if memory loading is enabled (default: on)
+        let load_to_memory = library::open_db(db_path)
+            .ok()
+            .and_then(|conn| {
+                library::get_setting(&conn, "player.load_to_memory")
+                    .ok()
+                    .flatten()
+            })
+            .map(|v| v != "off")
+            .unwrap_or(true); // Default to true if setting not found
 
-        self.decoder = Some(decoder);
+        let sample_rate: u32;
+        let channels: u16;
+        let bit_depth = track.bit_depth;
+
+        if load_to_memory {
+            // Use GaplessDecoder (loads to RAM)
+            let gapless_decoder = GaplessDecoder::new(track_path).map_err(|e| e.to_string())?;
+            let format = gapless_decoder.format();
+            sample_rate = format.sample_rate;
+            channels = format.channels;
+
+            info!(
+                path = %track_path.display(),
+                sample_rate = sample_rate,
+                channels = channels,
+                bit_depth = ?bit_depth,
+                mode = "gapless (RAM)",
+                "Starting playback"
+            );
+
+            self.gapless_decoder = Some(gapless_decoder);
+            self.preload_in_progress = false;
+            self.decoder = None;
+        } else {
+            // Use legacy AudioDecoder (streaming from disk)
+            let decoder = AudioDecoder::open(track_path).map_err(|e| e.to_string())?;
+            sample_rate = decoder.sample_rate();
+            channels = decoder.channels() as u16;
+
+            info!(
+                path = %track_path.display(),
+                sample_rate = sample_rate,
+                channels = channels,
+                bit_depth = ?bit_depth,
+                mode = "streaming (disk)",
+                "Starting playback"
+            );
+
+            self.decoder = Some(decoder);
+            self.gapless_decoder = None;
+            self.preload_in_progress = false;
+        }
+
         self.end_of_track = false;
+        self.source_sample_rate = sample_rate;
+        self.resampler = None;
 
-        // Open output with decoder's format (use track metadata bit_depth if decoder doesn't know)
-        let output_bit_depth = bit_depth.or(track.bit_depth).unwrap_or(16);
+        let output_bit_depth = bit_depth.unwrap_or(16);
         self.open_output_for_format(sample_rate, channels, output_bit_depth, track.bit_depth)?;
+
+        // For ASIO: Start the output FIRST to load the driver and get actual sample rate
+        // The driver may run at a fixed rate different from what we requested
+        if let Some(ref mut output) = self.output {
+            output.start().map_err(|e| e.to_string())?;
+
+            // Re-read sample rate after start - ASIO drivers may report different actual rate
+            let actual_output_rate = output.sample_rate();
+            if actual_output_rate != self.output_sample_rate {
+                info!(
+                    before = self.output_sample_rate,
+                    after = actual_output_rate,
+                    "Output sample rate updated after driver start"
+                );
+                self.output_sample_rate = actual_output_rate;
+            }
+        }
+
+        // NOW check if resampling is needed (after we know actual output rate)
+        if sample_rate != self.output_sample_rate && self.output_sample_rate > 0 {
+            info!(
+                source = sample_rate,
+                target = self.output_sample_rate,
+                "Creating resampler for sample rate conversion"
+            );
+            let resampler = audio_engine::Resampler::new(
+                sample_rate,
+                self.output_sample_rate,
+                self.output_channels as usize,
+                audio_engine::ResamplerQuality::HighQuality,
+            )?;
+            self.resampler = Some(resampler);
+        }
 
         let output_bit_depth = if let Some(o) = &self.output {
             o.bit_depth()
@@ -575,21 +713,16 @@ impl AudioPlayback {
             output_bit_depth = output_bit_depth,
             output_channels = self.output_channels,
             conversion = ?self.conversion,
+            resampling = self.resampler.is_some(),
             "Format negotiation result"
         );
 
-        // Create ring buffer sized for configured buffer duration
-        // Use output_channels because fill_ring_buffer converts to output channels before pushing
+        // Create ring buffer sized for OUTPUT rate (after resampling)
         self.ring_buffer = Some(AudioRingBuffer::new(
-            sample_rate,
+            self.output_sample_rate,
             self.output_channels as usize,
             self.buffer_size_ms,
         ));
-
-        // Start the output stream
-        if let Some(ref mut output) = self.output {
-            output.start().map_err(|e| e.to_string())?;
-        }
 
         Ok(())
     }
@@ -597,6 +730,14 @@ impl AudioPlayback {
     fn start_dsd_playback(&mut self, track: &TrackInfo) -> Result<(), String> {
         use audio_engine::output::DopRingBuffer;
         use audio_engine::{DopPacker, DsdDecoder};
+
+        // Reset all format-specific state (critical for PCM→DSD transitions)
+        self.reset_playback_state();
+
+        // Clear ASIO ring buffer to prevent stale audio pops
+        if let Some(ref output) = self.output {
+            output.clear_ring_buffer();
+        }
 
         if !self.dsd_dop_enabled {
             return Err("dop_disabled: DoP playback is disabled in settings".to_string());
@@ -627,8 +768,6 @@ impl AudioPlayback {
         self.dsd_decoder = Some(dsd_decoder);
         self.dop_packer = Some(DopPacker::new(dsd_channels as usize));
         self.is_dsd_playback = true;
-        self.decoder = None;
-        self.ring_buffer = None;
         self.end_of_track = false;
 
         if let Some(ref mut output) = self.output {
@@ -640,14 +779,55 @@ impl AudioPlayback {
 
     fn stop_playback(&mut self) {
         self.decoder = None;
+        self.gapless_decoder = None;
+        self.preload_in_progress = false;
         self.ring_buffer = None;
         self.end_of_track = false;
         self.is_dsd_playback = false;
         self.dsd_decoder = None;
         self.dop_packer = None;
         self.dop_ring_buffer = None;
+        self.resampler = None;
+        self.source_sample_rate = 0;
         if let Some(ref mut output) = self.output {
             let _ = output.stop();
+        }
+    }
+
+    fn reset_playback_state(&mut self) {
+        self.decoder = None;
+        self.gapless_decoder = None;
+        self.preload_in_progress = false;
+        self.ring_buffer = None;
+        self.resampler = None;
+        self.source_sample_rate = 0;
+        self.is_dsd_playback = false;
+        self.dsd_decoder = None;
+        self.dop_packer = None;
+        self.dop_ring_buffer = None;
+        self.end_of_track = false;
+    }
+
+    /// Cancel any preloaded next track (for skip/seek/shuffle actions).
+    fn cancel_preload(&mut self) {
+        if let Some(ref mut gd) = self.gapless_decoder {
+            gd.cancel_preload();
+        }
+        self.preload_in_progress = false;
+    }
+
+    /// Pause the output stream without clearing decoder/buffer state.
+    /// This prevents stale audio from looping in the callback.
+    fn pause_output(&mut self) {
+        if let Some(ref mut output) = self.output {
+            let _ = output.stop();
+        }
+    }
+
+    /// Resume the output stream after a pause.
+    fn resume_output(&mut self) {
+        if let Some(ref mut output) = self.output {
+            let _ = output.start();
         }
     }
 
@@ -655,19 +835,23 @@ impl AudioPlayback {
         if let Some(ref mut decoder) = self.decoder {
             decoder.seek(position_ms).map_err(|e| e.to_string())?;
         }
-        // Clear the ring buffer on seek to avoid stale audio
         if let Some(ref mut ring_buffer) = self.ring_buffer {
             ring_buffer.clear();
+        }
+        if let Some(ref mut resampler) = self.resampler {
+            resampler.reset();
         }
         self.end_of_track = false;
         Ok(())
     }
 
-    /// Fill the ring buffer with decoded samples. Returns false if track ended.
     fn fill_ring_buffer(&mut self) -> Result<bool, String> {
-        let decoder = match self.decoder.as_mut() {
+        let gapless_decoder = match self.gapless_decoder.as_mut() {
             Some(d) => d,
-            None => return Ok(false),
+            None => {
+                // Fallback to legacy decoder if gapless_decoder not set
+                return self.fill_ring_buffer_legacy();
+            }
         };
 
         let ring_buffer = match self.ring_buffer.as_mut() {
@@ -676,16 +860,12 @@ impl AudioPlayback {
         };
 
         let output_channels = self.output_channels as usize;
-
-        // Decode packets until ring buffer is reasonably full or we hit end of track
-        // Target: keep buffer at least 50% full
         let target_frames = ring_buffer.capacity_frames() / 2;
 
         while ring_buffer.available_frames() < target_frames {
-            let samples = match decoder.decode_next() {
+            let samples = match gapless_decoder.decode_next() {
                 Ok(Some(samples)) => samples,
                 Ok(None) => {
-                    // End of track
                     self.end_of_track = true;
                     return Ok(ring_buffer.available_frames() > 0);
                 }
@@ -698,7 +878,68 @@ impl AudioPlayback {
                 continue;
             }
 
-            // Channel conversion if needed
+            let input_channels = gapless_decoder.format().channels as usize;
+            let converted = if input_channels != output_channels {
+                convert_channels_interleaved_f32(&samples, input_channels, output_channels)
+            } else {
+                samples
+            };
+
+            let resampled = if let Some(ref mut resampler) = self.resampler {
+                resampler.process_interleaved(&converted)?
+            } else {
+                converted
+            };
+
+            ring_buffer.push(&resampled);
+        }
+
+        // Trigger preload when ~2 seconds from end (or immediately for short tracks)
+        if !self.preload_in_progress {
+            let samples_decoded = gapless_decoder.samples_decoded();
+            if let Some(total) = gapless_decoder.total_samples() {
+                let remaining = total.saturating_sub(samples_decoded);
+                let preload_threshold = gapless_decoder.format().sample_rate as u64 * 2;
+                if remaining < preload_threshold {
+                    self.preload_in_progress = true;
+                }
+            }
+        }
+
+        Ok(true)
+    }
+
+    fn fill_ring_buffer_legacy(&mut self) -> Result<bool, String> {
+        let decoder = match self.decoder.as_mut() {
+            Some(d) => d,
+            None => return Ok(false),
+        };
+
+        let ring_buffer = match self.ring_buffer.as_mut() {
+            Some(rb) => rb,
+            None => return Ok(false),
+        };
+
+        let output_channels = self.output_channels as usize;
+
+        let target_frames = ring_buffer.capacity_frames() / 2;
+
+        while ring_buffer.available_frames() < target_frames {
+            let samples = match decoder.decode_next() {
+                Ok(Some(samples)) => samples,
+                Ok(None) => {
+                    self.end_of_track = true;
+                    return Ok(ring_buffer.available_frames() > 0);
+                }
+                Err(e) => {
+                    return Err(format!("Decode error: {}", e));
+                }
+            };
+
+            if samples.is_empty() {
+                continue;
+            }
+
             let input_channels = decoder.channels();
             let converted = if input_channels != output_channels {
                 convert_channels_interleaved_f32(&samples, input_channels, output_channels)
@@ -706,7 +947,13 @@ impl AudioPlayback {
                 samples
             };
 
-            ring_buffer.push(&converted);
+            let resampled = if let Some(ref mut resampler) = self.resampler {
+                resampler.process_interleaved(&converted)?
+            } else {
+                converted
+            };
+
+            ring_buffer.push(&resampled);
         }
 
         Ok(true)
@@ -772,7 +1019,16 @@ impl AudioPlayback {
             return Ok(true);
         }
 
-        let samples_to_write = available * self.output_channels as usize;
+        let channels = self.output_channels as usize;
+        let space_samples = output.available_dop_space();
+        let space_frames = space_samples / channels.max(1);
+
+        if space_frames == 0 {
+            return Ok(true);
+        }
+
+        let frames_to_write = available.min(space_frames);
+        let samples_to_write = frames_to_write * channels;
         let dop_samples = dop_ring_buffer.pop(samples_to_write);
 
         match output.write_raw_dop(&dop_samples) {
@@ -808,7 +1064,8 @@ impl AudioPlayback {
             return self.process_dop_audio();
         }
 
-        if self.decoder.is_none() {
+        // Check if we have any active decoder (gapless or legacy)
+        if self.decoder.is_none() && self.gapless_decoder.is_none() {
             return Ok(false);
         }
 
@@ -904,6 +1161,12 @@ fn spawn_audio_thread(
             if let Ok(Some(dop_strict)) = library::get_setting(&conn, "devices.dsd_dop_strict") {
                 playback.dsd_dop_strict = dop_strict == "on";
             }
+            // Load ASIO driver setting
+            if let Ok(Some(asio_driver)) = library::get_setting(&conn, "audio.output.asio_driver") {
+                if !asio_driver.is_empty() {
+                    playback.asio_driver = Some(asio_driver);
+                }
+            }
         }
 
         // Try to open default output at startup
@@ -962,45 +1225,92 @@ fn spawn_audio_thread(
                             continue;
                         }
 
+                        // Preload next track when approaching end
+                        if playback.preload_in_progress && !playback.gapless_decoder.as_ref().map_or(true, |d| d.has_preloaded_next()) {
+                            let next_track_path = {
+                                let engine_guard = engine.lock();
+                                if let Some(current_idx) = engine_guard.queue.current_index() {
+                                    engine_guard.queue.items().get(current_idx + 1).map(|item| item.track.path.clone())
+                                } else {
+                                    None
+                                }
+                            };
+                            if let Some(path) = next_track_path {
+                                if let Some(ref mut gd) = playback.gapless_decoder {
+                                    if let Err(e) = gd.preload_next(Path::new(&path)) {
+                                        warn!(
+                                            path = %path,
+                                            error = %e,
+                                            "Failed to preload next track - will use non-gapless transition"
+                                        );
+                                        playback.preload_in_progress = false;
+                                    }
+                                }
+                            } else {
+                                playback.preload_in_progress = false;
+                            }
+                        }
+
                         match playback.process_audio(volume) {
                             Ok(true) => {
                                 // Continue playing
                             }
                             Ok(false) => {
-                                // Track ended - advance to next
-                                info!("Track ended, advancing to next");
-                                {
-                                    let mut engine = engine.lock();
-                                    engine.next();
-                                }
+                                // Track ended - check transition type for gapless
+                                let transition_type = playback.gapless_decoder
+                                    .as_ref()
+                                    .map(|d| d.transition_type())
+                                    .unwrap_or(TransitionType::EndOfQueue);
 
-                                // Check if there's a next track
-                                let next_track = {
-                                    let engine = engine.lock();
-                                    engine.session.as_ref().map(|s| s.track.clone())
-                                };
-
-                                if let Some(track) = next_track {
-                                    if let Err(e) = playback.start_playback(&track) {
-                                        error!("Failed to start next track: {}", e);
-                                        let (code, msg) = parse_playback_error(&e);
-                                        emit_playback_error(
-                                            &app,
-                                            &code,
-                                            &msg,
-                                            Some(track.id),
-                                            false,
-                                            None,
-                                        );
-                                        engine.lock().stop();
+                                match transition_type {
+                                    TransitionType::Gapless => {
+                                        // Seamless transition already happened in decode_next()
+                                        info!("Gapless transition complete");
+                                        {
+                                            let mut engine = engine.lock();
+                                            engine.next();
+                                        }
+                                        playback.preload_in_progress = false;
+                                        emit_now_playing(&app, &engine);
+                                        emit_playback_state(&app, &engine);
+                                        emit_queue_changed(&app, &engine);
                                     }
-                                    emit_now_playing(&app, &engine);
-                                    emit_playback_state(&app, &engine);
-                                    emit_queue_changed(&app, &engine);
-                                } else {
-                                    // Queue exhausted
-                                    playback.stop_playback();
-                                    emit_playback_state(&app, &engine);
+                                    TransitionType::FormatChange => {
+                                        // Different format - need to reinit WASAPI
+                                        info!("Format change - reinitializing output");
+                                        {
+                                            let mut engine = engine.lock();
+                                            engine.next();
+                                        }
+                                        let next_track = {
+                                            let engine = engine.lock();
+                                            engine.session.as_ref().map(|s| s.track.clone())
+                                        };
+                                        if let Some(track) = next_track {
+                                            if let Err(e) = playback.start_playback(&track, &db_path) {
+                                                error!("Failed to start next track: {}", e);
+                                                let (code, msg) = parse_playback_error(&e);
+                                                emit_playback_error(
+                                                    &app,
+                                                    &code,
+                                                    &msg,
+                                                    Some(track.id),
+                                                    false,
+                                                    None,
+                                                );
+                                                engine.lock().stop();
+                                            }
+                                        }
+                                        emit_now_playing(&app, &engine);
+                                        emit_playback_state(&app, &engine);
+                                        emit_queue_changed(&app, &engine);
+                                    }
+                                    TransitionType::EndOfQueue => {
+                                        // Queue exhausted
+                                        info!("Track ended, queue exhausted");
+                                        playback.stop_playback();
+                                        emit_playback_state(&app, &engine);
+                                    }
                                 }
                             }
                             Err(e) => {
@@ -1043,6 +1353,7 @@ fn handle_playback_command(
 ) {
     match command {
         PlaybackCommand::PlayNow { track_id } => {
+            playback.cancel_preload();
             let Some(track) = resolve_track(db_path, track_id)
                 .map_err(|e| {
                     emit_playback_error(app, "db_track_lookup", &e, Some(track_id), true, None)
@@ -1059,7 +1370,7 @@ fn handle_playback_command(
             }
 
             // Start actual playback
-            if let Err(e) = playback.start_playback(&track) {
+            if let Err(e) = playback.start_playback(&track, db_path) {
                 error!("Failed to start playback: {}", e);
                 let (code, msg) = parse_playback_error(&e);
                 emit_playback_error(app, &code, &msg, Some(track_id), false, None);
@@ -1094,6 +1405,7 @@ fn handle_playback_command(
             track_ids,
             start_index,
         } => {
+            playback.cancel_preload();
             let mut tracks = Vec::new();
             for track_id in &track_ids {
                 if let Ok(track) = resolve_track(db_path, *track_id) {
@@ -1102,7 +1414,14 @@ fn handle_playback_command(
             }
 
             if tracks.is_empty() {
-                emit_playback_error(app, "no_valid_tracks", "No valid tracks to play", None, false, None);
+                emit_playback_error(
+                    app,
+                    "no_valid_tracks",
+                    "No valid tracks to play",
+                    None,
+                    false,
+                    None,
+                );
                 return;
             }
 
@@ -1114,7 +1433,7 @@ fn handle_playback_command(
                 engine.set_and_play(tracks, actual_start);
             }
 
-            if let Err(e) = playback.start_playback(&start_track) {
+            if let Err(e) = playback.start_playback(&start_track, db_path) {
                 error!("Failed to start playback: {}", e);
                 let (code, msg) = parse_playback_error(&e);
                 emit_playback_error(app, &code, &msg, Some(start_track.id), false, None);
@@ -1130,19 +1449,22 @@ fn handle_playback_command(
         }
         PlaybackCommand::Pause => {
             engine.lock().pause();
-            // Don't stop the output stream - just stop decoding
+            playback.pause_output();
             emit_playback_state(app, engine);
         }
         PlaybackCommand::Resume => {
             engine.lock().resume();
+            playback.resume_output();
             emit_playback_state(app, engine);
         }
         PlaybackCommand::Stop => {
+            playback.cancel_preload();
             engine.lock().stop();
             playback.stop_playback();
             emit_playback_state(app, engine);
         }
         PlaybackCommand::Seek { position_ms } => {
+            playback.cancel_preload();
             if let Err(e) = playback.seek(position_ms) {
                 error!("Seek failed: {}", e);
             }
@@ -1150,6 +1472,7 @@ fn handle_playback_command(
             emit_position_now(app, engine);
         }
         PlaybackCommand::Next => {
+            playback.cancel_preload();
             // Get current track before advancing
             {
                 let mut engine = engine.lock();
@@ -1167,7 +1490,7 @@ fn handle_playback_command(
             };
 
             if let Some(track) = next_track {
-                if let Err(e) = playback.start_playback(&track) {
+                if let Err(e) = playback.start_playback(&track, db_path) {
                     error!("Failed to start next track: {}", e);
                     let (code, msg) = parse_playback_error(&e);
                     emit_playback_error(app, &code, &msg, Some(track.id), false, None);
@@ -1182,6 +1505,7 @@ fn handle_playback_command(
             emit_queue_changed(app, engine);
         }
         PlaybackCommand::Previous => {
+            playback.cancel_preload();
             {
                 let mut engine = engine.lock();
                 engine.previous();
@@ -1194,7 +1518,7 @@ fn handle_playback_command(
             };
 
             if let Some(track) = track {
-                if let Err(e) = playback.start_playback(&track) {
+                if let Err(e) = playback.start_playback(&track, db_path) {
                     error!("Failed to start previous track: {}", e);
                     let (code, msg) = parse_playback_error(&e);
                     emit_playback_error(app, &code, &msg, Some(track.id), false, None);
@@ -1359,6 +1683,15 @@ fn handle_playback_command(
             }
 
             emit_audio_debug(app, engine, playback, current_device_info.as_ref());
+        }
+        PlaybackCommand::OpenAsioControlPanel => {
+            if let Some(ref output) = playback.output {
+                if let Err(e) = output.open_asio_control_panel() {
+                    warn!("Failed to open ASIO control panel: {:?}", e);
+                }
+            } else {
+                warn!("Cannot open ASIO control panel: no output device active");
+            }
         }
     }
 }
@@ -1695,7 +2028,10 @@ fn parse_playback_error(e: &str) -> (String, String) {
         return ("dop_unsupported_format".to_string(), msg.trim().to_string());
     }
     if let Some(msg) = e.strip_prefix("dop_conversion_unavailable:") {
-        return ("dop_conversion_unavailable".to_string(), msg.trim().to_string());
+        return (
+            "dop_conversion_unavailable".to_string(),
+            msg.trim().to_string(),
+        );
     }
     if let Some(msg) = e.strip_prefix("dop_dst_unsupported:") {
         return ("dop_dst_unsupported".to_string(), msg.trim().to_string());

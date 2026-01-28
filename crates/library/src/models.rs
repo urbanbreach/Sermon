@@ -40,6 +40,9 @@ pub struct TrackRow {
     pub bit_depth: Option<i32>,
     pub channels: Option<i32>,
     pub duration_ms: Option<i64>,
+    // DSD-specific
+    pub dsd_rate_hz: Option<i32>,
+    pub dsd_channels: Option<i32>,
     // Missing
     pub is_missing: bool,
     pub missing_since_ms: Option<i64>,
@@ -69,7 +72,8 @@ pub struct ScanSummary {
     pub elapsed_ms: u64,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FolderOptions {
     #[serde(default = "default_recursive")]
     pub recursive: bool,
@@ -95,6 +99,8 @@ impl Default for FolderOptions {
                 ".m4a".into(),
                 ".wav".into(),
                 ".ogg".into(),
+                ".dsf".into(),
+                ".dff".into(),
             ],
             exclude_patterns: vec![],
             follow_symlinks: false,

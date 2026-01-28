@@ -243,6 +243,7 @@ fn test_write_tags_all_fields() {
         track_no: NumberPatch::Set(7),
         disc_no: NumberPatch::Set(2),
         year: NumberPatch::Set(2023),
+        ..Default::default()
     };
     write_tags(&wav_path, &patches, &TagWriteOptions::new()).unwrap();
 
@@ -293,4 +294,37 @@ fn test_write_to_nonexistent_file_fails() {
         &TagWriteOptions::new(),
     );
     assert!(result.is_err());
+}
+
+// ============================================================================
+// DSD Metadata Tests (Milestone 08)
+// ============================================================================
+
+const DFF_BASE64: &str = include_str!("fixtures/1kHz.dff.base64");
+
+fn decode_base64_fixture(base64_data: &str) -> Vec<u8> {
+    use base64::Engine;
+    let cleaned: String = base64_data.chars().filter(|c| !c.is_whitespace()).collect();
+    base64::engine::general_purpose::STANDARD
+        .decode(&cleaned)
+        .expect("Invalid base64 fixture")
+}
+
+#[test]
+fn test_read_dff_metadata() {
+    let dir = tempdir().unwrap();
+    let dff_path = dir.path().join("test.dff");
+
+    let dff_bytes = decode_base64_fixture(DFF_BASE64);
+    std::fs::write(&dff_path, dff_bytes).unwrap();
+
+    let metadata = read_metadata(&dff_path);
+
+    assert_eq!(metadata.codec, Some("DFF".to_string()));
+    assert_eq!(metadata.container, Some("DFF".to_string()));
+    assert_eq!(metadata.dsd_rate_hz, Some(2_822_400));
+    assert_eq!(metadata.dsd_channels, Some(2));
+    assert_eq!(metadata.bit_depth, Some(1));
+    assert_eq!(metadata.channels, Some(2));
+    assert_eq!(metadata.sample_rate, Some(2_822_400));
 }

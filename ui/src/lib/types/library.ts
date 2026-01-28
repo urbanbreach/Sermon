@@ -1,29 +1,42 @@
 export interface TrackRow {
   id: number;
-  library_folder_id: number;
+  libraryFolderId: number;
   path: string;
-  path_display?: string;
+  pathDisplay?: string;
   title?: string;
   artist?: string;
   album?: string;
-  album_artist?: string;
-  track_no?: number;
-  disc_no?: number;
+  albumArtist?: string;
+  trackNo?: number;
+  discNo?: number;
   year?: number;
   genre?: string;
   codec?: string;
   container?: string;
-  sample_rate?: number;
-  bit_depth?: number;
+  sampleRate?: number;
+  bitDepth?: number;
   channels?: number;
-  duration_ms?: number;
-  is_missing: boolean;
+  durationMs?: number;
+  dsdRateHz?: number;
+  dsdChannels?: number;
+  isMissing: boolean;
 }
 
 export interface LibraryFolder {
   id: number;
   path: string;
   enabled: boolean;
+  status?: 'pending' | 'scanning' | 'ok' | 'error';
+  lastError?: string;
+  optionsJson?: string;
+}
+
+/** Folder scanning options */
+export interface FolderOptions {
+  recursive: boolean;
+  includeExtensions: string[];
+  excludePatterns: string[];
+  followSymlinks: boolean;
 }
 
 export interface ScanProgress {

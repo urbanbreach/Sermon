@@ -2,7 +2,7 @@ use crate::state::LibraryState;
 use chrono::Utc;
 use library::db::{get_setting, set_setting};
 use library::{apply_migrations, open_db};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use tauri::State;
 
@@ -21,7 +21,11 @@ const VALID_CATEGORIES: [&str; 7] = [
 fn get_category_keys(category: &str) -> Vec<&'static str> {
     match category {
         "general" => vec!["general.startup.with_windows", "general.startup.minimized"],
-        "player" => vec!["player.buffer_size_ms", "player.preload_next"],
+        "player" => vec![
+            "player.buffer_size_ms",
+            "player.preload_next",
+            "player.load_to_memory",
+        ],
         "nowplaying" => vec![
             "nowplaying.double_click",
             "nowplaying.queue_add_position",
@@ -30,7 +34,7 @@ fn get_category_keys(category: &str) -> Vec<&'static str> {
         "library" => vec!["library.scan_on_startup", "library.continuous_monitoring"],
         "tags" => vec!["tags.backup_before_write", "tags.write_behavior"],
         "internet" => vec!["internet.lastfm_enabled"],
-        "devices" => vec!["devices.dsd_dop_enabled"],
+        "devices" => vec!["devices.dsd_dop_enabled", "devices.dsd_dop_strict"],
         _ => vec![],
     }
 }
@@ -45,6 +49,7 @@ fn get_category_defaults(category: &str) -> HashMap<&'static str, &'static str> 
         "player" => HashMap::from([
             ("player.buffer_size_ms", "500"),
             ("player.preload_next", "on"),
+            ("player.load_to_memory", "on"),
         ]),
         "nowplaying" => HashMap::from([
             ("nowplaying.double_click", "play_now"),
@@ -60,7 +65,10 @@ fn get_category_defaults(category: &str) -> HashMap<&'static str, &'static str> 
             ("tags.write_behavior", "prompt"),
         ]),
         "internet" => HashMap::from([("internet.lastfm_enabled", "off")]),
-        "devices" => HashMap::from([("devices.dsd_dop_enabled", "off")]),
+        "devices" => HashMap::from([
+            ("devices.dsd_dop_enabled", "off"),
+            ("devices.dsd_dop_strict", "on"),
+        ]),
         _ => HashMap::new(),
     }
 }

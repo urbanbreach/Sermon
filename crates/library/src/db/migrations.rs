@@ -35,5 +35,13 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), LibraryError> {
         version = 5;
     }
 
+    if version < 6 {
+        info!("Applying migration 0006_dsd_metadata");
+        conn.execute_batch(include_str!("../../migrations/0006_dsd_metadata.sql"))?;
+        version = 6;
+    }
+
+    let _ = version; // suppress unused warning
+
     Ok(())
 }

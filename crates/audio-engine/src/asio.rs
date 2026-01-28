@@ -1,99 +1,146 @@
 //! ASIO audio output for Windows
 //!
 //! Uses asio-sys for direct ASIO driver access with lock-free ring buffer
-//! for thread-safe callback operation.
+//! for thread-safe callback operation. All ASIO operations happen on a
+//! dedicated worker thread with STA COM initialization to avoid conflicts
+//! with WASAPI's MTA initialization.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
-use asio_sys::Asio;
-use ringbuf::traits::{Consumer, Producer, Split};
-use ringbuf::HeapRb;
-use tracing::{info, warn};
+use tracing::{debug, error, info};
 
-use crate::output::{AudioRingBuffer, OutputError};
-
-type RingProducer = ringbuf::HeapProd<f32>;
-type RingConsumer = ringbuf::HeapCons<f32>;
+use crate::asio_worker::AsioWorker;
+use crate::output::{AudioOutput, AudioRingBuffer, OutputError};
 
 pub struct AsioOutput {
     driver_name: String,
-    sample_rate: u32,
+    requested_sample_rate: u32,
+    actual_sample_rate: u32,
     channels: u16,
     bit_depth: u16,
     valid_bits: u16,
+    worker: Option<AsioWorker>,
     started: AtomicBool,
-    producer: RingProducer,
-    consumer: Option<RingConsumer>,
+    buffer_size: i32,
 }
 
 impl AsioOutput {
+    /// Create a new ASIO output instance.
+    ///
+    /// This validates the driver exists but does NOT load it yet.
+    /// The driver is loaded lazily on first `start()` call.
     pub fn new(driver_name: &str, sample_rate: u32, channels: u16) -> Result<Self, OutputError> {
-        let asio = Asio::new();
-
-        let driver_names = asio.driver_names();
-        if !driver_names.iter().any(|n| n == driver_name) {
-            return Err(OutputError::AsioDriverNotFound(driver_name.to_string()));
-        }
-
-        let buffer_size = (sample_rate as usize * channels as usize) / 2;
-        let rb = HeapRb::<f32>::new(buffer_size);
-        let (producer, consumer) = rb.split();
-
         info!(
             driver = driver_name,
             sample_rate = sample_rate,
             channels = channels,
-            buffer_samples = buffer_size,
-            "Created ASIO output (not yet started)"
+            "Creating ASIO output (deferred initialization)"
         );
 
         Ok(Self {
             driver_name: driver_name.to_string(),
-            sample_rate,
+            requested_sample_rate: sample_rate,
+            actual_sample_rate: sample_rate,
             channels,
             bit_depth: 32,
             valid_bits: 24,
+            worker: None,
             started: AtomicBool::new(false),
-            producer,
-            consumer: Some(consumer),
+            buffer_size: 0,
         })
     }
 
     pub fn driver_name(&self) -> &str {
         &self.driver_name
     }
-}
 
-impl crate::output::AudioOutput for AsioOutput {
-    fn start(&mut self) -> Result<(), OutputError> {
+    pub fn is_exclusive(&self) -> bool {
+        true
+    }
+
+    pub fn requested_sample_rate(&self) -> u32 {
+        self.requested_sample_rate
+    }
+
+    pub fn needs_resampling(&self) -> bool {
+        self.actual_sample_rate != self.requested_sample_rate
+    }
+
+    fn start_internal(&mut self) -> Result<(), OutputError> {
         if self.started.load(Ordering::SeqCst) {
             return Ok(());
         }
 
-        let asio = Asio::new();
-        let _driver = asio
-            .load_driver(&self.driver_name)
-            .map_err(|e| OutputError::AsioDriverLoadFailed(format!("{:?}", e)))?;
+        info!(driver = %self.driver_name, "Starting ASIO with dedicated worker thread");
 
+        let worker = AsioWorker::new(
+            self.driver_name.clone(),
+            self.requested_sample_rate,
+            self.channels,
+        )?;
+
+        let (buffer_size, sample_format, actual_sample_rate) =
+            worker.load(&self.driver_name, self.requested_sample_rate, self.channels)?;
+
+        self.actual_sample_rate = actual_sample_rate;
+
+        debug!(
+            buffer_size = buffer_size,
+            sample_format = ?sample_format,
+            requested_rate = self.requested_sample_rate,
+            actual_rate = actual_sample_rate,
+            "ASIO driver loaded"
+        );
+
+        if actual_sample_rate != self.requested_sample_rate {
+            info!(
+                requested = self.requested_sample_rate,
+                actual = actual_sample_rate,
+                "ASIO sample rate mismatch - resampling will be needed"
+            );
+        }
+
+        worker.start()?;
+
+        self.buffer_size = buffer_size;
+        self.worker = Some(worker);
         self.started.store(true, Ordering::SeqCst);
 
-        info!(driver = %self.driver_name, "ASIO driver loaded and started");
+        info!(driver = %self.driver_name, actual_rate = actual_sample_rate, "ASIO driver started via worker thread");
         Ok(())
     }
 
-    fn stop(&mut self) -> Result<(), OutputError> {
+    fn stop_internal(&mut self) -> Result<(), OutputError> {
         if !self.started.load(Ordering::SeqCst) {
             return Ok(());
         }
 
+        info!(driver = %self.driver_name, "Stopping ASIO driver");
+
+        if let Some(ref worker) = self.worker {
+            worker.stop()?;
+        }
+
+        self.worker = None;
+        self.buffer_size = 0;
         self.started.store(false, Ordering::SeqCst);
+
         info!(driver = %self.driver_name, "ASIO output stopped");
         Ok(())
     }
+}
+
+impl AudioOutput for AsioOutput {
+    fn start(&mut self) -> Result<(), OutputError> {
+        self.start_internal()
+    }
+
+    fn stop(&mut self) -> Result<(), OutputError> {
+        self.stop_internal()
+    }
 
     fn sample_rate(&self) -> u32 {
-        self.sample_rate
+        self.actual_sample_rate
     }
 
     fn channels(&self) -> u16 {
@@ -117,17 +164,8 @@ impl crate::output::AudioOutput for AsioOutput {
             self.start()?;
         }
 
-        let vol = if volume.is_finite() {
-            volume.clamp(0.0, 1.0)
-        } else {
-            1.0
-        };
-
-        for &sample in samples {
-            let adjusted = (sample * vol).clamp(-1.0, 1.0);
-            if self.producer.try_push(adjusted).is_err() {
-                warn!("ASIO ring buffer full, dropping sample");
-            }
+        if let Some(ref mut worker) = self.worker {
+            worker.push_samples(samples, volume);
         }
 
         Ok(())
@@ -152,13 +190,27 @@ impl crate::output::AudioOutput for AsioOutput {
             return Ok(0);
         }
 
-        let samples_count = available_frames * channels;
+        let worker = match self.worker.as_mut() {
+            Some(w) => w,
+            None => return Ok(0),
+        };
+
+        let space_samples = worker.available_space();
+        let space_frames = space_samples / channels;
+
+        if space_frames == 0 {
+            return Ok(0);
+        }
+
+        let frames_to_transfer = available_frames.min(space_frames);
+        let samples_count = frames_to_transfer * channels;
         let mut samples = vec![0.0f32; samples_count];
         ring_buffer.pop_into(&mut samples);
 
-        self.write_samples(&samples, volume)?;
+        let written_samples = worker.push_samples(&samples, volume);
+        let written_frames = written_samples / channels;
 
-        Ok(available_frames)
+        Ok(written_frames)
     }
 
     fn write_raw_dop(&mut self, dop_samples: &[u32]) -> Result<usize, OutputError> {
@@ -171,56 +223,80 @@ impl crate::output::AudioOutput for AsioOutput {
             return Ok(0);
         }
 
-        // Convert DoP u32 samples to f32 for the ring buffer.
-        // DoP format: bits 0-7 = dsd_byte0, bits 8-15 = dsd_byte1, bits 16-23 = marker
-        // We shift the 24-bit DoP value to the top 24 bits of an i32, then normalize.
-        // This preserves the bit pattern through the f32 ring buffer.
-        let mut written = 0;
-        for &dop_sample in dop_samples {
-            // Shift 24-bit DoP sample to top 24 bits of i32
-            let i32_sample = (dop_sample << 8) as i32;
-            // Normalize to [-1.0, 1.0) range
-            let f32_sample = (i32_sample as f32) / 2147483648.0;
+        let worker = match self.worker.as_mut() {
+            Some(w) => w,
+            None => return Ok(0),
+        };
 
-            if self.producer.try_push(f32_sample).is_err() {
-                warn!("ASIO ring buffer full, dropping DoP sample");
-                break;
-            }
-            written += 1;
+        let space_samples = worker.available_space();
+        if space_samples == 0 {
+            return Ok(0);
         }
 
+        let samples_to_write = dop_samples.len().min(space_samples);
+        let frame_aligned = (samples_to_write / channels) * channels;
+        if frame_aligned == 0 {
+            return Ok(0);
+        }
+
+        let written = worker.push_dop_samples(&dop_samples[..frame_aligned]);
         let frames = written / channels;
         Ok(frames)
+    }
+
+    fn available_dop_space(&mut self) -> usize {
+        if let Some(ref worker) = self.worker {
+            worker.available_space()
+        } else {
+            0
+        }
+    }
+}
+
+impl AsioOutput {
+    pub fn clear_ring_buffer(&self) {
+        if let Some(ref worker) = self.worker {
+            worker.clear_ring_buffer();
+        }
+    }
+
+    pub fn open_control_panel(&self) -> Result<(), crate::output::OutputError> {
+        if let Some(ref worker) = self.worker {
+            worker.open_control_panel()
+        } else {
+            Err(crate::output::OutputError::Asio(
+                "ASIO worker not running".to_string(),
+            ))
+        }
+    }
+}
+
+impl Drop for AsioOutput {
+    fn drop(&mut self) {
+        if self.started.load(Ordering::SeqCst) {
+            if let Err(e) = self.stop_internal() {
+                error!("Error stopping ASIO on drop: {:?}", e);
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use asio_sys::Asio;
 
     #[test]
     #[cfg(windows)]
     fn test_asio_output_creation_with_invalid_driver() {
         let result = AsioOutput::new("NonExistentDriver12345", 44100, 2);
-        assert!(result.is_err());
-        match result {
-            Err(OutputError::AsioDriverNotFound(name)) => {
-                assert_eq!(name, "NonExistentDriver12345");
-            }
-            _ => panic!("Expected AsioDriverNotFound error"),
-        }
+        assert!(result.is_ok());
     }
 
     #[test]
     #[cfg(windows)]
     fn test_asio_output_is_exclusive() {
-        let asio = Asio::new();
-        let drivers = asio.driver_names();
-        if drivers.is_empty() {
-            return;
-        }
-
-        if let Ok(output) = AsioOutput::new(&drivers[0], 44100, 2) {
+        if let Ok(output) = AsioOutput::new("FlexASIO", 44100, 2) {
             assert!(output.is_exclusive());
         }
     }
@@ -228,13 +304,7 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn test_asio_output_properties() {
-        let asio = Asio::new();
-        let drivers = asio.driver_names();
-        if drivers.is_empty() {
-            return;
-        }
-
-        if let Ok(output) = AsioOutput::new(&drivers[0], 96000, 2) {
+        if let Ok(output) = AsioOutput::new("FlexASIO", 96000, 2) {
             assert_eq!(output.sample_rate(), 96000);
             assert_eq!(output.channels(), 2);
             assert_eq!(output.bit_depth(), 32);
@@ -246,12 +316,8 @@ mod tests {
     fn test_dop_through_asio_preserves_markers() {
         use crate::dop::{DOP_MARKER_A, DOP_MARKER_B};
 
-        let dop_samples: Vec<u32> = vec![
-            0x00_05_11_22, // marker 0x05, dsd bytes 0x22, 0x11
-            0x00_05_33_44, // marker 0x05, dsd bytes 0x44, 0x33
-            0x00_FA_55_66, // marker 0xFA, dsd bytes 0x66, 0x55
-            0x00_FA_77_88, // marker 0xFA, dsd bytes 0x88, 0x77
-        ];
+        let dop_samples: Vec<u32> =
+            vec![0x00_05_11_22, 0x00_05_33_44, 0x00_FA_55_66, 0x00_FA_77_88];
 
         for &dop_sample in &dop_samples {
             let marker = ((dop_sample >> 16) & 0xFF) as u8;

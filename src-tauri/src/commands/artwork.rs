@@ -1,4 +1,4 @@
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use library::{apply_migrations, open_db};
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
@@ -603,7 +603,7 @@ pub async fn cmd_artwork_embed_to_file(
     library_state: State<'_, crate::state::LibraryState>,
     artwork_state: State<'_, ArtworkCacheState>,
 ) -> Result<EmbedArtworkResponse, String> {
-    use tags::{PicturePatch, TagPatches, TagWriteOptions, write_tags};
+    use tags::{write_tags, PicturePatch, TagPatches, TagWriteOptions};
 
     // Get track path from DB
     let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;

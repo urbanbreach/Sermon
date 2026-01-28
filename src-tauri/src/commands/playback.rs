@@ -152,27 +152,14 @@ pub fn cmd_list_asio_drivers() -> Vec<AsioDriverInfo> {
 
 #[tauri::command]
 #[cfg(windows)]
-pub fn cmd_open_asio_control_panel(driver_name: String) -> Result<(), String> {
-    use asio_sys::Asio;
-
-    let asio = Asio::new();
-
-    // Load the driver - this initializes it
-    let driver = asio
-        .load_driver(&driver_name)
-        .map_err(|e| format!("Failed to load ASIO driver '{}': {:?}", driver_name, e))?;
-
-    // Note: ASIOControlPanel() is not exposed in asio-sys bindings.
-    // For now, loading the driver gives access to driver settings through
-    // the driver's own initialization dialog (some drivers show this automatically).
-    // Full control panel access requires patching asio-sys to expose ASIOControlPanel().
-
-    // Keep driver loaded briefly to allow panel interaction
-    std::thread::sleep(std::time::Duration::from_millis(100));
-
-    // Driver will be unloaded when it goes out of scope
-    drop(driver);
-
+pub fn cmd_open_asio_control_panel(
+    audio_state: State<'_, AudioState>,
+    _driver_name: String,
+) -> Result<(), String> {
+    audio_state
+        .command_tx
+        .send(PlaybackCommand::OpenAsioControlPanel)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -451,6 +438,7 @@ pub fn cmd_volume_set(audio_state: State<'_, AudioState>, volume: f32) -> Result
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AudioOutputSettings {
     pub mode: String,   // "exclusive" | "shared" | "asio"
     pub policy: String, // "strict" | "compatibility"

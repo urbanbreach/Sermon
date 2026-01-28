@@ -192,6 +192,8 @@ mod tests {
             channels: None,
             codec: None,
             container: None,
+            dsd_rate_hz: None,
+            dsd_channels: None,
         }
     }
 

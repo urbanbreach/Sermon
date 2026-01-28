@@ -4,6 +4,8 @@ use lofty::tag::Accessor;
 use std::path::Path;
 use tracing::warn;
 
+use crate::dsd::{read_dff_metadata, read_dsf_metadata};
+
 /// Metadata extracted from an audio file
 #[derive(Debug, Clone, Default)]
 pub struct AudioMetadata {
@@ -23,6 +25,9 @@ pub struct AudioMetadata {
     pub bit_depth: Option<u8>,
     pub channels: Option<u8>,
     pub duration_ms: Option<u64>,
+    // DSD-specific
+    pub dsd_rate_hz: Option<u32>,
+    pub dsd_channels: Option<u8>,
 }
 
 /// A single raw tag item for display
@@ -59,6 +64,23 @@ pub struct ArtworkPicture {
 /// Read metadata from an audio file
 /// Returns partial metadata on parse errors (non-fatal)
 pub fn read_metadata(path: &Path) -> AudioMetadata {
+    if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+        match ext.to_lowercase().as_str() {
+            "dsf" => {
+                return read_dsf_metadata(path).unwrap_or_else(|e| {
+                    warn!("Failed to read DSF metadata from {:?}: {}", path, e);
+                    AudioMetadata::default()
+                });
+            }
+            "dff" => {
+                return read_dff_metadata(path).unwrap_or_else(|e| {
+                    warn!("Failed to read DFF metadata from {:?}: {}", path, e);
+                    AudioMetadata::default()
+                });
+            }
+            _ => {}
+        }
+    }
     match read_metadata_result(path) {
         Ok(meta) => meta,
         Err(e) => {
@@ -131,6 +153,8 @@ fn read_metadata_inner(path: &Path) -> Result<AudioMetadata, lofty::error::Lofty
         bit_depth,
         channels,
         duration_ms,
+        dsd_rate_hz: None,
+        dsd_channels: None,
     })
 }
 

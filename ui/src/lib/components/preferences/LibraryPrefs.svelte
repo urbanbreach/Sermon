@@ -1,86 +1,471 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { folders, addFolder, loadFolders } from '../../state/library';
+  import { open } from '@tauri-apps/plugin-dialog';
+  import { FolderPlus, RefreshCw, HardDrive } from '@lucide/svelte';
+  import { 
+    folders, addFolder, loadFolders, removeFolder, toggleFolderEnabled,
+    scanStatus, scanProgress, startScan
+  } from '../../state/library';
   import { librarySettings, loadCategorySettings, saveCategorySetting, parseBool } from '../../state/preferences';
+  import { getLibraryStats } from '../../api/library';
+  import type { LibraryStats } from '../../types/library';
+  import FolderListItem from './FolderListItem.svelte';
 
   const isMock = import.meta.env.SERMON_MOCK === '1';
+  
+  let selectedFolderId = $state<number | null>(null);
+  let libraryStats = $state<LibraryStats | null>(null);
+  let showRemoveConfirm = $state(false);
+  let folderToRemove = $state<number | null>(null);
 
   onMount(async () => {
     if (!isMock) {
       await Promise.all([loadFolders(), loadCategorySettings('library')]);
+      refreshStats();
     }
   });
 
-  async function handleAddFolder() {
-    // This assumes there's a dialog trigger or text input.
-    // Since addFolder takes a path, and we don't have a file picker in UI exposed here easily (usually requires tauri dialog),
-    // For now we might just log or show a "Not implemented fully" if we need a dialog.
-    // BUT the task says "Add Folder button (from library.ts: addFolder)".
-    // Usually we would invoke a file dialog first.
-    // Let's assume for this task we implement the button but maybe it just calls addFolder with a dummy path or we need the dialog.
-    // The prompt says "Add Folder button (from library.ts: addFolder)".
-    // Looking at library.ts, `addFolder` takes a `path: string`.
-    // I should probably use the `open` dialog from tauri-plugin-dialog if available, but I don't see it imported in library.ts.
-    // Wait, `addFolder` in `library.ts` calls `api.addFolder`.
-    // Let's check `api/library.ts`?
-    // Actually, usually the UI calls the dialog, then passes the result to `addFolder`.
-    // Since I cannot implement the dialog right now without adding deps or checking if they exist,
-    // I will just make the button call `addFolder` which might fail if no path.
-    // OR, I can just leave it as a button that does nothing if I can't open a dialog.
-    // Re-reading: "Add Folder button (from library.ts: addFolder)"
-    // I'll import `open` from `@tauri-apps/plugin-dialog` if I can, but I don't know if it's installed.
-    // Given the constraints, I will add the button and maybe a comment or a simple prompt.
-    // Actually, I'll just put the button there. If the user clicks it, nothing happens for now unless I can pick a file.
-    // Let's use `window.prompt` for now as a fallback if we don't have the dialog plugin, just to satisfy the "wiring".
-    
-    // Better: check if we can import the dialog. The prompt didn't say "implement file picker".
-    // I will implementing a button that invokes a method.
-    // NOTE: In a real app we'd use `open` from `@tauri-apps/plugin-dialog`.
-    // For now I'll just placeholder the action or use a simple prompt.
-    const path = prompt("Enter folder path:");
-    if (path) {
-      await addFolder(path);
+  async function refreshStats() {
+    try {
+      libraryStats = await getLibraryStats();
+    } catch (e) {
+      console.error('Failed to load library stats:', e);
     }
+  }
+
+  async function handleAddFolder() {
+    if (isMock) return;
+    
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: 'Select Music Folder'
+      });
+      
+      if (selected && typeof selected === 'string') {
+        await addFolder(selected);
+        await refreshStats();
+      }
+    } catch (e) {
+      console.error('Failed to add folder:', e);
+    }
+  }
+
+  async function handleRemoveFolder(folderId: number) {
+    folderToRemove = folderId;
+    showRemoveConfirm = true;
+  }
+
+  async function confirmRemoveFolder() {
+    if (folderToRemove === null) return;
+    
+    try {
+      await removeFolder(folderToRemove);
+      if (selectedFolderId === folderToRemove) {
+        selectedFolderId = null;
+      }
+      await refreshStats();
+    } catch (e) {
+      console.error('Failed to remove folder:', e);
+    } finally {
+      showRemoveConfirm = false;
+      folderToRemove = null;
+    }
+  }
+
+  async function handleToggleEnabled(folderId: number, enabled: boolean) {
+    try {
+      await toggleFolderEnabled(folderId, enabled);
+    } catch (e) {
+      console.error('Failed to toggle folder:', e);
+    }
+  }
+
+  async function handleScanLibrary() {
+    try {
+      await startScan();
+    } catch (e) {
+      console.error('Failed to start scan:', e);
+    }
+  }
+
+  function formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function formatDate(ms: number | undefined): string {
+    if (!ms) return 'Never';
+    return new Date(ms).toLocaleString();
   }
 </script>
 
 <div class="category-content">
-  <div class="section-header">
-    <h3>Library Folders</h3>
-    <button class="btn btn-sm" onclick={handleAddFolder} disabled={isMock}>+ Add Folder</button>
+  <div class="setting-group">
+    <div class="section-header">
+      <h3>Library Folders</h3>
+      <button class="btn btn-primary" onclick={handleAddFolder} disabled={isMock}>
+        <FolderPlus size={14} />
+        Add Folder
+      </button>
+    </div>
+
+    <div class="folder-list">
+      {#each $folders as folder (folder.id)}
+        <FolderListItem 
+          {folder}
+          selected={selectedFolderId === folder.id}
+          disabled={isMock}
+          onSelect={() => selectedFolderId = folder.id}
+          onRemove={() => handleRemoveFolder(folder.id)}
+          onToggleEnabled={(enabled) => handleToggleEnabled(folder.id, enabled)}
+        />
+      {:else}
+        <div class="empty-state">
+          <HardDrive size={32} />
+          <p>No folders added</p>
+          <span>Click "Add Folder" to start building your library</span>
+        </div>
+      {/each}
+    </div>
   </div>
 
-  <div class="folder-list">
-    {#each $folders as folder}
-      <div class="folder-item">
-        <span class="folder-path" title={folder.path}>{folder.path}</span>
+  <div class="setting-group">
+    <h3>Scanning</h3>
+    
+    <div class="scan-controls">
+      <button 
+        class="btn btn-secondary" 
+        onclick={handleScanLibrary} 
+        disabled={isMock || $scanStatus === 'scanning' || $folders.length === 0}
+      >
+        <RefreshCw size={14} class={$scanStatus === 'scanning' ? 'spinning' : ''} />
+        {$scanStatus === 'scanning' ? 'Scanning...' : 'Scan Library Now'}
+      </button>
+      
+      {#if $scanStatus === 'scanning'}
+        <div class="scan-progress">
+          <div class="progress-bar">
+            <div 
+              class="progress-fill" 
+              style="width: {$scanProgress.total > 0 ? ($scanProgress.scanned / $scanProgress.total * 100) : 0}%"
+            ></div>
+          </div>
+          <span class="progress-text">{$scanProgress.scanned} / {$scanProgress.total}</span>
+        </div>
+      {/if}
+    </div>
+
+    {#if $librarySettings}
+      <div class="setting">
+        <label>
+          <input 
+            type="checkbox" 
+            checked={parseBool($librarySettings['library.scan_on_startup'])} 
+            onchange={(e) => saveCategorySetting('library', 'library.scan_on_startup', e.currentTarget.checked ? 'on' : 'off')} 
+            disabled={isMock} 
+          />
+          Scan library on startup
+        </label>
+        <span class="setting-hint">Automatically check for new and removed files when the app starts</span>
       </div>
-    {:else}
-      <div class="empty-state">No folders added</div>
-    {/each}
+    {/if}
   </div>
 
-  {#if $librarySettings}
-    <div class="setting">
-      <label>
-        <input type="checkbox" checked={parseBool($librarySettings['library.scan_on_startup'])} onchange={(e) => saveCategorySetting('library', 'library.scan_on_startup', e.currentTarget.checked ? 'on' : 'off')} disabled={isMock} />
-        Scan library on startup
-      </label>
+  {#if libraryStats}
+    <div class="setting-group">
+      <h3>Library Statistics</h3>
+      <div class="stats-grid">
+        <div class="stat-item">
+          <span class="stat-value">{libraryStats.trackCount.toLocaleString()}</span>
+          <span class="stat-label">Tracks</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">{libraryStats.albumCount.toLocaleString()}</span>
+          <span class="stat-label">Albums</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">{libraryStats.artistCount.toLocaleString()}</span>
+          <span class="stat-label">Artists</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">{formatBytes(libraryStats.dbSizeBytes)}</span>
+          <span class="stat-label">Database Size</span>
+        </div>
+      </div>
+      <div class="last-scan">
+        Last scan: {formatDate(libraryStats.lastScanCompletedMs)}
+      </div>
     </div>
   {/if}
 </div>
 
+{#if showRemoveConfirm}
+  <div class="modal-overlay" onclick={() => showRemoveConfirm = false}>
+    <div class="modal-content" onclick={(e) => e.stopPropagation()}>
+      <h4>Remove Folder?</h4>
+      <p>This will remove the folder from your library and delete all associated track data.</p>
+      <p class="modal-warning">This action cannot be undone.</p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick={() => showRemoveConfirm = false}>Cancel</button>
+        <button class="btn btn-danger" onclick={confirmRemoveFolder}>Remove</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
-  .category-content { display: flex; flex-direction: column; gap: 1.5rem; }
-  .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
-  h3 { margin: 0; font-size: 1rem; color: #fff; }
-  .folder-list { background: rgba(0,0,0,0.2); border: 1px solid var(--glass-border); border-radius: 4px; padding: 0.5rem; min-height: 100px; display: flex; flex-direction: column; gap: 0.5rem; }
-  .folder-item { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: rgba(255,255,255,0.05); border-radius: 4px; font-size: 0.9rem; }
-  .folder-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; color: #ccc; }
-  .empty-state { padding: 2rem; text-align: center; color: #666; font-style: italic; }
-  .setting { display: flex; flex-direction: column; gap: 0.5rem; }
-  .setting label { display: flex; align-items: center; gap: 0.5rem; color: #888; }
-  .coming-soon { font-size: 0.75rem; color: #666; font-style: italic; }
-  .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.85rem; background: var(--glass-highlight, #333); color: white; border: 1px solid #555; border-radius: 3px; cursor: pointer; }
-  .btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+  .category-content { 
+    display: flex; 
+    flex-direction: column; 
+    gap: 1.5rem; 
+  }
+  
+  .setting-group {
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    padding: 1rem;
+  }
+  
+  .setting-group h3 {
+    margin: 0 0 1rem 0;
+    font-size: 1rem;
+    color: #aaa;
+    border-bottom: 1px solid var(--glass-border);
+    padding-bottom: 0.5rem;
+  }
+  
+  .section-header { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--glass-border);
+    padding-bottom: 0.5rem;
+  }
+  
+  .section-header h3 {
+    margin: 0;
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+  
+  .folder-list { 
+    display: flex; 
+    flex-direction: column; 
+    gap: 0.5rem; 
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  
+  .empty-state { 
+    padding: 2rem; 
+    text-align: center; 
+    color: #666;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .empty-state p {
+    margin: 0;
+    font-size: 1rem;
+    color: #888;
+  }
+  
+  .empty-state span {
+    font-size: 0.85rem;
+  }
+  
+  .setting { 
+    display: flex; 
+    flex-direction: column; 
+    gap: 0.25rem; 
+  }
+  
+  .setting label { 
+    display: flex; 
+    align-items: center; 
+    gap: 0.5rem; 
+    color: #ccc;
+    cursor: pointer;
+  }
+  
+  .setting-hint {
+    font-size: 0.8rem;
+    color: #666;
+    margin-left: 1.5rem;
+  }
+  
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1px solid transparent;
+  }
+  
+  .btn-primary {
+    background: var(--accent-color, #4af);
+    color: #000;
+    border-color: var(--accent-color, #4af);
+  }
+  
+  .btn-primary:hover {
+    filter: brightness(1.1);
+  }
+  
+  .btn-secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ccc;
+    border-color: var(--glass-border);
+  }
+  
+  .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
+  
+  .btn-danger {
+    background: rgba(255, 80, 80, 0.8);
+    color: #fff;
+    border-color: rgba(255, 80, 80, 0.8);
+  }
+  
+  .btn-danger:hover {
+    background: rgba(255, 80, 80, 1);
+  }
+  
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
+  .scan-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+  
+  .scan-progress {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  
+  .progress-bar {
+    flex: 1;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  
+  .progress-fill {
+    height: 100%;
+    background: var(--accent-color, #4af);
+    transition: width 0.3s ease;
+  }
+  
+  .progress-text {
+    font-size: 0.8rem;
+    color: #888;
+    min-width: 80px;
+    text-align: right;
+  }
+  
+  :global(.spinning) {
+    animation: spin 1s linear infinite;
+  }
+  
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  
+  .stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+  }
+  
+  .stat-value {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--accent-color, #4af);
+  }
+  
+  .stat-label {
+    font-size: 0.8rem;
+    color: #888;
+    margin-top: 0.25rem;
+  }
+  
+  .last-scan {
+    font-size: 0.85rem;
+    color: #666;
+    text-align: center;
+  }
+  
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  
+  .modal-content {
+    background: #1a1a1a;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    max-width: 400px;
+    width: 90%;
+  }
+  
+  .modal-content h4 {
+    margin: 0 0 1rem 0;
+    color: #fff;
+  }
+  
+  .modal-content p {
+    margin: 0 0 0.5rem 0;
+    color: #aaa;
+    font-size: 0.9rem;
+  }
+  
+  .modal-warning {
+    color: #f66 !important;
+    font-weight: 500;
+  }
+  
+  .modal-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    margin-top: 1.5rem;
+  }
 </style>

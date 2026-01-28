@@ -24,6 +24,17 @@ pub struct TrackInfo {
     pub channels: Option<u16>,
     pub codec: Option<String>,
     pub container: Option<String>,
+    /// DSD sample rate in Hz (e.g., 2_822_400 for DSD64). None for PCM tracks.
+    pub dsd_rate_hz: Option<u32>,
+    /// DSD channel count. None for PCM tracks.
+    pub dsd_channels: Option<u16>,
+}
+
+impl TrackInfo {
+    /// Returns true if this is a DSD track (DSF/DFF format).
+    pub fn is_dsd(&self) -> bool {
+        self.dsd_rate_hz.is_some() && self.dsd_rate_hz.unwrap() > 0
+    }
 }
 
 #[derive(Debug, Clone)]

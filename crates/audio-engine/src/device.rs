@@ -1,5 +1,5 @@
 use thiserror::Error;
-use wasapi::{Device, DeviceEnumerator, Direction, initialize_mta};
+use wasapi::{initialize_mta, Device, DeviceEnumerator, Direction};
 
 #[derive(Debug, Error)]
 pub enum DeviceError {

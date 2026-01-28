@@ -8,8 +8,6 @@
   
   let restartRequired = $state(false);
   let originalBufferSize: string | null = $state(null);
-  let isOpeningPanel = $state(false);
-  
   onMount(async () => {
     if (!isMock) {
       await Promise.all([loadDevices(), loadOutputSettings(), loadCategorySettings('player'), loadAsioDrivers()]);
@@ -31,13 +29,10 @@
   async function handleOpenControlPanel() {
     if (!$outputSettings?.asioDriver || isMock) return;
     
-    isOpeningPanel = true;
     try {
       await openAsioControlPanel($outputSettings.asioDriver);
     } catch (e) {
       console.error('Failed to open ASIO control panel:', e);
-    } finally {
-      isOpeningPanel = false;
     }
   }
 </script>
@@ -90,9 +85,9 @@
         <button 
           class="control-panel-btn"
           onclick={handleOpenControlPanel}
-          disabled={isOpeningPanel || isMock}
+          disabled={isMock}
         >
-          {isOpeningPanel ? 'Opening...' : 'Open Control Panel'}
+          Open Control Panel
         </button>
       {/if}
     </div>
@@ -143,6 +138,14 @@
         Preload Next Track
       </label>
       <span class="setting-hint">Takes effect in future update</span>
+    </div>
+
+    <div class="setting">
+      <label>
+        <input type="checkbox" checked={parseBool($playerSettings['player.load_to_memory'])} onchange={(e) => saveCategorySetting('player', 'player.load_to_memory', e.currentTarget.checked ? 'on' : 'off')} disabled={isMock} />
+        Load tracks to memory
+      </label>
+      <span class="setting-hint">Load entire file to RAM before playback (reduces disk I/O jitter)</span>
     </div>
   {/if}
 </div>

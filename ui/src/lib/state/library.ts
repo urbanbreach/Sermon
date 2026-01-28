@@ -1,6 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import { listen } from '@tauri-apps/api/event';
-import type { TrackRow, LibraryFolder, ScanProgress, ScanComplete, QuickScanComplete, SortBy, SortDirection } from '../types/library';
+import type { TrackRow, LibraryFolder, ScanProgress, ScanComplete, QuickScanComplete, SortBy, SortDirection, FolderOptions } from '../types/library';
 import * as api from '../api/library';
 import { Fixtures } from '../data/fixtures';
 
@@ -48,13 +48,13 @@ export async function loadTracks(): Promise<void> {
     const fixtureTracks = Fixtures.getTracks();
     tracks.set(fixtureTracks.map((t, i) => ({
       id: i,
-      library_folder_id: 1,
+      libraryFolderId: 1,
       path: `/mock/${t.title}.flac`,
       title: t.title,
       artist: Fixtures.getArtist(t.artistId)?.name,
       album: Fixtures.getAlbum(t.albumId)?.title,
-      duration_ms: t.durationMs,
-      is_missing: false,
+      durationMs: t.durationMs,
+      isMissing: false,
     } as TrackRow)));
     return;
   }
@@ -117,6 +117,52 @@ export function toggleSortDirection(): void {
 export function setSortBy(field: SortBy): void {
   sortBy.set(field);
   loadTracks();
+}
+
+export async function removeFolder(folderId: number): Promise<void> {
+  if (isMock) return;
+  
+  try {
+    await api.removeFolder(folderId);
+    folders.update(f => f.filter(folder => folder.id !== folderId));
+    
+    const currentSelected = get(selectedFolderId);
+    if (currentSelected === folderId) {
+      const remaining = get(folders);
+      selectedFolderId.set(remaining.length > 0 ? remaining[0].id : null);
+    }
+    
+    await loadTracks();
+  } catch (e) {
+    console.error('Failed to remove folder:', e);
+    throw e;
+  }
+}
+
+export async function toggleFolderEnabled(folderId: number, enabled: boolean): Promise<void> {
+  if (isMock) return;
+  
+  try {
+    await api.updateFolderEnabled(folderId, enabled);
+    folders.update(f => f.map(folder => 
+      folder.id === folderId ? { ...folder, enabled } : folder
+    ));
+  } catch (e) {
+    console.error('Failed to toggle folder enabled:', e);
+    throw e;
+  }
+}
+
+export async function updateFolderOptions(folderId: number, options: Partial<FolderOptions>): Promise<void> {
+  if (isMock) return;
+  
+  try {
+    await api.updateFolderOptions(folderId, options);
+    await loadFolders();
+  } catch (e) {
+    console.error('Failed to update folder options:', e);
+    throw e;
+  }
 }
 
 // Event listeners (call once on app init)

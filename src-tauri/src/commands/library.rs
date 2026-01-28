@@ -9,8 +9,8 @@ use library::models::{
     SearchSuggestResponse,
 };
 use library::safe_write::WriteStatus;
-use library::tag_edit::{UpdateTagsRequest, update_track_tags};
-use library::{LibraryFolder, TrackRow, apply_migrations, list_tracks, open_db, scan_folder};
+use library::tag_edit::{update_track_tags, UpdateTagsRequest};
+use library::{apply_migrations, list_tracks, open_db, scan_folder, LibraryFolder, TrackRow};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tags::{NumberPatch, TagPatch};
@@ -767,4 +767,71 @@ pub async fn cmd_settings_set(
     .map_err(|e| e.to_string())??;
 
     Ok(())
+}
+
+// ============================================================================
+// Folder Management Commands (Library Preferences Redesign)
+// ============================================================================
+
+#[tauri::command]
+pub fn cmd_library_remove_folder(
+    state: State<'_, LibraryState>,
+    folder_id: i64,
+) -> Result<(), String> {
+    let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
+    apply_migrations(&conn).map_err(|e| e.to_string())?;
+    library::remove_folder(&conn, folder_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn cmd_library_update_folder_enabled(
+    state: State<'_, LibraryState>,
+    folder_id: i64,
+    enabled: bool,
+) -> Result<FolderResponse, String> {
+    let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
+    apply_migrations(&conn).map_err(|e| e.to_string())?;
+    let folder =
+        library::update_folder_enabled(&conn, folder_id, enabled).map_err(|e| e.to_string())?;
+    Ok(folder.into())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderOptionsRequest {
+    pub recursive: bool,
+    pub include_extensions: Vec<String>,
+    pub exclude_patterns: Vec<String>,
+    pub follow_symlinks: bool,
+}
+
+#[tauri::command]
+pub fn cmd_library_update_folder_options(
+    state: State<'_, LibraryState>,
+    folder_id: i64,
+    options: FolderOptionsRequest,
+) -> Result<FolderResponse, String> {
+    let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
+    apply_migrations(&conn).map_err(|e| e.to_string())?;
+
+    let folder_options = library::FolderOptions {
+        recursive: options.recursive,
+        include_extensions: options.include_extensions,
+        exclude_patterns: options.exclude_patterns,
+        follow_symlinks: options.follow_symlinks,
+    };
+
+    let folder = library::update_folder_options(&conn, folder_id, &folder_options)
+        .map_err(|e| e.to_string())?;
+    Ok(folder.into())
+}
+
+#[tauri::command]
+pub fn cmd_library_get_folder_track_count(
+    state: State<'_, LibraryState>,
+    folder_id: i64,
+) -> Result<i64, String> {
+    let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
+    apply_migrations(&conn).map_err(|e| e.to_string())?;
+    library::get_folder_track_count(&conn, folder_id).map_err(|e| e.to_string())
 }

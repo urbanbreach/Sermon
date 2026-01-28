@@ -17,6 +17,8 @@ export interface TrackEventData {
   channels?: number;
   codec?: string;
   container?: string;
+  dsd_rate_hz?: number;
+  dsd_channels?: number;
 }
 
 export interface NowPlayingEvent {
@@ -59,6 +61,9 @@ export interface AudioFormatData {
   codec?: string;
   container?: string;
   valid_bits?: number;
+  is_dsd?: boolean;
+  dsd_rate_hz?: number;
+  dop_rate_hz?: number;
 }
 
 export interface AudioDebugEvent {

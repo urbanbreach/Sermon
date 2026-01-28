@@ -1,3 +1,4 @@
+mod dsd;
 mod reader;
 pub mod writer;
 
