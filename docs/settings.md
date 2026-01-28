@@ -94,6 +94,15 @@ Hardware-specific audio settings. **All placeholders - not yet wired.**
 |-----|------|---------|-------------|--------|
 | `devices.dsd_dop_enabled` | bool | `'off'` | Enable DSD over PCM (DoP) | Placeholder (disabled) |
 
+### Appearance & Layout
+
+Visual settings managed by `effects.ts`.
+
+| Key | Type | Default | Description | Status |
+|-----|------|---------|-------------|--------|
+| `ui.bottombar.waveform_seekbar` | bool | `'off'` | Use waveform visualization in bottom bar | **Functional** - Hot-apply |
+| `ui.bottombar.waveform_color` | hex | `'#4aafff'` | Color of the played portion in waveform seekbar | **Functional** - Hot-apply |
+
 ## Setting Status Legend
 
 | Status | Meaning |
