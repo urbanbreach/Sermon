@@ -1,14 +1,18 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import { waveformColor } from '../state/effects';
+  import { waveformColor, bottomBarWaveformStyle } from '../state/effects';
   
   interface Props {
     peaks: Uint8Array | null;
     progress: number; // 0-1
     durationMs: number;
+    style?: 'pills' | 'raw';
   }
 
-  let { peaks, progress, durationMs }: Props = $props();
+  let { peaks, progress, durationMs, style }: Props = $props();
+  
+  // Derive effective style from prop or store
+  let effectiveStyle = $derived(style ?? $bottomBarWaveformStyle);
 
   const dispatch = createEventDispatcher<{ seek: { ms: number } }>();
 
@@ -21,6 +25,11 @@
   let dragProgress = $state(0);
   let hoverProgress: number | null = $state(null);
   let hoverX = $state(0);
+  
+  // Canvas dimension tracking (for efficiency - avoid resetting on every frame)
+  let lastCanvasWidth = 0;
+  let lastCanvasHeight = 0;
+  let lastDpr = 0;
 
   // Derived
   let displayProgress = $derived(isDragging ? dragProgress : progress);
@@ -51,6 +60,121 @@
     const g = parseInt(hex.slice(3, 5), 16);
     const b = parseInt(hex.slice(5, 7), 16);
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  // Draw raw waveform (continuous mirrored envelope - MusicBee style)
+  function drawRawWaveform(
+    ctx: CanvasRenderingContext2D,
+    peaksData: Uint8Array,
+    displayProg: number,
+    w: number,
+    h: number
+  ): void {
+    const centerY = h / 2;
+    const maxHalfHeight = h * 0.45;
+    const peakLen = peaksData.length;
+
+    // Helper to build envelope path
+    function buildEnvelopePath(): void {
+      ctx.beginPath();
+      
+      // Top edge: left to right
+      for (let x = 0; x <= w; x++) {
+        const peakIdx = Math.min(Math.floor((x / w) * peakLen), peakLen - 1);
+        const amp = (peaksData[peakIdx] || 0) / 255;
+        const topY = centerY - amp * maxHalfHeight;
+        if (x === 0) {
+          ctx.moveTo(x, topY);
+        } else {
+          ctx.lineTo(x, topY);
+        }
+      }
+      
+      // Bottom edge: right to left (creates closed polygon)
+      for (let x = w; x >= 0; x--) {
+        const peakIdx = Math.min(Math.floor((x / w) * peakLen), peakLen - 1);
+        const amp = (peaksData[peakIdx] || 0) / 255;
+        const bottomY = centerY + amp * maxHalfHeight;
+        ctx.lineTo(x, bottomY);
+      }
+      
+      ctx.closePath();
+    }
+
+    // Draw unplayed portion (full waveform in muted color)
+    buildEnvelopePath();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.fill();
+
+    // Draw played portion with clipping
+    const playedWidth = w * displayProg;
+    if (playedWidth > 0) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, playedWidth, h);
+      ctx.clip();
+      
+      buildEnvelopePath();
+      ctx.fillStyle = hexToRgba($waveformColor, 0.85);
+      ctx.fill();
+      
+      ctx.restore();
+    }
+  }
+
+  // Draw pills waveform (existing rounded bars)
+  function drawPillsWaveform(
+    ctx: CanvasRenderingContext2D,
+    peaksData: Uint8Array,
+    displayProg: number,
+    w: number,
+    h: number
+  ): void {
+    const totalBars = Math.floor(w / (BAR_WIDTH + BAR_GAP));
+    const step = peaksData.length / totalBars;
+
+    for (let i = 0; i < totalBars; i++) {
+      // Calculate peak value for this bar (simple sampling)
+      const peakIndex = Math.floor(i * step);
+      const rawValue = peaksData[peakIndex] || 0;
+      const normalizedValue = rawValue / 255;
+      
+      // Calculate dimensions
+      // Apply a non-linear scaling to make quiet parts more visible but keep peaks distinct
+      const visualHeight = Math.max(MIN_BAR_HEIGHT, Math.pow(normalizedValue, 0.8) * h * 0.8);
+      
+      const x = i * (BAR_WIDTH + BAR_GAP);
+      const y = (h - visualHeight) / 2;
+      
+      // Determine color state
+      const barProgress = i / totalBars;
+      const isPlayed = barProgress <= displayProg;
+      
+      if (isPlayed) {
+        ctx.fillStyle = hexToRgba($waveformColor, 0.9);
+      } else {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      }
+      
+      // Draw rounded bar
+      ctx.beginPath();
+      ctx.roundRect(x, y, BAR_WIDTH, visualHeight, 2);
+      ctx.fill();
+    }
+  }
+
+  // Draw hover line (shared by both modes)
+  function drawHoverLine(
+    ctx: CanvasRenderingContext2D,
+    hoverProg: number | null,
+    w: number,
+    h: number
+  ): void {
+    if (hoverProg !== null) {
+      const hoverXPos = hoverProg * w;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.fillRect(hoverXPos, 0, 1, h);
+    }
   }
 
   // Resize Observer with debounce to prevent excessive redraws
@@ -87,11 +211,22 @@
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Handle high DPI
+    // Handle high DPI - only resize canvas when dimensions change
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    ctx.scale(dpr, dpr);
+    const newCanvasWidth = width * dpr;
+    const newCanvasHeight = height * dpr;
+    
+    if (newCanvasWidth !== lastCanvasWidth || newCanvasHeight !== lastCanvasHeight || dpr !== lastDpr) {
+      canvas.width = newCanvasWidth;
+      canvas.height = newCanvasHeight;
+      ctx.scale(dpr, dpr);
+      lastCanvasWidth = newCanvasWidth;
+      lastCanvasHeight = newCanvasHeight;
+      lastDpr = dpr;
+    } else {
+      // Reset transform and clear (ctx.scale accumulates)
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
 
     ctx.clearRect(0, 0, width, height);
 
@@ -115,45 +250,15 @@
       return;
     }
 
-    // Waveform Drawing
-    const totalBars = Math.floor(width / (BAR_WIDTH + BAR_GAP));
-    const step = peaks.length / totalBars;
-
-    for (let i = 0; i < totalBars; i++) {
-      // Calculate peak value for this bar (simple sampling)
-      const peakIndex = Math.floor(i * step);
-      const rawValue = peaks[peakIndex] || 0;
-      const normalizedValue = rawValue / 255;
-      
-      // Calculate dimensions
-      // Apply a non-linear scaling to make quiet parts more visible but keep peaks distinct
-      const visualHeight = Math.max(MIN_BAR_HEIGHT, Math.pow(normalizedValue, 0.8) * height * 0.8);
-      
-      const x = i * (BAR_WIDTH + BAR_GAP);
-      const y = (height - visualHeight) / 2;
-      
-      // Determine color state
-      const barProgress = i / totalBars;
-      const isPlayed = barProgress <= displayProgress;
-      
-      if (isPlayed) {
-        ctx.fillStyle = hexToRgba($waveformColor, 0.9);
-      } else {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-      }
-      
-      // Draw rounded bar
-      ctx.beginPath();
-      ctx.roundRect(x, y, BAR_WIDTH, visualHeight, 2);
-      ctx.fill();
+    // Draw waveform based on style
+    if (effectiveStyle === 'raw') {
+      drawRawWaveform(ctx, peaks, displayProgress, width, height);
+    } else {
+      drawPillsWaveform(ctx, peaks, displayProgress, width, height);
     }
 
     // Draw Hover Line
-    if (hoverProgress !== null) {
-      const hoverXPos = hoverProgress * width;
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-      ctx.fillRect(hoverXPos, 0, 1, height);
-    }
+    drawHoverLine(ctx, hoverProgress, width, height);
   });
 
   // Interaction Handlers
