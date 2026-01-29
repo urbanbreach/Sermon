@@ -45,7 +45,12 @@ impl MemoryAudioSource {
         let mut file = File::open(path)?;
         let mut data = Vec::new();
         file.read_to_end(&mut data)?;
-        Ok(Self { data, position: 0 })
+        Ok(Self::from_bytes(data))
+    }
+
+    /// Create a memory-backed source from existing bytes.
+    pub fn from_bytes(data: Vec<u8>) -> Self {
+        Self { data, position: 0 }
     }
 }
 

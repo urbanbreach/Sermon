@@ -30,7 +30,7 @@ use commands::{
     AudioDebugEvent, AudioFormatData, DeviceChangedEvent, NowPlayingEvent, PlaybackErrorEvent,
     PlaybackPositionEvent, PlaybackStateEvent, QueueChangedEvent, QueueItemData, TrackEventData,
 };
-use crossbeam_channel::{select, tick, unbounded, Receiver};
+use crossbeam_channel::{select, tick, unbounded, Receiver, Sender};
 use parking_lot::Mutex;
 use state::{ArtworkCacheState, AudioState, DiagnosticsState, LibraryState, PlaybackCommand, WaveformCacheState};
 use std::fs;
@@ -343,6 +343,15 @@ struct AudioPlayback {
     // Resampler for ASIO sample rate mismatch
     resampler: Option<audio_engine::Resampler>,
     source_sample_rate: u32,
+}
+
+struct PreloadRequest {
+    path: PathBuf,
+}
+
+struct PreloadResult {
+    path: PathBuf,
+    bytes: Vec<u8>,
 }
 
 struct FadeState {
@@ -1201,8 +1210,43 @@ fn spawn_audio_thread(
         // Telemetry tick - 1 Hz for diagnostics UI
         let telemetry_tick = tick(Duration::from_secs(1));
 
+        let (preload_tx, preload_request_rx): (Sender<PreloadRequest>, Receiver<PreloadRequest>) =
+            unbounded();
+        let (preload_result_tx, preload_rx): (Sender<PreloadResult>, Receiver<PreloadResult>) =
+            unbounded();
+
+        std::thread::spawn(move || {
+            while let Ok(request) = preload_request_rx.recv() {
+                let path = request.path;
+                match fs::read(&path) {
+                    Ok(bytes) => {
+                        if preload_result_tx.send(PreloadResult { path, bytes }).is_err() {
+                            break;
+                        }
+                    }
+                    Err(err) => {
+                        warn!(
+                            path = %path.display(),
+                            error = %err,
+                            "Failed to preload next track bytes"
+                        );
+                        if preload_result_tx
+                            .send(PreloadResult {
+                                path,
+                                bytes: Vec::new(),
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
         let mut playback = AudioPlayback::new();
         let mut current_device_info: Option<audio_engine::device::AudioDeviceInfo> = None;
+        let mut preload_request_path: Option<PathBuf> = None;
 
         // Load saved settings from DB into playback state
         if let Ok(conn) = library::open_db(&db_path) {
@@ -1294,13 +1338,52 @@ fn spawn_audio_thread(
                             continue;
                         }
 
+                        if !playback.preload_in_progress {
+                            preload_request_path = None;
+                        }
+
+                        while let Ok(result) = preload_rx.try_recv() {
+                            let should_apply = playback.preload_next
+                                && playback.preload_in_progress
+                                && playback
+                                    .gapless_decoder
+                                    .as_ref()
+                                    .map_or(false, |d| !d.has_preloaded_next());
+
+                            if should_apply
+                                && preload_request_path
+                                    .as_ref()
+                                    .map_or(true, |path| path == &result.path)
+                            {
+                                if result.bytes.is_empty() {
+                                    warn!(
+                                        path = %result.path.display(),
+                                        "Preload worker returned empty bytes"
+                                    );
+                                    playback.preload_in_progress = false;
+                                } else if let Some(ref mut gd) = playback.gapless_decoder {
+                                    if let Err(e) = gd.preload_next_from_bytes(result.bytes) {
+                                        warn!(
+                                            path = %result.path.display(),
+                                            error = %e,
+                                            "Failed to preload next track - will use non-gapless transition"
+                                        );
+                                        playback.preload_in_progress = false;
+                                    }
+                                }
+                            }
+
+                            preload_request_path = None;
+                        }
+
                         // Preload next track when approaching end
                         if playback.preload_next
                             && playback.preload_in_progress
-                            && !playback
+                            && playback
                                 .gapless_decoder
                                 .as_ref()
-                                .map_or(true, |d| d.has_preloaded_next())
+                                .map_or(false, |d| !d.has_preloaded_next())
+                            && preload_request_path.is_none()
                         {
                             let next_track_path = {
                                 let engine_guard = engine.lock();
@@ -1311,15 +1394,10 @@ fn spawn_audio_thread(
                                 }
                             };
                             if let Some(path) = next_track_path {
-                                if let Some(ref mut gd) = playback.gapless_decoder {
-                                    if let Err(e) = gd.preload_next(Path::new(&path)) {
-                                        warn!(
-                                            path = %path,
-                                            error = %e,
-                                            "Failed to preload next track - will use non-gapless transition"
-                                        );
-                                        playback.preload_in_progress = false;
-                                    }
+                                if preload_tx.send(PreloadRequest { path: path.clone().into() }).is_ok() {
+                                    preload_request_path = Some(path.into());
+                                } else {
+                                    playback.preload_in_progress = false;
                                 }
                             } else {
                                 playback.preload_in_progress = false;

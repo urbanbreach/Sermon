@@ -157,6 +157,60 @@ impl DecoderState {
         })
     }
 
+    fn new_from_bytes(bytes: Vec<u8>) -> Result<Self, DecodeError> {
+        let source = MemoryAudioSource::from_bytes(bytes.clone());
+        let file_data = bytes;
+
+        let source_for_probe = MemoryAudioSource::from_bytes(file_data.clone());
+        let mss = MediaSourceStream::new(Box::new(source_for_probe), Default::default());
+
+        let hint = Hint::new();
+
+        let probed = symphonia::default::get_probe()
+            .format(
+                &hint,
+                mss,
+                &FormatOptions::default(),
+                &MetadataOptions::default(),
+            )
+            .map_err(map_probe_error)?;
+
+        let format_reader = probed.format;
+
+        let track = format_reader
+            .default_track()
+            .cloned()
+            .ok_or(DecodeError::NoAudioTrack)?;
+
+        if track.codec_params.codec == CODEC_TYPE_NULL {
+            return Err(DecodeError::UnsupportedFormat);
+        }
+
+        let decoder = symphonia::default::get_codecs()
+            .make(&track.codec_params, &DecoderOptions::default())
+            .map_err(|e| DecodeError::DecoderError(e.to_string()))?;
+
+        let sample_rate = track.codec_params.sample_rate.unwrap_or(0);
+        let channels = track.codec_params.channels.map(|c| c.count()).unwrap_or(0);
+        let total_samples = track.codec_params.n_frames;
+
+        let encoder_delay = EncoderDelay::detect(&file_data);
+
+        Ok(Self {
+            source,
+            file_data,
+            format_reader,
+            decoder,
+            encoder_delay,
+            samples_decoded: 0,
+            total_samples,
+            sample_rate,
+            channels,
+            track_id: track.id,
+            sample_buffer: None,
+        })
+    }
+
     fn decode_raw(&mut self) -> Result<Option<Vec<f32>>, DecodeError> {
         loop {
             let packet = match self.format_reader.next_packet() {
@@ -419,6 +473,14 @@ impl GaplessDecoder {
     /// The current playback is not affected if preloading fails.
     pub fn preload_next(&mut self, track_path: &Path) -> Result<(), DecodeError> {
         self.next = Some(DecoderState::new(track_path)?);
+        Ok(())
+    }
+
+    /// Preload the next track from in-memory bytes.
+    ///
+    /// This avoids blocking file I/O on the calling thread.
+    pub fn preload_next_from_bytes(&mut self, bytes: Vec<u8>) -> Result<(), DecodeError> {
+        self.next = Some(DecoderState::new_from_bytes(bytes)?);
         Ok(())
     }
 
