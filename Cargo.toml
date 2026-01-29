@@ -2,3 +2,11 @@
 members = ["crates/*", "src-tauri"]
 exclude = ["crates/audio"]
 resolver = "2"
+
+# Release build optimizations for smaller binary and faster runtime
+[profile.release]
+lto = "thin"           # Thin LTO: good size reduction, reasonable compile time
+codegen-units = 1      # Single codegen unit for better optimization
+panic = "abort"        # No unwind tables - smaller binary
+strip = "symbols"      # Strip debug symbols
+opt-level = 3          # Maximum optimization
