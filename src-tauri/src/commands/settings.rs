@@ -1,4 +1,4 @@
-use crate::state::{DiagnosticsState, LibraryState};
+use crate::state::{AudioState, DiagnosticsState, LibraryState, PlaybackCommand};
 use chrono::Utc;
 use library::db::{get_setting, set_setting};
 use library::open_db;
@@ -115,6 +115,7 @@ pub async fn cmd_settings_get_category(
 pub async fn cmd_settings_set_category(
     category: String,
     settings: Value,
+    audio_state: State<'_, AudioState>,
     state: State<'_, LibraryState>,
 ) -> Result<(), String> {
     // Validate category
@@ -126,6 +127,8 @@ pub async fn cmd_settings_set_category(
     }
 
     let db_path = state.db_path.clone();
+    let command_tx = audio_state.command_tx.clone();
+    let category_name = category.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let conn = open_db(&db_path).map_err(|e| e.to_string())?;
@@ -136,6 +139,30 @@ pub async fn cmd_settings_set_category(
                     set_setting(&conn, &key, &v).map_err(|e| e.to_string())?;
                 }
             }
+        }
+
+        if category_name == "player" {
+            let buffer_size_ms = get_setting(&conn, "player.buffer_size_ms")
+                .map_err(|e| e.to_string())?
+                .and_then(|v| v.parse::<u32>().ok())
+                .unwrap_or(500)
+                .clamp(100, 2000);
+            let load_to_memory = get_setting(&conn, "player.load_to_memory")
+                .map_err(|e| e.to_string())?
+                .map(|v| v != "off")
+                .unwrap_or(true);
+            let preload_next = get_setting(&conn, "player.preload_next")
+                .map_err(|e| e.to_string())?
+                .map(|v| v != "off")
+                .unwrap_or(true);
+
+            command_tx
+                .send(PlaybackCommand::SetPlayerSettings {
+                    buffer_size_ms,
+                    load_to_memory,
+                    preload_next,
+                })
+                .map_err(|e| e.to_string())?;
         }
 
         Ok(())
