@@ -2,15 +2,18 @@ use audio_engine::decode::AudioDecoder;
 use audio_engine::{DsdDecoder, DsdError};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use library::open_db;
-use rusqlite::OptionalExtension;
+use rusqlite::{Connection, OptionalExtension};
 use serde::Serialize;
 use std::fs;
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tauri::State;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::state::{LibraryState, WaveformCacheState};
+
+const WAVEFORM_CACHE_CAP_BYTES: i64 = 1024 * 1024 * 1024;
+const WAVEFORM_MAX_ENTRY_SIZE: i64 = WAVEFORM_CACHE_CAP_BYTES / 4;
 
 struct GeneratePeaksTiming {
     decode_open_ms: u64,
@@ -48,6 +51,70 @@ pub struct WaveformPeaksResponse {
 fn compute_waveform_cache_key(track_id: i64, size_bytes: i64, mtime_ms: i64) -> String {
     let input = format!("waveform::{}::{}::{}", track_id, size_bytes, mtime_ms);
     blake3::hash(input.as_bytes()).to_hex().to_string()
+}
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn update_waveform_cache_access(conn: &Connection, cache_key: &str) {
+    let now = now_ms();
+    let _ = conn.execute(
+        "UPDATE waveform_cache_map SET last_access_ms = ?1 WHERE cache_key = ?2",
+        rusqlite::params![now, cache_key],
+    );
+}
+
+fn record_waveform_cache_entry(
+    conn: &Connection,
+    cache_key: &str,
+    track_id: i64,
+    size_bytes: i64,
+    mtime_ms: i64,
+) {
+    let now = now_ms();
+    let _ = conn.execute(
+        "INSERT OR REPLACE INTO waveform_cache_map (cache_key, track_id, size_bytes, mtime_ms, last_access_ms) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![cache_key, track_id, size_bytes, mtime_ms, now],
+    );
+}
+
+fn evict_waveform_cache_lru(conn: &Connection, cache_dir: &Path, target_free: i64) {
+    let total_size: i64 = conn
+        .query_row("SELECT COALESCE(SUM(size_bytes), 0) FROM waveform_cache_map", [], |r| r.get(0))
+        .unwrap_or(0);
+
+    if total_size <= WAVEFORM_CACHE_CAP_BYTES - target_free {
+        return;
+    }
+
+    let to_free = total_size - (WAVEFORM_CACHE_CAP_BYTES - target_free);
+    let mut freed: i64 = 0;
+
+    let mut stmt = conn
+        .prepare("SELECT cache_key, size_bytes FROM waveform_cache_map ORDER BY last_access_ms ASC")
+        .ok();
+
+    if let Some(ref mut stmt) = stmt {
+        let iter = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)));
+        if let Ok(rows) = iter {
+            for row in rows.flatten() {
+                let (key, size) = row;
+                let cache_path = cache_dir.join(&key);
+                if fs::remove_file(&cache_path).is_ok() {
+                    let _ = conn.execute("DELETE FROM waveform_cache_map WHERE cache_key = ?1", [&key]);
+                    freed += size;
+                    info!(evicted_key = %key, evicted_size = size, "waveform_cache_evict");
+                    if freed >= to_free {
+                        break;
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Check if a file is a DSD format (DSF or DFF) by extension
@@ -422,6 +489,8 @@ pub async fn cmd_waveform_get_peaks(
                 let peaks = &cached_data[13..];
                 let cache_read_ms = cache_read_start.elapsed().as_millis() as u64;
                 let total_ms = total_start.elapsed().as_millis() as u64;
+
+                update_waveform_cache_access(&conn, &cache_key);
                 
                 info!(
                     track_id = track_id,
@@ -454,19 +523,31 @@ pub async fn cmd_waveform_get_peaks(
     
     let cache_write_start = Instant::now();
     let format_version: u8 = 1;
-    {
+
+    let mut cache_data = Vec::with_capacity(13 + peaks.len());
+    cache_data.push(format_version);
+    cache_data.extend_from_slice(&final_duration_ms.to_le_bytes());
+    cache_data.extend_from_slice(&bin_ms.to_le_bytes());
+    cache_data.extend_from_slice(&peaks);
+
+    let entry_size = cache_data.len() as i64;
+    let should_cache = entry_size <= WAVEFORM_MAX_ENTRY_SIZE;
+
+    if should_cache {
         let _lock = waveform_state.lock.lock();
+
+        evict_waveform_cache_lru(&conn, &waveform_state.cache_dir, entry_size);
+
         let cache_path = waveform_state.cache_dir.join(&cache_key);
-        
-        let mut cache_data = Vec::with_capacity(13 + peaks.len());
-        cache_data.push(format_version);
-        cache_data.extend_from_slice(&final_duration_ms.to_le_bytes());
-        cache_data.extend_from_slice(&bin_ms.to_le_bytes());
-        cache_data.extend_from_slice(&peaks);
-        
-        fs::write(&cache_path, &cache_data)
-            .map_err(|e| format!("Failed to write cache file: {}", e))?;
+        if let Err(e) = fs::write(&cache_path, &cache_data) {
+            warn!(error = %e, "waveform_cache_write_failed");
+        } else {
+            record_waveform_cache_entry(&conn, &cache_key, track_id, entry_size, mtime_ms);
+        }
+    } else {
+        warn!(entry_size = entry_size, max_size = WAVEFORM_MAX_ENTRY_SIZE, "waveform_cache_skip_large_entry");
     }
+
     let cache_write_ms = cache_write_start.elapsed().as_millis() as u64;
     let total_ms = total_start.elapsed().as_millis() as u64;
     

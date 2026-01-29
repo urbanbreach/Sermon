@@ -634,7 +634,7 @@ impl AudioPlayback {
         }
 
         // Check if memory loading is enabled (default: on)
-        let load_to_memory = library::open_db(db_path)
+        let load_to_memory_setting = library::open_db(db_path)
             .ok()
             .and_then(|conn| {
                 library::get_setting(&conn, "player.load_to_memory")
@@ -642,7 +642,20 @@ impl AudioPlayback {
                     .flatten()
             })
             .map(|v| v != "off")
-            .unwrap_or(true); // Default to true if setting not found
+            .unwrap_or(true);
+
+        const GAPLESS_MAX_FILE_SIZE: u64 = 512 * 1024 * 1024;
+        let file_size = fs::metadata(track_path).map(|m| m.len()).unwrap_or(0);
+        let load_to_memory = load_to_memory_setting && file_size <= GAPLESS_MAX_FILE_SIZE;
+
+        if !load_to_memory && load_to_memory_setting && file_size > GAPLESS_MAX_FILE_SIZE {
+            info!(
+                path = %track_path.display(),
+                file_size = file_size,
+                max_size = GAPLESS_MAX_FILE_SIZE,
+                "File too large for RAM loading, using streaming decoder"
+            );
+        }
 
         let sample_rate: u32;
         let channels: u16;

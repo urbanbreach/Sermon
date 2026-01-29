@@ -47,7 +47,13 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), LibraryError> {
         version = 7;
     }
 
-    let _ = version; // suppress unused warning
+    if version < 8 {
+        info!("Applying migration 0008_waveform_cache");
+        conn.execute_batch(include_str!("../../migrations/0008_waveform_cache.sql"))?;
+        version = 8;
+    }
+
+    let _ = version;
 
     Ok(())
 }
