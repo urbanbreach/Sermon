@@ -211,7 +211,7 @@ impl DecoderState {
         })
     }
 
-    fn decode_raw(&mut self) -> Result<Option<Vec<f32>>, DecodeError> {
+    fn decode_raw(&mut self) -> Result<Option<&[f32]>, DecodeError> {
         loop {
             let packet = match self.format_reader.next_packet() {
                 Ok(packet) => packet,
@@ -257,17 +257,18 @@ impl DecoderState {
             let required_frames = decoded.capacity();
             let required_samples = required_frames * self.channels;
 
-            let buffer = match self.sample_buffer.as_mut() {
-                Some(buffer) if buffer.capacity() >= required_samples => buffer,
-                _ => {
-                    self.sample_buffer =
-                        Some(SampleBuffer::<f32>::new(required_frames as u64, spec));
-                    self.sample_buffer.as_mut().expect("just set")
-                }
+            let needs_realloc = match self.sample_buffer.as_ref() {
+                Some(buffer) => buffer.capacity() < required_samples,
+                None => true,
             };
 
+            if needs_realloc {
+                self.sample_buffer = Some(SampleBuffer::<f32>::new(required_frames as u64, spec));
+            }
+
+            let buffer = self.sample_buffer.as_mut().expect("just set");
             buffer.copy_interleaved_ref(decoded);
-            return Ok(Some(buffer.samples().to_vec()));
+            return Ok(Some(buffer.samples()));
         }
     }
 
@@ -327,6 +328,8 @@ pub struct GaplessDecoder {
     preload_trigger_samples: u64,
     /// Flag set when an internal gapless transition just occurred.
     just_transitioned: bool,
+    /// Reusable decode buffer to avoid allocations.
+    decode_buffer: Vec<f32>,
 }
 
 impl GaplessDecoder {
@@ -355,6 +358,7 @@ impl GaplessDecoder {
             next: None,
             preload_trigger_samples: preload_trigger.max(Self::DEFAULT_PRELOAD_TRIGGER),
             just_transitioned: false,
+            decode_buffer: Vec::with_capacity(4096),
         })
     }
 
@@ -375,11 +379,22 @@ impl GaplessDecoder {
     /// - `Err(DecodeError)` - Decoding error
     pub fn decode_next(&mut self) -> Result<Option<Vec<f32>>, DecodeError> {
         loop {
-            let raw_samples = self.current.decode_raw()?;
+            // Use a block to limit the lifetime of the borrow from self.current
+            let raw_samples_len = {
+                let raw_samples = self.current.decode_raw()?;
+                match raw_samples {
+                    Some(samples) => {
+                        self.decode_buffer.clear();
+                        self.decode_buffer.extend_from_slice(samples);
+                        Some(self.decode_buffer.len())
+                    }
+                    None => None,
+                }
+            };
 
-            match raw_samples {
-                Some(samples) => {
-                    let trimmed = self.apply_encoder_delay_trimming(samples);
+            match raw_samples_len {
+                Some(_) => {
+                    let trimmed = self.apply_encoder_delay_trimming();
                     if let Some(trimmed_samples) = trimmed {
                         return Ok(Some(trimmed_samples));
                     }
@@ -397,16 +412,16 @@ impl GaplessDecoder {
         }
     }
 
-    /// Apply encoder delay trimming to the given samples.
+    /// Apply encoder delay trimming to the samples in decode_buffer.
     ///
     /// Returns `None` if all samples were trimmed (start of track).
-    fn apply_encoder_delay_trimming(&mut self, samples: Vec<f32>) -> Option<Vec<f32>> {
+    fn apply_encoder_delay_trimming(&mut self) -> Option<Vec<f32>> {
         let channels = self.current.channels;
         if channels == 0 {
-            return Some(samples);
+            return Some(self.decode_buffer.clone());
         }
 
-        let frames = samples.len() / channels;
+        let frames = self.decode_buffer.len() / channels;
         let samples_before = self.current.samples_decoded;
         let samples_after = samples_before + frames as u64;
 
@@ -414,7 +429,7 @@ impl GaplessDecoder {
 
         let delay = match &self.current.encoder_delay {
             Some(d) if d.has_trimming() => d,
-            _ => return Some(samples),
+            _ => return Some(self.decode_buffer.clone()),
         };
 
         let start_trim = delay.start_samples;
@@ -450,11 +465,7 @@ impl GaplessDecoder {
         let start_idx = keep_start * channels;
         let end_idx = keep_end * channels;
 
-        if start_idx == 0 && end_idx == samples.len() {
-            Some(samples)
-        } else {
-            Some(samples[start_idx..end_idx].to_vec())
-        }
+        Some(self.decode_buffer[start_idx..end_idx].to_vec())
     }
 
     /// Preload the next track for seamless transition.
