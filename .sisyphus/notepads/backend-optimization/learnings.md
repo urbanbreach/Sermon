@@ -163,3 +163,7 @@ All cargo tests pass (85 audio-engine, 24 library, 19 sermon_lib, 13 tags tests)
 - Added a preload worker thread with request/result channels so disk reads happen off the audio tick.
 - Audio tick now sends preload requests non-blocking and applies bytes via `GaplessDecoder::preload_next_from_bytes`.
 - Introduced `MemoryAudioSource::from_bytes` to build decoders from pre-read file bytes.
+
+## 2026-01-30 ASIO ring buffer batching
+- `ringbuf::traits::Producer::push_iter`/`push_slice` provide batch writes and reduce per-sample `try_push` overhead.
+- `push_iter` returns the count written and stops when the buffer is full, preserving sample order.

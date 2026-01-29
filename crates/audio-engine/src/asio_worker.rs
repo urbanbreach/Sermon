@@ -681,13 +681,11 @@ impl AsioWorker {
 
         let mut written = 0;
         if let Some(ref mut producer) = self.producer {
-            for &sample in samples {
-                let adjusted = (sample * vol).clamp(-1.0, 1.0);
-                if producer.try_push(adjusted).is_err() {
-                    break;
-                }
-                written += 1;
-            }
+            written = producer.push_iter(
+                samples
+                    .iter()
+                    .map(|&sample| (sample * vol).clamp(-1.0, 1.0)),
+            );
         }
         written
     }
