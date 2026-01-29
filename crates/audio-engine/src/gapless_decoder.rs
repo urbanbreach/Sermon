@@ -379,7 +379,6 @@ impl GaplessDecoder {
     /// - `Err(DecodeError)` - Decoding error
     pub fn decode_next(&mut self) -> Result<Option<Vec<f32>>, DecodeError> {
         loop {
-            // Use a block to limit the lifetime of the borrow from self.current
             let raw_samples_len = {
                 let raw_samples = self.current.decode_raw()?;
                 match raw_samples {
@@ -412,9 +411,6 @@ impl GaplessDecoder {
         }
     }
 
-    /// Apply encoder delay trimming to the samples in decode_buffer.
-    ///
-    /// Returns `None` if all samples were trimmed (start of track).
     fn apply_encoder_delay_trimming(&mut self) -> Option<Vec<f32>> {
         let channels = self.current.channels;
         if channels == 0 {
