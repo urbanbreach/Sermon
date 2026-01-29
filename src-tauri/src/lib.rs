@@ -216,6 +216,33 @@ pub fn run() {
                 command_tx,
             });
 
+            if let Ok(conn) = library::open_db(&db_path) {
+                let buffer_size_ms = library::get_setting(&conn, "player.buffer_size_ms")
+                    .ok()
+                    .flatten()
+                    .and_then(|v| v.parse::<u32>().ok())
+                    .unwrap_or(500)
+                    .clamp(100, 2000);
+                let load_to_memory = library::get_setting(&conn, "player.load_to_memory")
+                    .ok()
+                    .flatten()
+                    .map(|v| v != "off")
+                    .unwrap_or(true);
+                let preload_next = library::get_setting(&conn, "player.preload_next")
+                    .ok()
+                    .flatten()
+                    .map(|v| v != "off")
+                    .unwrap_or(true);
+
+                let _ = app.state::<AudioState>().command_tx.send(
+                    PlaybackCommand::SetPlayerSettings {
+                        buffer_size_ms,
+                        load_to_memory,
+                        preload_next,
+                    },
+                );
+            }
+
             spawn_audio_thread(app.handle().clone(), db_path, engine, command_rx, diagnostics.clone());
 
             Ok(())
@@ -302,6 +329,8 @@ struct AudioPlayback {
     fade_state: Option<FadeState>,
     timing_mode: String, // "event" or "polling"
     buffer_size_ms: u32, // Ring buffer size in milliseconds (from preferences)
+    load_to_memory: bool,
+    preload_next: bool,
     // DSD playback state
     is_dsd_playback: bool,
     dsd_dop_enabled: bool,
@@ -349,6 +378,8 @@ impl AudioPlayback {
             fade_state: None,
             timing_mode: "polling".to_string(), // Default to polling for USB compatibility
             buffer_size_ms: 500, // Default buffer size, will be overwritten from settings
+            load_to_memory: true,
+            preload_next: true,
             is_dsd_playback: false,
             dsd_dop_enabled: false,
             dsd_dop_strict: true,
@@ -618,7 +649,7 @@ impl AudioPlayback {
         }
     }
 
-    fn start_playback(&mut self, track: &TrackInfo, db_path: &PathBuf) -> Result<(), String> {
+    fn start_playback(&mut self, track: &TrackInfo, _db_path: &PathBuf) -> Result<(), String> {
         let track_path = Path::new(&track.path);
 
         if track.is_dsd() {
@@ -634,15 +665,7 @@ impl AudioPlayback {
         }
 
         // Check if memory loading is enabled (default: on)
-        let load_to_memory_setting = library::open_db(db_path)
-            .ok()
-            .and_then(|conn| {
-                library::get_setting(&conn, "player.load_to_memory")
-                    .ok()
-                    .flatten()
-            })
-            .map(|v| v != "off")
-            .unwrap_or(true);
+        let load_to_memory_setting = self.load_to_memory;
 
         const GAPLESS_MAX_FILE_SIZE: u64 = 512 * 1024 * 1024;
         let file_size = fs::metadata(track_path).map(|m| m.len()).unwrap_or(0);
@@ -941,7 +964,7 @@ impl AudioPlayback {
         }
 
         // Trigger preload when ~2 seconds from end (or immediately for short tracks)
-        if !self.preload_in_progress {
+        if self.preload_next && !self.preload_in_progress {
             let samples_decoded = gapless_decoder.samples_decoded();
             if let Some(total) = gapless_decoder.total_samples() {
                 let remaining = total.saturating_sub(samples_decoded);
@@ -1192,13 +1215,6 @@ fn spawn_audio_thread(
             if let Ok(Some(fade)) = library::get_setting(&conn, "audio.output.fade") {
                 playback.fade_enabled = fade == "on";
             }
-            // Load buffer size from preferences (default 500ms)
-            if let Ok(Some(buffer_str)) = library::get_setting(&conn, "player.buffer_size_ms") {
-                if let Ok(buffer_ms) = buffer_str.parse::<u32>() {
-                    // Clamp to valid range: 100-2000ms
-                    playback.buffer_size_ms = buffer_ms.clamp(100, 2000);
-                }
-            }
             // Set gain_mode based on output_mode and policy
             if playback.output_mode == "exclusive" && playback.policy == "strict" {
                 playback.gain_mode = "unity".to_string();
@@ -1279,7 +1295,13 @@ fn spawn_audio_thread(
                         }
 
                         // Preload next track when approaching end
-                        if playback.preload_in_progress && !playback.gapless_decoder.as_ref().map_or(true, |d| d.has_preloaded_next()) {
+                        if playback.preload_next
+                            && playback.preload_in_progress
+                            && !playback
+                                .gapless_decoder
+                                .as_ref()
+                                .map_or(true, |d| d.has_preloaded_next())
+                        {
                             let next_track_path = {
                                 let engine_guard = engine.lock();
                                 if let Some(current_idx) = engine_guard.queue.current_index() {
@@ -1848,6 +1870,26 @@ fn handle_playback_command(
                         }
                     }
                 }
+            }
+
+            emit_audio_debug(app, engine, playback, current_device_info.as_ref());
+        }
+        PlaybackCommand::SetPlayerSettings {
+            buffer_size_ms,
+            load_to_memory,
+            preload_next,
+        } => {
+            info!(
+                "Received player settings update: buffer_size_ms={}, load_to_memory={}, preload_next={}",
+                buffer_size_ms, load_to_memory, preload_next
+            );
+
+            playback.buffer_size_ms = buffer_size_ms;
+            playback.load_to_memory = load_to_memory;
+            playback.preload_next = preload_next;
+
+            if !playback.preload_next {
+                playback.cancel_preload();
             }
 
             emit_audio_debug(app, engine, playback, current_device_info.as_ref());

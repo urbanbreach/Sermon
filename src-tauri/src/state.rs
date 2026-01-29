@@ -182,6 +182,11 @@ pub enum PlaybackCommand {
         timing: String,
         asio_driver: Option<String>,
     },
+    SetPlayerSettings {
+        buffer_size_ms: u32,
+        load_to_memory: bool,
+        preload_next: bool,
+    },
     OpenAsioControlPanel {
         driver_name: String,
     },
