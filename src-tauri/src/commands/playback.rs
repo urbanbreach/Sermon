@@ -1,7 +1,7 @@
 use crate::state::{AudioState, LibraryState, PlaybackCommand};
 use audio_engine::device::list_devices;
 use library::{
-    apply_migrations, get_audio_output_asio_driver, get_audio_output_fade, get_audio_output_mode,
+    get_audio_output_asio_driver, get_audio_output_fade, get_audio_output_mode,
     get_audio_output_policy, get_audio_output_timing, get_track_by_id, open_db, set_missing,
     set_setting,
 };
@@ -76,9 +76,9 @@ pub struct DeviceChangedEvent {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AudioDebugEvent {
-    pub output_mode: String, // "exclusive" | "shared"
+    pub output_mode: String, // "exclusive" | "shared" | "asio"
     pub policy: String,      // "strict" | "compatibility"
-    pub conversion: String,  // "none" | "shared_fallback" | "pad_16_to_24"
+    pub conversion: String,  // "none" | "shared_fallback" | "pad_16_to_24" | "pad_16_to_32"
     pub gain_mode: String,   // "unity" | "software"
     pub fade_enabled: bool,
     pub exclusive_active: bool,
@@ -164,8 +164,241 @@ pub fn cmd_open_asio_control_panel(
 }
 
 #[tauri::command]
+pub fn cmd_output_probe_capabilities(
+    audio_state: State<'_, AudioState>,
+    backend: String,
+    device_id: Option<String>,
+    asio_driver: Option<String>,
+    channels: u16,
+    sample_rates: Vec<u32>,
+    bit_depths: Vec<u16>,
+) -> Result<ProbeCapabilitiesResult, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let probed_at_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    let key = ProbeCapabilitiesKey {
+        backend: backend.clone(),
+        device_id: device_id.clone(),
+        asio_driver: asio_driver.clone(),
+        channels,
+    };
+
+    let dimensions = ProbeDimensions {
+        sample_rates: sample_rates.clone(),
+        bit_depths: bit_depths.clone(),
+        channels: vec![channels],
+    };
+
+    let mut cells = Vec::new();
+
+    match backend.as_str() {
+        "wasapi" => {
+            cells = probe_wasapi_capabilities(
+                device_id.as_deref(),
+                channels,
+                &sample_rates,
+                &bit_depths,
+            )?;
+        }
+        "asio" => {
+            let driver_name = asio_driver
+                .as_ref()
+                .ok_or("asio_driver required for ASIO probing")?;
+
+            let is_stopped = {
+                let engine = audio_state.engine.lock();
+                engine.state == audio_engine::PlaybackState::Stopped
+            };
+
+            if !is_stopped {
+                return Err("probe_not_allowed_during_playback".to_string());
+            }
+
+            cells = probe_asio_capabilities(driver_name, channels, &sample_rates, &bit_depths)?;
+        }
+        _ => {
+            return Err(format!("Unknown backend: {}", backend));
+        }
+    }
+
+    Ok(ProbeCapabilitiesResult {
+        version: 1,
+        key,
+        probed_at_ms,
+        dimensions,
+        cells,
+    })
+}
+
+#[cfg(windows)]
+fn probe_wasapi_capabilities(
+    device_id: Option<&str>,
+    channels: u16,
+    sample_rates: &[u32],
+    bit_depths: &[u16],
+) -> Result<Vec<ProbeCell>, String> {
+    use audio_engine::device::{get_default_device, get_device_by_id};
+    use wasapi::{SampleType, WaveFormat};
+
+    let device = match device_id {
+        Some("default") | None => get_default_device().map_err(|e| e.to_string())?,
+        Some(id) => get_device_by_id(id).map_err(|e| e.to_string())?,
+    };
+
+    let channel_mask = if channels == 2 {
+        Some(0x3)
+    } else if channels == 1 {
+        Some(0x4)
+    } else {
+        None
+    };
+
+    let mut cells = Vec::new();
+
+    for &sample_rate in sample_rates {
+        for &bit_depth in bit_depths {
+            let format_attempts: Vec<(usize, usize, SampleType)> = match bit_depth {
+                24 => vec![(32, 24, SampleType::Int), (24, 24, SampleType::Int)],
+                16 => vec![(16, 16, SampleType::Int)],
+                32 => vec![(32, 32, SampleType::Float), (32, 32, SampleType::Int)],
+                _ => vec![(bit_depth as usize, bit_depth as usize, SampleType::Int)],
+            };
+
+            let mut supported = false;
+            let mut reason_code = "unsupported".to_string();
+            let mut detail: Option<String> = None;
+
+            for (store_bits, valid_bits, sample_type) in &format_attempts {
+                let wave_format = WaveFormat::new(
+                    *store_bits,
+                    *valid_bits,
+                    sample_type,
+                    sample_rate as usize,
+                    channels as usize,
+                    channel_mask,
+                );
+
+                let client = match device.get_iaudioclient() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        reason_code = "device_error".to_string();
+                        detail = Some(e.to_string());
+                        break;
+                    }
+                };
+
+                match client.is_supported_exclusive_with_quirks(&wave_format) {
+                    Ok(_) => {
+                        supported = true;
+                        reason_code = "ok".to_string();
+                        detail = Some(format!(
+                            "{}bit in {}bit container, {:?}",
+                            valid_bits, store_bits, sample_type
+                        ));
+                        break;
+                    }
+                    Err(e) => {
+                        detail = Some(e.to_string());
+                    }
+                }
+            }
+
+            cells.push(ProbeCell {
+                sample_rate,
+                bit_depth,
+                channels,
+                supported,
+                reason_code,
+                detail,
+            });
+        }
+    }
+
+    Ok(cells)
+}
+
 #[cfg(not(windows))]
-pub fn cmd_open_asio_control_panel(_driver_name: String) -> Result<(), String> {
+fn probe_wasapi_capabilities(
+    _device_id: Option<&str>,
+    _channels: u16,
+    _sample_rates: &[u32],
+    _bit_depths: &[u16],
+) -> Result<Vec<ProbeCell>, String> {
+    Err("WASAPI is only available on Windows".to_string())
+}
+
+#[cfg(windows)]
+fn probe_asio_capabilities(
+    driver_name: &str,
+    channels: u16,
+    sample_rates: &[u32],
+    _bit_depths: &[u16],
+) -> Result<Vec<ProbeCell>, String> {
+    use asio_sys::Asio;
+
+    let asio = Asio::new();
+    let driver = asio
+        .load_driver(driver_name)
+        .map_err(|e| format!("Failed to load ASIO driver: {:?}", e))?;
+
+    let mut cells = Vec::new();
+
+    for &sample_rate in sample_rates {
+        let mut supported = false;
+        let mut reason_code = "unsupported".to_string();
+        let mut detail: Option<String> = None;
+
+        if let Err(e) = driver.set_sample_rate(sample_rate as f64) {
+            reason_code = "sample_rate_not_supported".to_string();
+            detail = Some(format!("{:?}", e));
+        } else {
+            match driver.sample_rate() {
+                Ok(actual_rate) => {
+                    if (actual_rate as u32) == sample_rate {
+                        supported = true;
+                        reason_code = "ok".to_string();
+                        detail = Some(format!("Driver accepted {}Hz", sample_rate));
+                    } else {
+                        reason_code = "sample_rate_mismatch".to_string();
+                        detail = Some(format!(
+                            "Requested {}Hz, driver set {}Hz",
+                            sample_rate, actual_rate as u32
+                        ));
+                    }
+                }
+                Err(e) => {
+                    reason_code = "sample_rate_query_failed".to_string();
+                    detail = Some(format!("{:?}", e));
+                }
+            }
+        }
+
+        for &bit_depth in &[16u16, 24, 32] {
+            cells.push(ProbeCell {
+                sample_rate,
+                bit_depth,
+                channels,
+                supported,
+                reason_code: reason_code.clone(),
+                detail: detail.clone(),
+            });
+        }
+    }
+
+    Ok(cells)
+}
+
+#[cfg(not(windows))]
+fn probe_asio_capabilities(
+    _driver_name: &str,
+    _channels: u16,
+    _sample_rates: &[u32],
+    _bit_depths: &[u16],
+) -> Result<Vec<ProbeCell>, String> {
     Err("ASIO is only available on Windows".to_string())
 }
 
@@ -182,7 +415,6 @@ pub fn cmd_playback_start(
 ) -> Result<(), String> {
     // Validate/resolve track before starting.
     let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     let track = get_track_by_id(&conn, track_id).map_err(|e| e.to_string())?;
 
     if track.is_missing {
@@ -280,7 +512,6 @@ pub fn cmd_queue_play_now(
 ) -> Result<(), String> {
     // Same validation as playback start.
     let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     let track = get_track_by_id(&conn, track_id).map_err(|e| e.to_string())?;
 
     if track.is_missing {
@@ -320,7 +551,6 @@ pub fn cmd_queue_add(
     track_id: i64,
 ) -> Result<(), String> {
     let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     let track = get_track_by_id(&conn, track_id).map_err(|e| e.to_string())?;
 
     if track.is_missing {
@@ -365,7 +595,6 @@ pub fn cmd_queue_set_and_play(
     }
 
     let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
 
     // Validate at least the starting track exists and is not missing
     let start_track_id = track_ids.get(start_index).ok_or("Invalid start index")?;
@@ -445,6 +674,48 @@ pub struct AudioOutputSettings {
     pub fade: bool,
     pub timing: String,              // "event" | "polling"
     pub asio_driver: Option<String>, // ASIO driver name when mode is "asio"
+}
+
+// -----------------
+// Capability Probing
+// -----------------
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProbeCapabilitiesKey {
+    pub backend: String,
+    pub device_id: Option<String>,
+    pub asio_driver: Option<String>,
+    pub channels: u16,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProbeDimensions {
+    pub sample_rates: Vec<u32>,
+    pub bit_depths: Vec<u16>,
+    pub channels: Vec<u16>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProbeCell {
+    pub sample_rate: u32,
+    pub bit_depth: u16,
+    pub channels: u16,
+    pub supported: bool,
+    pub reason_code: String,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProbeCapabilitiesResult {
+    pub version: u32,
+    pub key: ProbeCapabilitiesKey,
+    pub probed_at_ms: u64,
+    pub dimensions: ProbeDimensions,
+    pub cells: Vec<ProbeCell>,
 }
 
 #[tauri::command]

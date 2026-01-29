@@ -67,9 +67,9 @@ export interface AudioFormatData {
 }
 
 export interface AudioDebugEvent {
-  output_mode: 'exclusive' | 'shared';
+  output_mode: 'exclusive' | 'shared' | 'asio';
   policy: 'strict' | 'compatibility';
-  conversion: 'none' | 'shared_fallback' | 'pad_16_to_24';
+  conversion: 'none' | 'shared_fallback' | 'pad_16_to_24' | 'pad_16_to_32';
   gain_mode: 'unity' | 'software';
   fade_enabled: boolean;
   exclusive_active: boolean;

@@ -1,6 +1,7 @@
 mod commands;
 mod state;
 
+use serde::Serialize;
 use audio_engine::decode::AudioDecoder;
 use audio_engine::device::{get_default_device, get_device_by_id};
 use audio_engine::gapless_decoder::{AudioFormat, GaplessDecoder, TransitionType};
@@ -20,18 +21,18 @@ use commands::{
     cmd_library_search_tracks_page, cmd_library_update_folder_enabled,
     cmd_library_update_folder_options, cmd_library_update_track_tags, cmd_list_asio_drivers,
     cmd_open_asio_control_panel, cmd_output_get_settings, cmd_output_list_devices,
-    cmd_output_set_device, cmd_output_set_settings, cmd_playback_next, cmd_playback_pause,
-    cmd_playback_previous, cmd_playback_resume, cmd_playback_seek, cmd_playback_start,
-    cmd_playback_stop, cmd_queue_add, cmd_queue_play_now, cmd_queue_set_and_play, cmd_scan_start,
-    cmd_settings_export_diagnostics, cmd_settings_get, cmd_settings_get_category,
-    cmd_settings_reset_category, cmd_settings_set, cmd_settings_set_category, cmd_volume_get,
-    cmd_volume_set, cmd_waveform_get_peaks, AudioDebugEvent, AudioFormatData, DeviceChangedEvent,
-    NowPlayingEvent, PlaybackErrorEvent, PlaybackPositionEvent, PlaybackStateEvent,
-    QueueChangedEvent, QueueItemData, TrackEventData,
+    cmd_output_probe_capabilities, cmd_output_set_device, cmd_output_set_settings,
+    cmd_playback_next, cmd_playback_pause, cmd_playback_previous, cmd_playback_resume,
+    cmd_playback_seek, cmd_playback_start, cmd_playback_stop, cmd_queue_add, cmd_queue_play_now,
+    cmd_queue_set_and_play, cmd_scan_start, cmd_settings_export_diagnostics, cmd_settings_get,
+    cmd_settings_get_category, cmd_settings_reset_category, cmd_settings_set,
+    cmd_settings_set_category, cmd_volume_get, cmd_volume_set, cmd_waveform_get_peaks,
+    AudioDebugEvent, AudioFormatData, DeviceChangedEvent, NowPlayingEvent, PlaybackErrorEvent,
+    PlaybackPositionEvent, PlaybackStateEvent, QueueChangedEvent, QueueItemData, TrackEventData,
 };
 use crossbeam_channel::{select, tick, unbounded, Receiver};
 use parking_lot::Mutex;
-use state::{ArtworkCacheState, AudioState, LibraryState, PlaybackCommand, WaveformCacheState};
+use state::{ArtworkCacheState, AudioState, DiagnosticsState, LibraryState, PlaybackCommand, WaveformCacheState};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -87,7 +88,17 @@ pub fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Record startup start time
+    let startup_start_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
     let _guard = init_tracing();
+
+    // Initialize diagnostics state with startup timestamp
+    let diagnostics = Arc::new(DiagnosticsState::new());
+    diagnostics.startup_start_ms.store(startup_start_ms, std::sync::atomic::Ordering::SeqCst);
 
     let mut builder = tauri::Builder::default();
 
@@ -96,48 +107,62 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_mcp_bridge::init());
     }
 
+    let diagnostics_for_listener = diagnostics.clone();
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .setup(|app| {
-            // Register event listener
-            app.listen("sermon://first-interactive", |_event| {
-                info!("first_interactive");
+        .setup(move |app| {
+            // Manage diagnostics state for Tauri commands
+            app.manage(diagnostics.clone());
+
+            // Register event listener for first-interactive timing
+            let diag = diagnostics_for_listener.clone();
+            app.listen("sermon://first-interactive", move |_event| {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                diag.startup_complete_ms.store(now_ms, std::sync::atomic::Ordering::SeqCst);
+                info!("first_interactive (startup_ms={})", now_ms.saturating_sub(
+                    diag.startup_start_ms.load(std::sync::atomic::Ordering::SeqCst)
+                ));
             });
 
             // Resolve DB path
             let app_data_dir = app
                 .path()
                 .app_data_dir()
-                .expect("Failed to get app data directory");
+                .map_err(|_| "Failed to get app data directory")?;
 
             // Ensure directory exists
-            fs::create_dir_all(&app_data_dir).expect("Failed to create app data directory");
+            fs::create_dir_all(&app_data_dir)?;
 
             let db_path = app_data_dir.join("library.db");
             info!("Database path: {:?}", db_path);
 
             // Setup artwork cache directory
             let artwork_cache_dir = app_data_dir.join("artwork-cache");
-            fs::create_dir_all(&artwork_cache_dir)
-                .expect("Failed to create artwork cache directory");
+            fs::create_dir_all(&artwork_cache_dir)?;
             info!("Artwork cache path: {:?}", artwork_cache_dir);
             app.manage(ArtworkCacheState::new(artwork_cache_dir));
 
             // Setup waveform cache directory
             let waveform_cache_dir = app_data_dir.join("waveform-cache");
-            fs::create_dir_all(&waveform_cache_dir)
-                .expect("Failed to create waveform cache directory");
+            fs::create_dir_all(&waveform_cache_dir)?;
             info!("Waveform cache path: {:?}", waveform_cache_dir);
             app.manage(WaveformCacheState::new(waveform_cache_dir));
 
-            // Initialize database
-            let conn = library::open_db(&db_path).expect("Failed to open database");
-            library::apply_migrations(&conn).expect("Failed to apply migrations");
+            let library_state = LibraryState::new(db_path.clone());
+
+            // Apply migrations once at startup (flag gates all subsequent calls)
+            let conn = library::open_db(&db_path)?;
+            library::apply_migrations(&conn)?;
+            library_state
+                .migrations_applied
+                .store(true, std::sync::atomic::Ordering::SeqCst);
             drop(conn);
 
-            // Register state
-            app.manage(LibraryState::new(db_path.clone()));
+            app.manage(library_state);
 
             // Run quick scan on startup to detect added/removed files
             // Use a small delay to ensure the app is fully initialized
@@ -191,7 +216,7 @@ pub fn run() {
                 command_tx,
             });
 
-            spawn_audio_thread(app.handle().clone(), db_path, engine, command_rx);
+            spawn_audio_thread(app.handle().clone(), db_path, engine, command_rx, diagnostics.clone());
 
             Ok(())
         })
@@ -229,6 +254,7 @@ pub fn run() {
             cmd_queue_add,
             cmd_queue_set_and_play,
             cmd_output_list_devices,
+            cmd_output_probe_capabilities,
             cmd_list_asio_drivers,
             cmd_open_asio_control_panel,
             cmd_output_set_device,
@@ -267,6 +293,7 @@ struct AudioPlayback {
     output_sample_rate: u32,
     output_channels: u16,
     end_of_track: bool,         // Track if decoder has finished
+    current_track_id: Option<i64>, // Track ID currently loaded in decoder
     output_mode: String,        // "exclusive" or "shared" or "asio"
     policy: String,             // "strict" or "compatibility"
     gain_mode: String,          // "unity" or "software"
@@ -313,6 +340,7 @@ impl AudioPlayback {
             output_sample_rate: 0,
             output_channels: 0,
             end_of_track: false,
+            current_track_id: None,
             output_mode: "shared".to_string(),
             policy: "compatibility".to_string(), // Default to compatibility
             gain_mode: "software".to_string(),   // Default to software volume
@@ -378,7 +406,7 @@ impl AudioPlayback {
         _authoritative_bit_depth: Option<u16>,
     ) -> Result<(), String> {
         // Don't block playback for unknown bit depth - just mark as not bit-perfect
-        // The determine_bit_perfect function will handle the "unknown" case
+        // The compute_signal_path_checks function will handle the "unknown" case
 
         // Check if we need to reopen
         if let Some(ref output) = self.output {
@@ -639,6 +667,7 @@ impl AudioPlayback {
             self.gapless_decoder = Some(gapless_decoder);
             self.preload_in_progress = false;
             self.decoder = None;
+            self.current_track_id = Some(track.id);
         } else {
             // Use legacy AudioDecoder (streaming from disk)
             let decoder = AudioDecoder::open(track_path).map_err(|e| e.to_string())?;
@@ -657,6 +686,7 @@ impl AudioPlayback {
             self.decoder = Some(decoder);
             self.gapless_decoder = None;
             self.preload_in_progress = false;
+            self.current_track_id = Some(track.id);
         }
 
         self.end_of_track = false;
@@ -783,6 +813,7 @@ impl AudioPlayback {
         self.preload_in_progress = false;
         self.ring_buffer = None;
         self.end_of_track = false;
+        self.current_track_id = None;
         self.is_dsd_playback = false;
         self.dsd_decoder = None;
         self.dop_packer = None;
@@ -832,7 +863,9 @@ impl AudioPlayback {
     }
 
     fn seek(&mut self, position_ms: u64) -> Result<(), String> {
-        if let Some(ref mut decoder) = self.decoder {
+        if let Some(ref mut gd) = self.gapless_decoder {
+            gd.seek(position_ms).map_err(|e| e.to_string())?;
+        } else if let Some(ref mut decoder) = self.decoder {
             decoder.seek(position_ms).map_err(|e| e.to_string())?;
         }
         if let Some(ref mut ring_buffer) = self.ring_buffer {
@@ -1101,6 +1134,7 @@ fn spawn_audio_thread(
     db_path: PathBuf,
     engine: Arc<Mutex<audio_engine::EngineState>>,
     command_rx: Receiver<PlaybackCommand>,
+    diagnostics: Arc<DiagnosticsState>,
 ) {
     std::thread::spawn(move || {
         // Initialize settings defaults
@@ -1128,6 +1162,8 @@ fn spawn_audio_thread(
         let position_tick = tick(Duration::from_millis(250));
         // Audio processing tick - run at ~10ms for smooth playback
         let audio_tick = tick(Duration::from_millis(10));
+        // Telemetry tick - 1 Hz for diagnostics UI
+        let telemetry_tick = tick(Duration::from_secs(1));
 
         let mut playback = AudioPlayback::new();
         let mut current_device_info: Option<audio_engine::device::AudioDeviceInfo> = None;
@@ -1190,10 +1226,14 @@ fn spawn_audio_thread(
                         &mut playback,
                         &mut current_device_info,
                         cmd,
+                        &diagnostics,
                     );
                 }
                 recv(position_tick) -> _ => {
                     emit_position_tick(&app, &engine);
+                }
+                recv(telemetry_tick) -> _ => {
+                    emit_audio_telemetry(&app, &engine, &playback, current_device_info.as_ref());
                 }
                 recv(audio_tick) -> _ => {
                     // Process audio if playing
@@ -1251,6 +1291,28 @@ fn spawn_audio_thread(
                             }
                         }
 
+                        let transitioned = playback
+                            .gapless_decoder
+                            .as_mut()
+                            .map(|d| d.take_just_transitioned())
+                            .unwrap_or(false);
+
+                        if transitioned {
+                            {
+                                let mut engine = engine.lock();
+                                engine.next();
+                            }
+                            playback.preload_in_progress = false;
+                            let new_track_id = {
+                                let engine = engine.lock();
+                                engine.session.as_ref().map(|s| s.track_id)
+                            };
+                            playback.current_track_id = new_track_id;
+                            emit_now_playing(&app, &engine);
+                            emit_playback_state(&app, &engine);
+                            emit_queue_changed(&app, &engine);
+                        }
+
                         match playback.process_audio(volume) {
                             Ok(true) => {
                                 // Continue playing
@@ -1271,6 +1333,11 @@ fn spawn_audio_thread(
                                             engine.next();
                                         }
                                         playback.preload_in_progress = false;
+                                        let new_track_id = {
+                                            let engine = engine.lock();
+                                            engine.session.as_ref().map(|s| s.track_id)
+                                        };
+                                        playback.current_track_id = new_track_id;
                                         emit_now_playing(&app, &engine);
                                         emit_playback_state(&app, &engine);
                                         emit_queue_changed(&app, &engine);
@@ -1306,10 +1373,37 @@ fn spawn_audio_thread(
                                         emit_queue_changed(&app, &engine);
                                     }
                                     TransitionType::EndOfQueue => {
-                                        // Queue exhausted
-                                        info!("Track ended, queue exhausted");
-                                        playback.stop_playback();
-                                        emit_playback_state(&app, &engine);
+                                        // No preloaded next track - try to advance queue normally
+                                        {
+                                            let mut engine = engine.lock();
+                                            engine.next();
+                                        }
+
+                                        let next_track = {
+                                            let engine = engine.lock();
+                                            if engine.state == PlaybackState::Playing {
+                                                engine.session.as_ref().map(|s| s.track.clone())
+                                            } else {
+                                                None
+                                            }
+                                        };
+
+                                        if let Some(track) = next_track {
+                                            if let Err(e) = playback.start_playback(&track, &db_path) {
+                                                error!("Failed to start next track: {}", e);
+                                                let (code, msg) = parse_playback_error(&e);
+                                                emit_playback_error(&app, &code, &msg, Some(track.id), false, None);
+                                                engine.lock().stop();
+                                                playback.stop_playback();
+                                            }
+                                            emit_now_playing(&app, &engine);
+                                            emit_playback_state(&app, &engine);
+                                            emit_queue_changed(&app, &engine);
+                                        } else {
+                                            info!("Track ended, queue exhausted");
+                                            playback.stop_playback();
+                                            emit_playback_state(&app, &engine);
+                                        }
                                     }
                                 }
                             }
@@ -1350,9 +1444,16 @@ fn handle_playback_command(
     playback: &mut AudioPlayback,
     current_device_info: &mut Option<audio_engine::device::AudioDeviceInfo>,
     command: PlaybackCommand,
+    diagnostics: &Arc<DiagnosticsState>,
 ) {
     match command {
         PlaybackCommand::PlayNow { track_id } => {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            diagnostics.playback_start_ms.store(now_ms, std::sync::atomic::Ordering::SeqCst);
+
             playback.cancel_preload();
             let Some(track) = resolve_track(db_path, track_id)
                 .map_err(|e| {
@@ -1378,6 +1479,12 @@ fn handle_playback_command(
                 emit_playback_state(app, engine);
                 return;
             }
+
+            let complete_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            diagnostics.playback_complete_ms.store(complete_ms, std::sync::atomic::Ordering::SeqCst);
 
             emit_now_playing(app, engine);
             emit_playback_state(app, engine);
@@ -1405,6 +1512,12 @@ fn handle_playback_command(
             track_ids,
             start_index,
         } => {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            diagnostics.playback_start_ms.store(now_ms, std::sync::atomic::Ordering::SeqCst);
+
             playback.cancel_preload();
             let mut tracks = Vec::new();
             for track_id in &track_ids {
@@ -1442,6 +1555,12 @@ fn handle_playback_command(
                 return;
             }
 
+            let complete_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            diagnostics.playback_complete_ms.store(complete_ms, std::sync::atomic::Ordering::SeqCst);
+
             emit_now_playing(app, engine);
             emit_playback_state(app, engine);
             emit_queue_changed(app, engine);
@@ -1464,11 +1583,47 @@ fn handle_playback_command(
             emit_playback_state(app, engine);
         }
         PlaybackCommand::Seek { position_ms } => {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            diagnostics.seek_start_ms.store(now_ms, std::sync::atomic::Ordering::SeqCst);
+
             playback.cancel_preload();
+            
+            // Check if decoder track matches engine track (fixes race condition)
+            let engine_track_id = {
+                let engine = engine.lock();
+                engine.session.as_ref().map(|s| s.track_id)
+            };
+            
+            if playback.current_track_id != engine_track_id {
+                // Decoder has stale track - reload the correct track before seeking
+                if let Some(track_id) = engine_track_id {
+                    let track = {
+                        let engine = engine.lock();
+                        engine.session.as_ref().map(|s| s.track.clone())
+                    };
+                    if let Some(track) = track {
+                        info!("Seek: reloading track {} (decoder had stale track)", track_id);
+                        if let Err(e) = playback.start_playback(&track, db_path) {
+                            error!("Failed to reload track for seek: {}", e);
+                        }
+                    }
+                }
+            }
+            
             if let Err(e) = playback.seek(position_ms) {
                 error!("Seek failed: {}", e);
             }
             engine.lock().seek(position_ms);
+
+            let complete_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            diagnostics.seek_complete_ms.store(complete_ms, std::sync::atomic::Ordering::SeqCst);
+
             emit_position_now(app, engine);
         }
         PlaybackCommand::Next => {
@@ -1706,7 +1861,6 @@ fn handle_playback_command(
 
 fn resolve_track(db_path: &PathBuf, track_id: i64) -> Result<TrackInfo, String> {
     let conn = library::open_db(db_path).map_err(|e| e.to_string())?;
-    library::apply_migrations(&conn).map_err(|e| e.to_string())?;
     let row = library::get_track_by_id(&conn, track_id).map_err(|e| e.to_string())?;
 
     let id = row.id.unwrap_or(track_id);
@@ -1842,98 +1996,549 @@ fn emit_position_tick(app: &tauri::AppHandle, engine: &Arc<Mutex<audio_engine::E
     emit_position_now(app, engine);
 }
 
-fn determine_bit_perfect(playback: &AudioPlayback, track: Option<&TrackInfo>) -> (String, String) {
-    // Precedence order (first matching wins):
-    // 1. Output mode: Shared fallback (Windows SRC)
-    if playback.output_mode == "shared" {
-        return (
-            "no".to_string(),
-            "Output mode: Shared fallback (Windows SRC)".to_string(),
-        );
-    }
+const REASON_NO_OUTPUT_ACTIVE: &str = "no_output_active";
+const REASON_OUTPUT_MODE_SHARED: &str = "output_mode_shared";
+const REASON_EXCLUSIVE_INACTIVE: &str = "exclusive_inactive";
+const REASON_POLICY_COMPATIBILITY: &str = "policy_compatibility";
+const REASON_CONVERSION_SHARED_FALLBACK: &str = "conversion_shared_fallback";
+const REASON_CONVERSION_PAD_16_TO_24: &str = "conversion_pad_16_to_24";
+const REASON_CONVERSION_PAD_16_TO_32: &str = "conversion_pad_16_to_32";
+const REASON_GAIN_SOFTWARE_APPLIED: &str = "gain_software_applied";
+const REASON_GAIN_SOFTWARE_BYPASSED: &str = "gain_software_bypassed";
+const REASON_FADE_ACTIVE: &str = "fade_active";
+const REASON_SAMPLE_RATE_MISMATCH: &str = "sample_rate_mismatch";
+const REASON_BIT_DEPTH_MISMATCH: &str = "bit_depth_mismatch";
+const REASON_BIT_DEPTH_UNKNOWN: &str = "bit_depth_unknown";
+const REASON_ASIO_RESAMPLER_ACTIVE: &str = "asio_resampler_active";
+const REASON_DOP_DISABLED: &str = "dop_disabled";
+const REASON_DOP_DEGRADED_DROPS: &str = "dop_degraded_drops";
+const REASON_DOP_DEGRADED_CB_UNDERRUN: &str = "dop_degraded_cb_underrun";
 
-    if let Some(c) = &playback.conversion {
-        if c == "shared_fallback" {
-            return (
-                "no".to_string(),
-                "Output mode: Shared fallback (Windows SRC)".to_string(),
-            );
-        }
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SignalPathStage {
+    Source,
+    Decode,
+    Resample,
+    ChannelMap,
+    Gain,
+    Fade,
+    Mixer,
+    Transport,
+    Device,
+}
 
-    // Check if we are actually in exclusive mode
-    if let Some(output) = &playback.output {
-        if !output.is_exclusive() {
-            return ("no".to_string(), "Output mode: Shared".to_string());
-        }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SignalPathStatus {
+    Ok,
+    TouchingBits,
+    Unknown,
+    Inactive,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SignalPathCheck {
+    stage: SignalPathStage,
+    status: SignalPathStatus,
+    reason_code: String,
+    detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DopPayloadIntegrityStatus {
+    Ok,
+    Degraded,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DopIntegrity {
+    status: DopPayloadIntegrityStatus,
+    reason_code: String,
+    detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IntegrityStatus {
+    pcm_bit_perfect: String,
+    dop_payload_integrity: DopIntegrity,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AudioTelemetryEvent {
+    pub version: u32,
+    pub timestamp_ms: u64,
+    pub playback: TelemetryPlayback,
+    pub device: TelemetryDevice,
+    pub format: TelemetryFormat,
+    pub stability: TelemetryStability,
+    pub integrity: TelemetryIntegrity,
+    pub signal_path_checks: Vec<TelemetrySignalPathCheck>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryPlayback {
+    pub state: String,
+    pub track_id: i64,
+    pub is_dsd: bool,
+    pub output_mode: String,
+    pub policy: String,
+    pub timing_mode: String,
+    pub gain_mode: String,
+    pub effective_volume_mode: String,
+    pub fade_enabled: bool,
+    pub fade_active: bool,
+    pub conversion: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryDevice {
+    pub device_id: String,
+    pub device_name: String,
+    pub exclusive_active: bool,
+    pub backend: TelemetryBackend,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryBackend {
+    pub kind: String,
+    pub wasapi: Option<TelemetryWasapiBackend>,
+    pub asio: Option<TelemetryAsioBackend>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryWasapiBackend {
+    pub buffer_frames: u32,
+    pub device_period_default_hns: i64,
+    pub device_period_min_hns: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryAsioBackend {
+    pub driver_name: String,
+    pub buffer_size_frames: u32,
+    pub sample_format: String,
+    pub actual_sample_rate: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryFormat {
+    pub decode: TelemetryDecodeFormat,
+    pub output: TelemetryOutputFormat,
+    pub resampler: TelemetryResamplerFormat,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryDecodeFormat {
+    pub sample_rate: u32,
+    pub bit_depth: u16,
+    pub channels: u16,
+    pub codec: String,
+    pub container: String,
+    pub is_dsd: bool,
+    pub dsd_rate_hz: u32,
+    pub dop_rate_hz: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryOutputFormat {
+    pub sample_rate: u32,
+    pub bit_depth: u16,
+    pub valid_bits: u16,
+    pub channels: u16,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryResamplerFormat {
+    pub active: bool,
+    pub source_sample_rate: u32,
+    pub output_sample_rate: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryStability {
+    pub ring_buffer: TelemetryRingBufferStats,
+    pub dop_ring_buffer: TelemetryRingBufferStats,
+    pub asio: TelemetryAsioStats,
+    pub recent_events: Vec<TelemetryRecentEvent>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryRingBufferStats {
+    pub capacity_frames: usize,
+    pub available_frames: usize,
+    pub fill_percent: f32,
+    pub underruns: TelemetryCounter,
+    pub overflows: TelemetryCounter,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryCounter {
+    pub track: u64,
+    pub lifetime: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryAsioStats {
+    pub callback_underruns: TelemetryCounter,
+    pub dop_drops: TelemetryCounter,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryRecentEvent {
+    pub ts_ms: u64,
+    pub code: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryIntegrity {
+    pub pcm_bit_perfect: TelemetryBitPerfect,
+    pub dop_payload_integrity: TelemetryDopIntegrity,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryBitPerfect {
+    pub status: String,
+    pub reasons: Vec<String>,
+    pub display: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryDopIntegrity {
+    pub status: String,
+    pub reasons: Vec<String>,
+    pub display: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetrySignalPathCheck {
+    pub stage: String,
+    pub status: String,
+    pub reason_code: String,
+    pub detail: String,
+}
+
+fn signal_path_check(
+    stage: SignalPathStage,
+    status: SignalPathStatus,
+    reason_code: Option<&str>,
+    detail: Option<String>,
+) -> SignalPathCheck {
+    SignalPathCheck {
+        stage,
+        status,
+        reason_code: reason_code.unwrap_or_default().to_string(),
+        detail: detail.unwrap_or_default(),
+    }
+}
+
+fn compute_signal_path_checks(playback: &AudioPlayback, track: Option<&TrackInfo>) -> Vec<SignalPathCheck> {
+    let output = playback.output.as_ref();
+    let exclusive_active = output.map(|o| o.is_exclusive()).unwrap_or(false);
+    let track_sample_rate = track.and_then(|t| t.sample_rate);
+    let track_bit_depth = track.and_then(|t| t.bit_depth);
+
+    let source_check = if track.is_none() {
+        signal_path_check(
+            SignalPathStage::Source,
+            SignalPathStatus::Unknown,
+            Some(REASON_BIT_DEPTH_UNKNOWN),
+            Some("No track info".to_string()),
+        )
     } else {
-        return ("no".to_string(), "No output active".to_string());
-    }
+        signal_path_check(SignalPathStage::Source, SignalPathStatus::Ok, None, None)
+    };
 
-    // 2. Policy: Compatibility
-    if playback.policy == "compatibility" {
-        return ("no".to_string(), "Policy: Compatibility".to_string());
-    }
-
-    // 3. Conversion: Zero-pad 16->24 (compat)
-    if playback.conversion.as_deref() == Some("pad_16_to_24") {
-        return (
-            "no".to_string(),
-            "Conversion: Zero-pad 16->24 (compat)".to_string(),
-        );
-    }
-
-    // 4. Gain: Software volume
-    if playback.gain_mode == "software" {
-        return ("no".to_string(), "Gain: Software volume".to_string());
-    }
-
-    // 5. Fade enabled (not bit-perfect during fade window)
-    if playback.fade_enabled && playback.fade_state.is_some() {
-        return (
-            "no".to_string(),
-            "Fade enabled (not bit-perfect during fade window)".to_string(),
-        );
-    }
-
-    // 6. Format mismatch (track vs output)
-    if let Some(track) = track {
-        if let Some(track_sr) = track.sample_rate {
-            if track_sr != playback.output_sample_rate {
-                return (
-                    "no".to_string(),
-                    format!(
-                        "Sample rate mismatch: {} vs {}",
-                        track_sr, playback.output_sample_rate
-                    ),
-                );
-            }
-        }
-
-        // 7. Bit depth unknown
-        if let Some(track_bd) = track.bit_depth {
-            if let Some(output) = &playback.output {
-                // Compare to valid_bits, not container bit_depth
-                // This correctly handles 24-bit in 32-bit container
-                if output.valid_bits() != track_bd && playback.conversion.is_none() {
-                    return (
-                        "no".to_string(),
-                        format!(
-                            "Bit depth mismatch: {} vs {}",
-                            track_bd,
-                            output.valid_bits()
-                        ),
-                    );
-                }
-            }
+    let decode_check = if track.is_some() && track_bit_depth.is_none() {
+        signal_path_check(
+            SignalPathStage::Decode,
+            SignalPathStatus::Unknown,
+            Some(REASON_BIT_DEPTH_UNKNOWN),
+            Some("Bit depth unknown".to_string()),
+        )
+    } else if playback.conversion.as_deref() == Some("pad_16_to_24") {
+        signal_path_check(
+            SignalPathStage::Decode,
+            SignalPathStatus::TouchingBits,
+            Some(REASON_CONVERSION_PAD_16_TO_24),
+            Some("Conversion: Zero-pad 16->24 (compat)".to_string()),
+        )
+    } else if playback.conversion.as_deref() == Some("pad_16_to_32") {
+        signal_path_check(
+            SignalPathStage::Decode,
+            SignalPathStatus::TouchingBits,
+            Some(REASON_CONVERSION_PAD_16_TO_32),
+            Some("Conversion: Zero-pad 16->32 (compat)".to_string()),
+        )
+    } else if let (Some(track_bd), Some(output)) = (track_bit_depth, output) {
+        if output.valid_bits() != track_bd && playback.conversion.is_none() {
+            signal_path_check(
+                SignalPathStage::Decode,
+                SignalPathStatus::TouchingBits,
+                Some(REASON_BIT_DEPTH_MISMATCH),
+                Some(format!(
+                    "Bit depth mismatch: {} vs {}",
+                    track_bd,
+                    output.valid_bits()
+                )),
+            )
         } else {
-            return ("no".to_string(), "Bit depth unknown".to_string());
+            signal_path_check(SignalPathStage::Decode, SignalPathStatus::Ok, None, None)
         }
     } else {
-        return ("no".to_string(), "No track info".to_string());
+        signal_path_check(SignalPathStage::Decode, SignalPathStatus::Ok, None, None)
+    };
+
+    let resample_check = if playback.resampler.is_some() {
+        let reason_code = if playback.output_mode == "asio" {
+            REASON_ASIO_RESAMPLER_ACTIVE
+        } else {
+            REASON_SAMPLE_RATE_MISMATCH
+        };
+        let detail = if let Some(track_sr) = track_sample_rate {
+            format!(
+                "Sample rate mismatch: {} vs {}",
+                track_sr, playback.output_sample_rate
+            )
+        } else {
+            "Sample rate mismatch".to_string()
+        };
+        signal_path_check(
+            SignalPathStage::Resample,
+            SignalPathStatus::TouchingBits,
+            Some(reason_code),
+            Some(detail),
+        )
+    } else if let Some(track_sr) = track_sample_rate {
+        if playback.output_sample_rate > 0 && track_sr != playback.output_sample_rate {
+            signal_path_check(
+                SignalPathStage::Resample,
+                SignalPathStatus::TouchingBits,
+                Some(REASON_SAMPLE_RATE_MISMATCH),
+                Some(format!(
+                    "Sample rate mismatch: {} vs {}",
+                    track_sr, playback.output_sample_rate
+                )),
+            )
+        } else {
+            signal_path_check(SignalPathStage::Resample, SignalPathStatus::Ok, None, None)
+        }
+    } else if track.is_some() {
+        signal_path_check(
+            SignalPathStage::Resample,
+            SignalPathStatus::Unknown,
+            None,
+            Some("Sample rate unknown".to_string()),
+        )
+    } else {
+        signal_path_check(SignalPathStage::Resample, SignalPathStatus::Ok, None, None)
+    };
+
+    let channel_map_check = signal_path_check(SignalPathStage::ChannelMap, SignalPathStatus::Ok, None, None);
+
+    let unity_forced = exclusive_active && playback.policy == "strict";
+    let gain_check = if playback.gain_mode == "software" {
+        if unity_forced {
+            signal_path_check(
+                SignalPathStage::Gain,
+                SignalPathStatus::Ok,
+                Some(REASON_GAIN_SOFTWARE_BYPASSED),
+                Some("Gain: Software volume bypassed (exclusive strict)".to_string()),
+            )
+        } else {
+            signal_path_check(
+                SignalPathStage::Gain,
+                SignalPathStatus::TouchingBits,
+                Some(REASON_GAIN_SOFTWARE_APPLIED),
+                Some("Gain: Software volume".to_string()),
+            )
+        }
+    } else {
+        signal_path_check(SignalPathStage::Gain, SignalPathStatus::Ok, None, None)
+    };
+
+    let fade_check = if playback.fade_enabled && playback.fade_state.is_some() {
+        signal_path_check(
+            SignalPathStage::Fade,
+            SignalPathStatus::TouchingBits,
+            Some(REASON_FADE_ACTIVE),
+            Some("Fade enabled (not bit-perfect during fade window)".to_string()),
+        )
+    } else {
+        signal_path_check(SignalPathStage::Fade, SignalPathStatus::Ok, None, None)
+    };
+
+    let mixer_check = if playback.output_mode == "shared" {
+        signal_path_check(
+            SignalPathStage::Mixer,
+            SignalPathStatus::TouchingBits,
+            Some(REASON_OUTPUT_MODE_SHARED),
+            Some("Output mode: Shared fallback (Windows SRC)".to_string()),
+        )
+    } else if playback.conversion.as_deref() == Some("shared_fallback") {
+        signal_path_check(
+            SignalPathStage::Mixer,
+            SignalPathStatus::TouchingBits,
+            Some(REASON_CONVERSION_SHARED_FALLBACK),
+            Some("Output mode: Shared fallback (Windows SRC)".to_string()),
+        )
+    } else {
+        signal_path_check(SignalPathStage::Mixer, SignalPathStatus::Ok, None, None)
+    };
+
+    let transport_check = if playback.policy == "compatibility" {
+        signal_path_check(
+            SignalPathStage::Transport,
+            SignalPathStatus::TouchingBits,
+            Some(REASON_POLICY_COMPATIBILITY),
+            Some("Policy: Compatibility".to_string()),
+        )
+    } else {
+        signal_path_check(SignalPathStage::Transport, SignalPathStatus::Ok, None, None)
+    };
+
+    let device_check = if output.is_none() {
+        signal_path_check(
+            SignalPathStage::Device,
+            SignalPathStatus::Inactive,
+            Some(REASON_NO_OUTPUT_ACTIVE),
+            Some("No output active".to_string()),
+        )
+    } else if playback.output_mode != "shared" && !exclusive_active {
+        signal_path_check(
+            SignalPathStage::Device,
+            SignalPathStatus::TouchingBits,
+            Some(REASON_EXCLUSIVE_INACTIVE),
+            Some("Exclusive mode inactive".to_string()),
+        )
+    } else {
+        signal_path_check(SignalPathStage::Device, SignalPathStatus::Ok, None, None)
+    };
+
+    vec![
+        source_check,
+        decode_check,
+        resample_check,
+        channel_map_check,
+        gain_check,
+        fade_check,
+        mixer_check,
+        transport_check,
+        device_check,
+    ]
+}
+
+fn derive_pcm_bit_perfect(
+    playback: &AudioPlayback,
+    checks: &[SignalPathCheck],
+) -> (String, String) {
+    let exclusive_active = playback.output.as_ref().map(|o| o.is_exclusive()).unwrap_or(false);
+    let all_relevant_ok = checks
+        .iter()
+        .filter(|check| check.status != SignalPathStatus::Inactive)
+        .all(|check| check.status == SignalPathStatus::Ok);
+
+    if exclusive_active && all_relevant_ok {
+        return ("yes".to_string(), "".to_string());
     }
 
-    ("yes".to_string(), "".to_string())
+    let reason = checks
+        .iter()
+        .find_map(|check| {
+            let should_report = match check.status {
+                SignalPathStatus::TouchingBits | SignalPathStatus::Unknown => true,
+                SignalPathStatus::Inactive => !check.reason_code.is_empty(),
+                SignalPathStatus::Ok => false,
+            };
+
+            if !should_report {
+                return None;
+            }
+
+            let detail = check.detail.trim();
+            if !detail.is_empty() {
+                Some(detail.to_string())
+            } else if !check.reason_code.is_empty() {
+                Some(check.reason_code.clone())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| {
+            if !exclusive_active {
+                "Output not exclusive".to_string()
+            } else {
+                "Signal path not bit-perfect".to_string()
+            }
+        });
+
+    ("no".to_string(), reason)
+}
+
+fn compute_dop_payload_integrity(playback: &AudioPlayback) -> DopIntegrity {
+    if !playback.is_dsd_playback {
+        return DopIntegrity {
+            status: DopPayloadIntegrityStatus::Unknown,
+            reason_code: String::new(),
+            detail: "Not DSD playback".to_string(),
+        };
+    }
+
+    if !playback.dsd_dop_enabled {
+        return DopIntegrity {
+            status: DopPayloadIntegrityStatus::Degraded,
+            reason_code: REASON_DOP_DISABLED.to_string(),
+            detail: "DoP disabled".to_string(),
+        };
+    }
+
+    let dop_active = playback.dop_ring_buffer.is_some() && playback.dop_packer.is_some();
+    if !dop_active {
+        return DopIntegrity {
+            status: DopPayloadIntegrityStatus::Unknown,
+            reason_code: String::new(),
+            detail: "DoP path inactive".to_string(),
+        };
+    }
+
+    let mut drops = 0u64;
+    let mut cb_underruns = 0u64;
+
+    if let Some(rb) = playback.dop_ring_buffer.as_ref() {
+        drops = drops.saturating_add(rb.overflow_count());
+        cb_underruns = cb_underruns.saturating_add(rb.underrun_count());
+    }
+
+    if let Some(output) = playback.output.as_ref() {
+        if let Some(count) = output.asio_dop_drops() {
+            drops = drops.saturating_add(count);
+        }
+        if let Some(count) = output.asio_callback_underruns() {
+            cb_underruns = cb_underruns.saturating_add(count);
+        }
+    }
+
+    if drops > 0 {
+        return DopIntegrity {
+            status: DopPayloadIntegrityStatus::Degraded,
+            reason_code: REASON_DOP_DEGRADED_DROPS.to_string(),
+            detail: format!("DoP drops detected: {}", drops),
+        };
+    }
+
+    if cb_underruns > 0 {
+        return DopIntegrity {
+            status: DopPayloadIntegrityStatus::Degraded,
+            reason_code: REASON_DOP_DEGRADED_CB_UNDERRUN.to_string(),
+            detail: format!("DoP callback underruns: {}", cb_underruns),
+        };
+    }
+
+    DopIntegrity {
+        status: DopPayloadIntegrityStatus::Ok,
+        reason_code: String::new(),
+        detail: "DoP payload intact".to_string(),
+    }
 }
 
 fn emit_audio_debug(
@@ -1992,7 +2597,12 @@ fn emit_audio_debug(
         .map(|o| o.is_exclusive())
         .unwrap_or(false);
 
-    let (bit_perfect, bit_perfect_reason) = determine_bit_perfect(playback, track);
+    let signal_checks = compute_signal_path_checks(playback, track);
+    let (bit_perfect, bit_perfect_reason) = derive_pcm_bit_perfect(playback, &signal_checks);
+    let _integrity_status = IntegrityStatus {
+        pcm_bit_perfect: bit_perfect.clone(),
+        dop_payload_integrity: compute_dop_payload_integrity(playback),
+    };
 
     let _ = app.emit(
         "evt_audio_debug",
@@ -2014,6 +2624,330 @@ fn emit_audio_debug(
             decode_format,
         },
     );
+}
+
+fn build_telemetry_snapshot(
+    engine: &Arc<Mutex<audio_engine::EngineState>>,
+    playback: &AudioPlayback,
+    device: Option<&audio_engine::device::AudioDeviceInfo>,
+) -> AudioTelemetryEvent {
+    let engine_guard = engine.lock();
+    let session = engine_guard.session.as_ref();
+    let track = session.map(|s| &s.track);
+
+    let state_str = match engine_guard.state {
+        PlaybackState::Playing => "playing",
+        PlaybackState::Paused => "paused",
+        PlaybackState::Stopped => "stopped",
+    };
+
+    let track_id = session.map(|s| s.track_id).unwrap_or(0);
+
+    let exclusive_active = playback
+        .output
+        .as_ref()
+        .map(|o| o.is_exclusive())
+        .unwrap_or(false);
+
+    let unity_forced = exclusive_active && playback.policy == "strict";
+    let effective_volume_mode = if unity_forced {
+        "unity_forced"
+    } else if playback.gain_mode == "unity" {
+        "unity"
+    } else {
+        "scaled"
+    };
+
+    let telemetry_playback = TelemetryPlayback {
+        state: state_str.to_string(),
+        track_id,
+        is_dsd: playback.is_dsd_playback,
+        output_mode: playback.output_mode.clone(),
+        policy: playback.policy.clone(),
+        timing_mode: playback.timing_mode.clone(),
+        gain_mode: playback.gain_mode.clone(),
+        effective_volume_mode: effective_volume_mode.to_string(),
+        fade_enabled: playback.fade_enabled,
+        fade_active: playback.fade_state.is_some(),
+        conversion: playback
+            .conversion
+            .clone()
+            .unwrap_or_else(|| "none".to_string()),
+    };
+
+    let (device_id, device_name) = device
+        .map(|d| (d.id.clone(), d.name.clone()))
+        .unwrap_or_else(|| ("default".to_string(), "Default".to_string()));
+
+    let backend_kind = if playback.output_mode == "asio" {
+        "asio"
+    } else {
+        "wasapi"
+    };
+
+    let wasapi_backend = if backend_kind == "wasapi" {
+        Some(TelemetryWasapiBackend {
+            buffer_frames: playback
+                .output
+                .as_ref()
+                .map(|o| o.buffer_frames())
+                .unwrap_or(0),
+            device_period_default_hns: 0,
+            device_period_min_hns: 0,
+        })
+    } else {
+        None
+    };
+
+    let asio_backend = if backend_kind == "asio" {
+        Some(TelemetryAsioBackend {
+            driver_name: playback.asio_driver.clone().unwrap_or_default(),
+            buffer_size_frames: playback
+                .output
+                .as_ref()
+                .map(|o| o.buffer_frames())
+                .unwrap_or(0),
+            sample_format: playback
+                .output
+                .as_ref()
+                .map(|o| o.sample_format_name())
+                .unwrap_or_else(|| "unknown".to_string()),
+            actual_sample_rate: playback.output_sample_rate,
+        })
+    } else {
+        None
+    };
+
+    let telemetry_device = TelemetryDevice {
+        device_id,
+        device_name,
+        exclusive_active,
+        backend: TelemetryBackend {
+            kind: backend_kind.to_string(),
+            wasapi: wasapi_backend,
+            asio: asio_backend,
+        },
+    };
+
+    let decode_format = TelemetryDecodeFormat {
+        sample_rate: track.and_then(|t| t.sample_rate).unwrap_or(0),
+        bit_depth: track.and_then(|t| t.bit_depth).unwrap_or(0),
+        channels: track.and_then(|t| t.channels).unwrap_or(0),
+        codec: track.and_then(|t| t.codec.clone()).unwrap_or_default(),
+        container: track.and_then(|t| t.container.clone()).unwrap_or_default(),
+        is_dsd: track.and_then(|t| t.dsd_rate_hz).is_some(),
+        dsd_rate_hz: track.and_then(|t| t.dsd_rate_hz).unwrap_or(0),
+        dop_rate_hz: track.and_then(|t| t.dsd_rate_hz).map(|r| r / 16).unwrap_or(0),
+    };
+
+    let output_format = TelemetryOutputFormat {
+        sample_rate: playback.output_sample_rate,
+        bit_depth: playback.output.as_ref().map(|o| o.bit_depth()).unwrap_or(0),
+        valid_bits: playback.output.as_ref().map(|o| o.valid_bits()).unwrap_or(0),
+        channels: playback.output_channels,
+    };
+
+    let resampler_format = TelemetryResamplerFormat {
+        active: playback.resampler.is_some(),
+        source_sample_rate: playback.source_sample_rate,
+        output_sample_rate: if playback.resampler.is_some() {
+            playback.output_sample_rate
+        } else {
+            0
+        },
+    };
+
+    let ring_buffer_stats = if let Some(rb) = playback.ring_buffer.as_ref() {
+        TelemetryRingBufferStats {
+            capacity_frames: rb.capacity_frames(),
+            available_frames: rb.available_frames(),
+            fill_percent: rb.fill_percent(),
+            underruns: TelemetryCounter {
+                track: rb.underrun_count(),
+                lifetime: rb.underrun_count(),
+            },
+            overflows: TelemetryCounter {
+                track: rb.overflow_count(),
+                lifetime: rb.overflow_count(),
+            },
+        }
+    } else {
+        TelemetryRingBufferStats {
+            capacity_frames: 0,
+            available_frames: 0,
+            fill_percent: 0.0,
+            underruns: TelemetryCounter { track: 0, lifetime: 0 },
+            overflows: TelemetryCounter { track: 0, lifetime: 0 },
+        }
+    };
+
+    let dop_ring_buffer_stats = if let Some(rb) = playback.dop_ring_buffer.as_ref() {
+        TelemetryRingBufferStats {
+            capacity_frames: rb.capacity_frames(),
+            available_frames: rb.available_frames(),
+            fill_percent: rb.fill_percent(),
+            underruns: TelemetryCounter {
+                track: rb.underrun_count(),
+                lifetime: rb.underrun_count(),
+            },
+            overflows: TelemetryCounter {
+                track: rb.overflow_count(),
+                lifetime: rb.overflow_count(),
+            },
+        }
+    } else {
+        TelemetryRingBufferStats {
+            capacity_frames: 0,
+            available_frames: 0,
+            fill_percent: 0.0,
+            underruns: TelemetryCounter { track: 0, lifetime: 0 },
+            overflows: TelemetryCounter { track: 0, lifetime: 0 },
+        }
+    };
+
+    let asio_stats = TelemetryAsioStats {
+        callback_underruns: TelemetryCounter {
+            track: playback.output.as_ref().and_then(|o| o.asio_callback_underruns()).unwrap_or(0),
+            lifetime: playback.output.as_ref().and_then(|o| o.asio_callback_underruns()).unwrap_or(0),
+        },
+        dop_drops: TelemetryCounter {
+            track: playback.output.as_ref().and_then(|o| o.asio_dop_drops()).unwrap_or(0),
+            lifetime: playback.output.as_ref().and_then(|o| o.asio_dop_drops()).unwrap_or(0),
+        },
+    };
+
+    let signal_checks = compute_signal_path_checks(playback, track);
+    let (bit_perfect_status, bit_perfect_reason) = derive_pcm_bit_perfect(playback, &signal_checks);
+    let dop_integrity = compute_dop_payload_integrity(playback);
+
+    let telemetry_signal_checks: Vec<TelemetrySignalPathCheck> = signal_checks
+        .iter()
+        .map(|check| TelemetrySignalPathCheck {
+            stage: format!("{:?}", check.stage).to_lowercase(),
+            status: match check.status {
+                SignalPathStatus::Ok => "ok".to_string(),
+                SignalPathStatus::TouchingBits => "touching_bits".to_string(),
+                SignalPathStatus::Unknown => "unknown".to_string(),
+                SignalPathStatus::Inactive => "inactive".to_string(),
+            },
+            reason_code: check.reason_code.clone(),
+            detail: check.detail.clone(),
+        })
+        .collect();
+
+    let dop_status_str = match dop_integrity.status {
+        DopPayloadIntegrityStatus::Ok => "ok",
+        DopPayloadIntegrityStatus::Degraded => "degraded",
+        DopPayloadIntegrityStatus::Unknown => "unknown",
+    };
+
+    let dop_reasons = if dop_integrity.reason_code.is_empty() {
+        vec![]
+    } else {
+        vec![dop_integrity.reason_code.clone()]
+    };
+
+    let bit_perfect_reasons = if bit_perfect_reason.is_empty() {
+        vec![]
+    } else {
+        vec![bit_perfect_reason.clone()]
+    };
+
+    AudioTelemetryEvent {
+        version: 1,
+        timestamp_ms: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0),
+        playback: telemetry_playback,
+        device: telemetry_device,
+        format: TelemetryFormat {
+            decode: decode_format,
+            output: output_format,
+            resampler: resampler_format,
+        },
+        stability: TelemetryStability {
+            ring_buffer: ring_buffer_stats,
+            dop_ring_buffer: dop_ring_buffer_stats,
+            asio: asio_stats,
+            recent_events: vec![],
+        },
+        integrity: TelemetryIntegrity {
+            pcm_bit_perfect: TelemetryBitPerfect {
+                status: bit_perfect_status.clone(),
+                reasons: bit_perfect_reasons,
+                display: if bit_perfect_status == "yes" {
+                    "Bit-perfect".to_string()
+                } else {
+                    bit_perfect_reason.clone()
+                },
+            },
+            dop_payload_integrity: TelemetryDopIntegrity {
+                status: dop_status_str.to_string(),
+                reasons: dop_reasons,
+                display: dop_integrity.detail.clone(),
+            },
+        },
+        signal_path_checks: telemetry_signal_checks,
+    }
+}
+
+fn emit_audio_telemetry(
+    app: &tauri::AppHandle,
+    engine: &Arc<Mutex<audio_engine::EngineState>>,
+    playback: &AudioPlayback,
+    device: Option<&audio_engine::device::AudioDeviceInfo>,
+) {
+    let telemetry = build_telemetry_snapshot(engine, playback, device);
+    let _ = app.emit("evt_audio_telemetry", telemetry);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use audio_engine::output::{NullSinkOutput, OutputBackend};
+
+    #[test]
+    fn gain_software_bypassed_when_unity_forced() {
+        let mut playback = AudioPlayback::new();
+        playback.output_mode = "asio".to_string();
+        playback.policy = "strict".to_string();
+        playback.gain_mode = "software".to_string();
+        playback.fade_enabled = false;
+        playback.fade_state = None;
+        playback.output_sample_rate = 44_100;
+        playback.output_channels = 2;
+        playback.output = Some(OutputBackend::NullSink(NullSinkOutput::new(44_100, 2, 24, true)));
+
+        let track = TrackInfo {
+            id: 1,
+            path: "test".to_string(),
+            title: None,
+            artist: None,
+            album: None,
+            duration_ms: None,
+            sample_rate: Some(44_100),
+            bit_depth: Some(24),
+            channels: Some(2),
+            codec: None,
+            container: None,
+            dsd_rate_hz: None,
+            dsd_channels: None,
+        };
+
+        let checks = compute_signal_path_checks(&playback, Some(&track));
+        let gain_check = checks
+            .iter()
+            .find(|check| check.stage == SignalPathStage::Gain)
+            .expect("gain stage check should exist");
+
+        assert_eq!(gain_check.status, SignalPathStatus::Ok);
+        assert_eq!(gain_check.reason_code, REASON_GAIN_SOFTWARE_BYPASSED);
+
+        let (bit_perfect, reason) = derive_pcm_bit_perfect(&playback, &checks);
+        assert_eq!(bit_perfect, "yes");
+        assert!(reason.is_empty());
+    }
 }
 
 fn parse_playback_error(e: &str) -> (String, String) {

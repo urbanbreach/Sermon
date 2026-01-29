@@ -8,6 +8,7 @@ import type {
   QueueChangedEvent, DeviceChangedEvent, AudioDebugEvent, PlaybackErrorEvent,
   TrackEventData, QueueItemData, TrackMarkedMissingEvent
 } from '../types/playback';
+import type { AudioTelemetryEvent } from '../types/telemetry';
 import * as api from '../api/playback';
 import type { AudioOutputSettings, AsioDriverInfo } from '../api/playback';
 import { Fixtures } from '../data/fixtures';
@@ -31,6 +32,9 @@ export const asioDrivers = writable<AsioDriverInfo[]>([]);
 
 // Audio debug
 export const audioDebug = writable<AudioDebugEvent | null>(null);
+
+// Audio telemetry (1 Hz diagnostics snapshot)
+export const audioTelemetry = writable<AudioTelemetryEvent | null>(null);
 
 // Error state
 export const playbackError = writable<PlaybackErrorEvent | null>(null);
@@ -228,6 +232,10 @@ export function initPlaybackListeners(): void {
 
   listen<AudioDebugEvent>('evt_audio_debug', (event) => {
     audioDebug.set(event.payload);
+  });
+
+  listen<AudioTelemetryEvent>('evt_audio_telemetry', (event) => {
+    audioTelemetry.set(event.payload);
   });
 
   listen<PlaybackErrorEvent>('evt_playback_error', (event) => {

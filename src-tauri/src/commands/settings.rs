@@ -1,9 +1,11 @@
-use crate::state::LibraryState;
+use crate::state::{DiagnosticsState, LibraryState};
 use chrono::Utc;
 use library::db::{get_setting, set_setting};
-use library::{apply_migrations, open_db};
+use library::open_db;
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::sync::Arc;
+use sysinfo::{Pid, System};
 use tauri::State;
 
 /// Valid category names
@@ -91,7 +93,6 @@ pub async fn cmd_settings_get_category(
 
     tauri::async_runtime::spawn_blocking(move || {
         let conn = open_db(&db_path).map_err(|e| e.to_string())?;
-        apply_migrations(&conn).map_err(|e| e.to_string())?;
 
         let keys = get_category_keys(&cat);
         let defaults = get_category_defaults(&cat);
@@ -128,7 +129,6 @@ pub async fn cmd_settings_set_category(
 
     tauri::async_runtime::spawn_blocking(move || {
         let conn = open_db(&db_path).map_err(|e| e.to_string())?;
-        apply_migrations(&conn).map_err(|e| e.to_string())?;
 
         if let Value::Object(map) = settings {
             for (key, value) in map {
@@ -162,7 +162,6 @@ pub async fn cmd_settings_reset_category(
 
     tauri::async_runtime::spawn_blocking(move || {
         let conn = open_db(&db_path).map_err(|e| e.to_string())?;
-        apply_migrations(&conn).map_err(|e| e.to_string())?;
 
         let defaults = get_category_defaults(&cat);
         for (key, value) in defaults {
@@ -184,7 +183,6 @@ pub async fn cmd_settings_export_diagnostics(
 
     tauri::async_runtime::spawn_blocking(move || {
         let conn = open_db(&db_path).map_err(|e| e.to_string())?;
-        apply_migrations(&conn).map_err(|e| e.to_string())?;
 
         // Collect all settings
         let mut settings = serde_json::Map::new();

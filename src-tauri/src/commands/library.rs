@@ -10,7 +10,7 @@ use library::models::{
 };
 use library::safe_write::WriteStatus;
 use library::tag_edit::{update_track_tags, UpdateTagsRequest};
-use library::{apply_migrations, list_tracks, open_db, scan_folder, LibraryFolder, TrackRow};
+use library::{list_tracks, open_db, scan_folder, LibraryFolder, TrackRow};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tags::{NumberPatch, TagPatch};
@@ -61,7 +61,6 @@ pub fn cmd_library_add_folder(
     path: String,
 ) -> Result<FolderResponse, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     let folder = add_folder(&conn, &path).map_err(|e| e.to_string())?;
     Ok(folder.into())
 }
@@ -71,7 +70,6 @@ pub fn cmd_library_list_folders(
     state: State<'_, LibraryState>,
 ) -> Result<Vec<FolderResponse>, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     let folders = list_folders(&conn).map_err(|e| e.to_string())?;
     Ok(folders.into_iter().map(|f| f.into()).collect())
 }
@@ -83,7 +81,6 @@ pub fn cmd_library_list_tracks(
     direction: String,
 ) -> Result<Vec<TrackRow>, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     let tracks = list_tracks(&conn, &sort_by, &direction).map_err(|e| e.to_string())?;
     Ok(tracks)
 }
@@ -94,7 +91,6 @@ pub fn cmd_library_get_track_by_id(
     track_id: i64,
 ) -> Result<TrackRow, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     library::get_track_by_id(&conn, track_id).map_err(|e| e.to_string())
 }
 
@@ -141,8 +137,7 @@ pub async fn cmd_scan_start(
     // Ensure folder is added to DB
     {
         let conn = open_db(&state_db_path).map_err(|e| e.to_string())?;
-        apply_migrations(&conn).map_err(|e| e.to_string())?;
-        add_folder(&conn, &path).map_err(|e| e.to_string())?;
+            add_folder(&conn, &path).map_err(|e| e.to_string())?;
     }
 
     // Spawn scan task
@@ -227,7 +222,6 @@ pub fn cmd_library_list_tracks_page(
     request: ListTracksPageRequest,
 ) -> Result<Page<TrackRow, OffsetCursor>, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     let offset = request.cursor.map(|c| c.offset).unwrap_or(0);
     list_tracks_page(
         &conn,
@@ -252,7 +246,6 @@ pub fn cmd_library_list_albums_page(
     request: ListAlbumsPageRequest,
 ) -> Result<Page<AlbumListItem, AlbumCursor>, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     list_albums_page(&conn, request.limit, request.cursor.as_ref()).map_err(|e| e.to_string())
 }
 
@@ -269,7 +262,6 @@ pub fn cmd_library_list_artists_page(
     request: ListArtistsPageRequest,
 ) -> Result<Page<ArtistListItem, ArtistCursor>, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     list_artists_page(&conn, request.limit, request.cursor.as_ref()).map_err(|e| e.to_string())
 }
 
@@ -306,7 +298,6 @@ pub fn cmd_library_list_album_tracks_page(
     request: ListAlbumTracksPageRequest,
 ) -> Result<Page<TrackRow, AlbumTrackCursorResponse>, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
 
     let cursor = request
         .cursor
@@ -369,7 +360,6 @@ pub fn cmd_library_list_artist_tracks_page(
     request: ListArtistTracksPageRequest,
 ) -> Result<Page<TrackRow, ArtistTrackCursorResponse>, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
 
     let cursor = request.cursor.as_ref().map(|c| {
         (
@@ -415,7 +405,6 @@ pub fn cmd_library_search_suggest(
     request: SearchSuggestRequest,
 ) -> Result<SearchSuggestResponse, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     let limit = request.limit.unwrap_or(12);
     search_suggest(&conn, &request.query, limit).map_err(|e| e.to_string())
 }
@@ -436,7 +425,6 @@ pub fn cmd_library_search_tracks_page(
     request: SearchTracksPageRequest,
 ) -> Result<Page<TrackRow, OffsetCursor>, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     let offset = request.cursor.map(|c| c.offset).unwrap_or(0);
     search_tracks_page(
         &conn,
@@ -463,7 +451,6 @@ pub fn cmd_library_search_albums_page(
     request: SearchAlbumsPageRequest,
 ) -> Result<Page<AlbumListItem, AlbumCursor>, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     search_albums_page(
         &conn,
         &request.query,
@@ -487,7 +474,6 @@ pub fn cmd_library_search_artists_page(
     request: SearchArtistsPageRequest,
 ) -> Result<Page<ArtistListItem, ArtistCursor>, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     search_artists_page(
         &conn,
         &request.query,
@@ -504,7 +490,6 @@ pub fn cmd_library_search_artists_page(
 #[tauri::command]
 pub fn cmd_library_get_stats(state: State<'_, LibraryState>) -> Result<LibraryStats, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     get_library_stats(&conn, &state.db_path).map_err(|e| e.to_string())
 }
 
@@ -603,8 +588,7 @@ pub async fn cmd_library_update_track_tags(
     // Run in blocking task since it involves file I/O
     let result = tauri::async_runtime::spawn_blocking(move || {
         let conn = open_db(&db_path).map_err(|e| e.to_string())?;
-        apply_migrations(&conn).map_err(|e| e.to_string())?;
-
+    
         // Create status callback for retry events
         let app_clone = app.clone();
         let callback = move |status: WriteStatus| {
@@ -683,7 +667,6 @@ pub fn cmd_library_get_raw_tags(
     track_id: i64,
 ) -> Result<RawTagsResultResponse, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
 
     // Get track path
     let track = library::get_track_by_id(&conn, track_id).map_err(|e| e.to_string())?;
@@ -779,7 +762,6 @@ pub fn cmd_library_remove_folder(
     folder_id: i64,
 ) -> Result<(), String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     library::remove_folder(&conn, folder_id).map_err(|e| e.to_string())
 }
 
@@ -790,7 +772,6 @@ pub fn cmd_library_update_folder_enabled(
     enabled: bool,
 ) -> Result<FolderResponse, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     let folder =
         library::update_folder_enabled(&conn, folder_id, enabled).map_err(|e| e.to_string())?;
     Ok(folder.into())
@@ -812,7 +793,6 @@ pub fn cmd_library_update_folder_options(
     options: FolderOptionsRequest,
 ) -> Result<FolderResponse, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
 
     let folder_options = library::FolderOptions {
         recursive: options.recursive,
@@ -832,6 +812,5 @@ pub fn cmd_library_get_folder_track_count(
     folder_id: i64,
 ) -> Result<i64, String> {
     let conn = open_db(&state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     library::get_folder_track_count(&conn, folder_id).map_err(|e| e.to_string())
 }

@@ -5,6 +5,7 @@
 //! and owns all ASIO driver operations.
 
 use std::os::raw::c_void;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -94,6 +95,7 @@ struct CallbackState {
     buffer_size: i32,
     temp_buffer: Vec<f32>,
     buffer_ptrs: Vec<[SendPtr; 2]>,
+    callback_underruns: Arc<AtomicU64>,
 }
 
 /// Handle to the ASIO worker thread
@@ -105,6 +107,10 @@ pub struct AsioWorker {
     producer: Option<RingProducer>,
     /// Shared callback state
     callback_state: Arc<Mutex<Option<CallbackState>>>,
+    /// Callback underrun counter (callback reads less than needed, zero-fills)
+    callback_underruns: Arc<AtomicU64>,
+    /// DoP sample drop counter (ring buffer full when pushing DoP)
+    dop_drops: AtomicU64,
 }
 
 impl AsioWorker {
@@ -120,6 +126,8 @@ impl AsioWorker {
         let rb = HeapRb::<f32>::new(buffer_samples);
         let (producer, consumer) = rb.split();
 
+        let callback_underruns = Arc::new(AtomicU64::new(0));
+
         let callback_state = Arc::new(Mutex::new(Some(CallbackState {
             consumer,
             sample_format: SampleFormat::Int32,
@@ -127,6 +135,7 @@ impl AsioWorker {
             buffer_size: 0,
             temp_buffer: Vec::new(),
             buffer_ptrs: Vec::new(),
+            callback_underruns: Arc::clone(&callback_underruns),
         })));
 
         let callback_state_clone = Arc::clone(&callback_state);
@@ -154,6 +163,8 @@ impl AsioWorker {
             handle: Some(handle),
             producer: Some(producer),
             callback_state,
+            callback_underruns,
+            dop_drops: AtomicU64::new(0),
         })
     }
 
@@ -527,6 +538,7 @@ impl AsioWorker {
 
         // Zero-fill if underrun
         if to_read < samples_needed {
+            state.callback_underruns.fetch_add(1, Ordering::Relaxed);
             for i in to_read..samples_needed {
                 state.temp_buffer[i] = 0.0;
             }
@@ -691,6 +703,7 @@ impl AsioWorker {
                 let f32_sample = (i32_sample as f32) / 2147483648.0;
 
                 if producer.try_push(f32_sample).is_err() {
+                    self.dop_drops.fetch_add(1, Ordering::Relaxed);
                     warn!("ASIO ring buffer full, dropping DoP sample");
                     break;
                 }
@@ -710,6 +723,14 @@ impl AsioWorker {
                 debug!(cleared_samples = occupied, "Cleared ASIO ring buffer");
             }
         }
+    }
+
+    pub fn callback_underruns(&self) -> u64 {
+        self.callback_underruns.load(Ordering::Relaxed)
+    }
+
+    pub fn dop_drops(&self) -> u64 {
+        self.dop_drops.load(Ordering::Relaxed)
     }
 
     /// Shutdown the worker thread gracefully

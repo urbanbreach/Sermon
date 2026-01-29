@@ -30,10 +30,11 @@ use std::path::Path;
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::{Decoder, DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymphoniaError;
-use symphonia::core::formats::{FormatOptions, FormatReader};
+use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
+use symphonia::core::units::Time;
 use tracing::warn;
 
 use crate::decode::DecodeError;
@@ -215,6 +216,36 @@ impl DecoderState {
             return Ok(Some(buffer.samples().to_vec()));
         }
     }
+
+    /// Seek to a specific position in the track.
+    ///
+    /// This resets the decoder state and re-aligns the encoder delay trimming
+    /// to the new position.
+    fn seek(&mut self, position_ms: u64) -> Result<(), DecodeError> {
+        let time = Time::from(position_ms as f64 / 1000.0);
+
+        self.format_reader
+            .seek(
+                SeekMode::Accurate,
+                SeekTo::Time {
+                    time,
+                    track_id: Some(self.track_id),
+                },
+            )
+            .map_err(|err| DecodeError::DecoderError(err.to_string()))?;
+
+        // Reset codec state (matches AudioDecoder::seek behavior)
+        self.decoder.reset();
+
+        // Re-align trimming state (per-channel sample index)
+        let seek_samples = (position_ms as u64 * self.sample_rate as u64) / 1000;
+        self.samples_decoded = match self.total_samples {
+            Some(total) => seek_samples.min(total),
+            None => seek_samples,
+        };
+
+        Ok(())
+    }
 }
 
 /// Gapless decoder with dual-decoder management for seamless track transitions.
@@ -240,6 +271,8 @@ pub struct GaplessDecoder {
     /// Samples before end to trigger preload (approximately 2 seconds).
     #[allow(dead_code)]
     preload_trigger_samples: u64,
+    /// Flag set when an internal gapless transition just occurred.
+    just_transitioned: bool,
 }
 
 impl GaplessDecoder {
@@ -267,6 +300,7 @@ impl GaplessDecoder {
             current,
             next: None,
             preload_trigger_samples: preload_trigger.max(Self::DEFAULT_PRELOAD_TRIGGER),
+            just_transitioned: false,
         })
     }
 
@@ -300,6 +334,7 @@ impl GaplessDecoder {
                 None => {
                     if self.next.is_some() {
                         self.current = self.next.take().unwrap();
+                        self.just_transitioned = true;
                         continue;
                     }
                     return Ok(None);
@@ -392,6 +427,20 @@ impl GaplessDecoder {
     /// This releases the memory used by the preloaded track's decoder.
     pub fn cancel_preload(&mut self) {
         self.next = None;
+    }
+
+    /// Check and clear the transition flag. Returns true if a gapless transition just occurred.
+    pub fn take_just_transitioned(&mut self) -> bool {
+        let v = self.just_transitioned;
+        self.just_transitioned = false;
+        v
+    }
+
+    /// Seek to a specific position in the current track.
+    pub fn seek(&mut self, position_ms: u64) -> Result<(), DecodeError> {
+        self.next = None;
+        self.just_transitioned = false;
+        self.current.seek(position_ms)
     }
 
     /// Get the audio format of the current track.
@@ -829,5 +878,78 @@ mod tests {
         assert!(result.is_err());
         assert!(!decoder.has_preloaded_next());
         assert_eq!(decoder.transition_type(), TransitionType::EndOfQueue);
+    }
+
+    #[test]
+    fn test_gapless_decoder_seek() {
+        let sample_rate = 44100u32;
+        let samples: Vec<i16> = (0..(sample_rate as usize * 2))
+            .map(|i| (i % 1000) as i16)
+            .collect();
+        let wav_file = create_test_wav(&samples);
+
+        let mut decoder = GaplessDecoder::new(wav_file.path()).expect("failed to create decoder");
+
+        decoder.seek(1000).expect("seek failed");
+
+        let chunk = decoder
+            .decode_next()
+            .expect("decode failed")
+            .expect("expected samples");
+        assert!(!chunk.is_empty());
+
+        let expected_samples = (1000u64 * sample_rate as u64) / 1000;
+        assert!(decoder.samples_decoded() >= expected_samples);
+    }
+
+    #[test]
+    fn test_gapless_decoder_seek_cancels_preload() {
+        let samples: Vec<i16> = (0..1000).map(|i| (i % 1000) as i16).collect();
+        let wav1 = create_test_wav(&samples);
+        let wav2 = create_test_wav(&samples);
+
+        let mut decoder = GaplessDecoder::new(wav1.path()).expect("failed to create decoder");
+        decoder.preload_next(wav2.path()).expect("preload failed");
+        assert!(decoder.has_preloaded_next());
+
+        decoder.seek(0).expect("seek failed");
+        assert!(!decoder.has_preloaded_next());
+    }
+
+    #[test]
+    fn test_gapless_decoder_transition_flag() {
+        let samples1: Vec<i16> = (0..100).map(|i| i as i16).collect();
+        let samples2: Vec<i16> = (100..200).map(|i| i as i16).collect();
+        let wav1 = create_test_wav(&samples1);
+        let wav2 = create_test_wav(&samples2);
+
+        let mut decoder = GaplessDecoder::new(wav1.path()).expect("failed");
+        decoder.preload_next(wav2.path()).expect("preload failed");
+
+        assert!(!decoder.take_just_transitioned());
+
+        let mut transitioned = false;
+        while let Some(_chunk) = decoder.decode_next().expect("decode failed") {
+            if decoder.take_just_transitioned() {
+                transitioned = true;
+                assert!(!decoder.take_just_transitioned());
+                break;
+            }
+        }
+
+        assert!(transitioned);
+    }
+
+    #[test]
+    fn test_gapless_decoder_seek_resets_transition_flag() {
+        // Create a longer file (~1 second at 44100 Hz) to allow seeking
+        let samples: Vec<i16> = (0..44100).map(|i| (i % 1000) as i16).collect();
+        let wav = create_test_wav(&samples);
+
+        let mut decoder = GaplessDecoder::new(wav.path()).expect("failed");
+
+        // Seek to 500ms (well within the ~1 second file)
+        decoder.seek(500).expect("seek failed");
+        assert!(!decoder.take_just_transitioned());
     }
 }

@@ -260,6 +260,20 @@ impl AsioOutput {
         }
     }
 
+    pub fn callback_underruns(&self) -> u64 {
+        self.worker
+            .as_ref()
+            .map(|worker| worker.callback_underruns())
+            .unwrap_or(0)
+    }
+
+    pub fn dop_drops(&self) -> u64 {
+        self.worker
+            .as_ref()
+            .map(|worker| worker.dop_drops())
+            .unwrap_or(0)
+    }
+
     pub fn open_control_panel(&self) -> Result<(), crate::output::OutputError> {
         if let Some(ref worker) = self.worker {
             worker.open_control_panel()
@@ -267,6 +281,20 @@ impl AsioOutput {
             Err(crate::output::OutputError::Asio(
                 "ASIO worker not running".to_string(),
             ))
+        }
+    }
+
+    pub fn buffer_size_frames(&self) -> u32 {
+        self.buffer_size.max(0) as u32
+    }
+
+    pub fn sample_format_name(&self) -> String {
+        match (self.bit_depth, self.valid_bits) {
+            (32, 24) => "int32lsb24".to_string(),
+            (32, 32) => "float32".to_string(),
+            (24, 24) => "int24".to_string(),
+            (16, 16) => "int16".to_string(),
+            _ => format!("int{}v{}", self.bit_depth, self.valid_bits),
         }
     }
 }

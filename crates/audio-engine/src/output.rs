@@ -801,6 +801,10 @@ pub struct AudioRingBuffer {
     channels: usize,
     capacity_samples: usize,
     buf: VecDeque<f32>,
+    /// Count of underrun events (pop requested more samples than available)
+    underrun_count: u64,
+    /// Count of overflow events (push dropped samples due to full buffer)
+    overflow_count: u64,
 }
 
 impl AudioRingBuffer {
@@ -814,11 +818,28 @@ impl AudioRingBuffer {
             channels,
             capacity_samples,
             buf: VecDeque::with_capacity(capacity_samples),
+            underrun_count: 0,
+            overflow_count: 0,
         }
     }
 
     pub fn channels(&self) -> usize {
         self.channels
+    }
+
+    pub fn underrun_count(&self) -> u64 {
+        self.underrun_count
+    }
+
+    pub fn overflow_count(&self) -> u64 {
+        self.overflow_count
+    }
+
+    pub fn fill_percent(&self) -> f32 {
+        if self.capacity_samples == 0 {
+            return 0.0;
+        }
+        (self.buf.len() as f32 / self.capacity_samples as f32) * 100.0
     }
 
     pub fn capacity_frames(&self) -> usize {
@@ -841,6 +862,7 @@ impl AudioRingBuffer {
         let samples = &samples[..frame_aligned_len];
 
         if samples.len() >= self.capacity_samples {
+            self.overflow_count += 1;
             warn!(
                 capacity_samples = self.capacity_samples,
                 incoming_samples = samples.len(),
@@ -862,6 +884,7 @@ impl AudioRingBuffer {
             .saturating_sub(self.capacity_samples);
 
         if overflow > 0 {
+            self.overflow_count += 1;
             warn!(
                 overflow_samples = overflow,
                 capacity_samples = self.capacity_samples,
@@ -892,6 +915,7 @@ impl AudioRingBuffer {
 
         if take < needed {
             out[take..].fill(0.0);
+            self.underrun_count += 1;
             warn!(
                 requested_samples = needed,
                 available_samples = take,
@@ -909,6 +933,8 @@ pub struct DopRingBuffer {
     channels: usize,
     capacity_samples: usize,
     buf: VecDeque<u32>,
+    underrun_count: u64,
+    overflow_count: u64,
 }
 
 impl DopRingBuffer {
@@ -921,11 +947,28 @@ impl DopRingBuffer {
             channels,
             capacity_samples,
             buf: VecDeque::with_capacity(capacity_samples),
+            underrun_count: 0,
+            overflow_count: 0,
         }
     }
 
     pub fn channels(&self) -> usize {
         self.channels
+    }
+
+    pub fn underrun_count(&self) -> u64 {
+        self.underrun_count
+    }
+
+    pub fn overflow_count(&self) -> u64 {
+        self.overflow_count
+    }
+
+    pub fn fill_percent(&self) -> f32 {
+        if self.capacity_samples == 0 {
+            return 0.0;
+        }
+        (self.buf.len() as f32 / self.capacity_samples as f32) * 100.0
     }
 
     pub fn capacity_frames(&self) -> usize {
@@ -948,6 +991,7 @@ impl DopRingBuffer {
         let samples = &samples[..frame_aligned_len];
 
         if samples.len() >= self.capacity_samples {
+            self.overflow_count += 1;
             warn!(
                 capacity_samples = self.capacity_samples,
                 incoming_samples = samples.len(),
@@ -969,6 +1013,7 @@ impl DopRingBuffer {
             .saturating_sub(self.capacity_samples);
 
         if overflow > 0 {
+            self.overflow_count += 1;
             warn!(
                 overflow_samples = overflow,
                 capacity_samples = self.capacity_samples,
@@ -1386,6 +1431,49 @@ impl OutputBackend {
             OutputBackend::NullSink(_) => {}
             #[cfg(windows)]
             OutputBackend::Asio(o) => o.clear_ring_buffer(),
+        }
+    }
+
+    pub fn asio_callback_underruns(&self) -> Option<u64> {
+        #[cfg(windows)]
+        {
+            if let OutputBackend::Asio(o) = self {
+                return Some(o.callback_underruns());
+            }
+        }
+        None
+    }
+
+    pub fn asio_dop_drops(&self) -> Option<u64> {
+        #[cfg(windows)]
+        {
+            if let OutputBackend::Asio(o) = self {
+                return Some(o.dop_drops());
+            }
+        }
+        None
+    }
+
+    pub fn buffer_frames(&self) -> u32 {
+        match self {
+            OutputBackend::Wasapi(o) => o.buffer_frames(),
+            OutputBackend::NullSink(_) => 0,
+            #[cfg(windows)]
+            OutputBackend::Asio(o) => o.buffer_size_frames(),
+        }
+    }
+
+    pub fn sample_format_name(&self) -> String {
+        match self {
+            OutputBackend::Wasapi(o) => match o.bit_depth() {
+                16 => "int16".to_string(),
+                24 => "int24".to_string(),
+                32 => "float32".to_string(),
+                _ => "unknown".to_string(),
+            },
+            OutputBackend::NullSink(_) => "null".to_string(),
+            #[cfg(windows)]
+            OutputBackend::Asio(o) => o.sample_format_name(),
         }
     }
 

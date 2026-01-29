@@ -187,7 +187,7 @@
     
     <!-- Content based on mode -->
     <div class="rail-content" bind:clientHeight={railContentHeight} use:fadeIn={{ duration: 200, delay: 100 }}>
-      {#if $railMode === 'now-playing' || $railMode === 'up-next'}
+      {#if $railMode === 'now-playing'}
         <!-- Playing Tracks Section -->
         <div class="section playing-tracks-section" style="height: {Math.floor(railContentHeight * $railSplitRatio)}px;">
           {#if $currentTrackFull}

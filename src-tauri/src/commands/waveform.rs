@@ -1,7 +1,7 @@
 use audio_engine::decode::AudioDecoder;
 use audio_engine::{DsdDecoder, DsdError};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use library::{apply_migrations, open_db};
+use library::open_db;
 use rusqlite::OptionalExtension;
 use serde::Serialize;
 use std::fs;
@@ -391,7 +391,6 @@ pub async fn cmd_waveform_get_peaks(
     let _ = bypass_cache;
     
     let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
     
     let track_info: Option<(String, i64, i64, Option<i64>)> = conn
         .query_row(

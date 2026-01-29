@@ -39,7 +39,7 @@ export async function playbackStop(): Promise<void> {
 }
 
 export async function playbackSeek(positionMs: number): Promise<void> {
-  return invoke('cmd_playback_seek', { positionMs });
+  return invoke('cmd_playback_seek', { positionMs: Math.floor(positionMs) });
 }
 
 export async function playbackNext(): Promise<void> {
@@ -88,4 +88,52 @@ export async function setOutputSettings(settings: AudioOutputSettings): Promise<
 
 export async function openAsioControlPanel(driverName: string): Promise<void> {
   return invoke('cmd_open_asio_control_panel', { driverName });
+}
+
+export interface ProbeCapabilitiesKey {
+  backend: string;
+  deviceId: string | null;
+  asioDriver: string | null;
+  channels: number;
+}
+
+export interface ProbeDimensions {
+  sampleRates: number[];
+  bitDepths: number[];
+  channels: number[];
+}
+
+export interface ProbeCell {
+  sampleRate: number;
+  bitDepth: number;
+  channels: number;
+  supported: boolean;
+  reasonCode: string;
+  detail: string | null;
+}
+
+export interface ProbeCapabilitiesResult {
+  version: number;
+  key: ProbeCapabilitiesKey;
+  probedAtMs: number;
+  dimensions: ProbeDimensions;
+  cells: ProbeCell[];
+}
+
+export async function probeOutputCapabilities(
+  backend: 'wasapi' | 'asio',
+  deviceId: string | null,
+  asioDriver: string | null,
+  channels: number,
+  sampleRates: number[],
+  bitDepths: number[]
+): Promise<ProbeCapabilitiesResult> {
+  return invoke('cmd_output_probe_capabilities', {
+    backend,
+    deviceId,
+    asioDriver,
+    channels,
+    sampleRates,
+    bitDepths,
+  });
 }

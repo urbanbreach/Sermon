@@ -41,6 +41,12 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), LibraryError> {
         version = 6;
     }
 
+    if version < 7 {
+        info!("Applying migration 0007_browse_indexes");
+        conn.execute_batch(include_str!("../../migrations/0007_browse_indexes.sql"))?;
+        version = 7;
+    }
+
     let _ = version; // suppress unused warning
 
     Ok(())

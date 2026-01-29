@@ -95,8 +95,16 @@ impl DsfDecoder {
             return Err(DsdError::InvalidDsf);
         }
 
-        let total_file_size = u64::from_le_bytes(dsd_chunk[12..20].try_into().unwrap());
-        let _metadata_offset = u64::from_le_bytes(dsd_chunk[20..28].try_into().unwrap());
+        let total_file_size = u64::from_le_bytes(
+            dsd_chunk[12..20]
+                .try_into()
+                .map_err(|_| DsdError::InvalidDsf)?,
+        );
+        let _metadata_offset = u64::from_le_bytes(
+            dsd_chunk[20..28]
+                .try_into()
+                .map_err(|_| DsdError::InvalidDsf)?,
+        );
         let _ = total_file_size; // Suppress unused warning
 
         // Read fmt chunk
@@ -107,15 +115,51 @@ impl DsfDecoder {
             return Err(DsdError::InvalidDsf);
         }
 
-        let _fmt_chunk_size = u64::from_le_bytes(fmt_header[4..12].try_into().unwrap());
-        let _format_version = u32::from_le_bytes(fmt_header[12..16].try_into().unwrap());
-        let _format_id = u32::from_le_bytes(fmt_header[16..20].try_into().unwrap());
-        let channel_type = u32::from_le_bytes(fmt_header[20..24].try_into().unwrap());
-        let channels = u32::from_le_bytes(fmt_header[24..28].try_into().unwrap()) as usize;
-        let sample_rate = u32::from_le_bytes(fmt_header[28..32].try_into().unwrap());
-        let bits_per_sample = u32::from_le_bytes(fmt_header[32..36].try_into().unwrap());
-        let total_samples = u64::from_le_bytes(fmt_header[36..44].try_into().unwrap());
-        let block_size_per_channel = u32::from_le_bytes(fmt_header[44..48].try_into().unwrap());
+        let _fmt_chunk_size = u64::from_le_bytes(
+            fmt_header[4..12]
+                .try_into()
+                .map_err(|_| DsdError::InvalidDsf)?,
+        );
+        let _format_version = u32::from_le_bytes(
+            fmt_header[12..16]
+                .try_into()
+                .map_err(|_| DsdError::InvalidDsf)?,
+        );
+        let _format_id = u32::from_le_bytes(
+            fmt_header[16..20]
+                .try_into()
+                .map_err(|_| DsdError::InvalidDsf)?,
+        );
+        let channel_type = u32::from_le_bytes(
+            fmt_header[20..24]
+                .try_into()
+                .map_err(|_| DsdError::InvalidDsf)?,
+        );
+        let channels = u32::from_le_bytes(
+            fmt_header[24..28]
+                .try_into()
+                .map_err(|_| DsdError::InvalidDsf)?,
+        ) as usize;
+        let sample_rate = u32::from_le_bytes(
+            fmt_header[28..32]
+                .try_into()
+                .map_err(|_| DsdError::InvalidDsf)?,
+        );
+        let bits_per_sample = u32::from_le_bytes(
+            fmt_header[32..36]
+                .try_into()
+                .map_err(|_| DsdError::InvalidDsf)?,
+        );
+        let total_samples = u64::from_le_bytes(
+            fmt_header[36..44]
+                .try_into()
+                .map_err(|_| DsdError::InvalidDsf)?,
+        );
+        let block_size_per_channel = u32::from_le_bytes(
+            fmt_header[44..48]
+                .try_into()
+                .map_err(|_| DsdError::InvalidDsf)?,
+        );
 
         let _ = (channel_type, block_size_per_channel); // Suppress unused warnings
 
@@ -131,7 +175,11 @@ impl DsfDecoder {
             return Err(DsdError::InvalidDsf);
         }
 
-        let data_chunk_size = u64::from_le_bytes(data_header[4..12].try_into().unwrap());
+        let data_chunk_size = u64::from_le_bytes(
+            data_header[4..12]
+                .try_into()
+                .map_err(|_| DsdError::InvalidDsf)?,
+        );
         let data_size = data_chunk_size - 12; // Subtract header size
 
         let data_offset = reader.stream_position()?;
@@ -250,7 +298,11 @@ impl DffDecoder {
             }
 
             let chunk_id = &chunk_header[0..4];
-            let chunk_size = u64::from_be_bytes(chunk_header[4..12].try_into().unwrap());
+            let chunk_size = u64::from_be_bytes(
+                chunk_header[4..12]
+                    .try_into()
+                    .map_err(|_| DsdError::InvalidDff)?,
+            );
 
             match chunk_id {
                 b"FVER" => {
@@ -274,7 +326,11 @@ impl DffDecoder {
                         reader.read_exact(&mut sub_header)?;
 
                         let sub_id = &sub_header[0..4];
-                        let sub_size = u64::from_be_bytes(sub_header[4..12].try_into().unwrap());
+                        let sub_size = u64::from_be_bytes(
+                            sub_header[4..12]
+                                .try_into()
+                                .map_err(|_| DsdError::InvalidDff)?,
+                        );
 
                         match sub_id {
                             b"FS  " => {
@@ -446,6 +502,28 @@ mod tests {
         for i in 0..=255u8 {
             assert_eq!(bit_reverse(bit_reverse(i)), i);
         }
+    }
+
+    #[test]
+    fn test_dsf_invalid_header() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let invalid_file = temp_dir.path().join("invalid.dsf");
+        let mut data = [0u8; 28];
+        data[0..4].copy_from_slice(b"NOT ");
+        std::fs::write(&invalid_file, data).unwrap();
+
+        let result = DsfDecoder::open(&invalid_file);
+        assert!(matches!(result, Err(DsdError::InvalidDsf)));
+    }
+
+    #[test]
+    fn test_dff_invalid_header() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let invalid_file = temp_dir.path().join("invalid.dff");
+        std::fs::write(&invalid_file, b"NOT_DFF_DATA").unwrap();
+
+        let result = DffDecoder::open(&invalid_file);
+        assert!(matches!(result, Err(DsdError::InvalidDff)));
     }
 
     #[test]

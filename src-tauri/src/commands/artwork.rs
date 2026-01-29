@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use library::{apply_migrations, open_db};
+use library::open_db;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -236,7 +236,6 @@ pub async fn cmd_artwork_search_candidates(
 
     // Check provider settings
     let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
 
     let itunes_enabled = library::db::get_setting(&conn, "artwork.provider.itunes")
         .map(|v| v.as_deref() != Some("off"))
@@ -334,7 +333,6 @@ pub async fn cmd_artwork_get_best_for_album(
     artwork_state: State<'_, ArtworkCacheState>,
 ) -> Result<BestArtworkResponse, String> {
     let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
 
     // Check album mapping
     let album_result: Option<(String, String)> = conn
@@ -399,7 +397,6 @@ pub async fn cmd_artwork_get_best_for_track(
     artwork_state: State<'_, ArtworkCacheState>,
 ) -> Result<BestArtworkResponse, String> {
     let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
 
     // Check track mapping first
     let track_result: Option<(String, String)> = conn
@@ -556,7 +553,6 @@ pub async fn cmd_artwork_select_candidate_for_album(
 
     // Update DB mapping
     let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
 
     conn.execute(
         "INSERT OR REPLACE INTO artwork_cache_map_album 
@@ -607,7 +603,6 @@ pub async fn cmd_artwork_embed_to_file(
 
     // Get track path from DB
     let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
 
     let track_path: String = conn
         .query_row(
@@ -680,7 +675,6 @@ pub async fn cmd_artwork_extract_embedded(
     artwork_state: State<'_, ArtworkCacheState>,
 ) -> Result<ExtractEmbeddedResponse, String> {
     let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
 
     // Get track path from DB
     let track_path: String = conn
@@ -776,7 +770,6 @@ pub async fn cmd_artwork_find_folder(
     artwork_state: State<'_, ArtworkCacheState>,
 ) -> Result<FindFolderArtworkResponse, String> {
     let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
-    apply_migrations(&conn).map_err(|e| e.to_string())?;
 
     // Get track path from DB
     let track_path: String = conn

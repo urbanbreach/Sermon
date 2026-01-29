@@ -12,6 +12,7 @@ import { invoke } from '@tauri-apps/api/core';
 export interface PlayerSettings {
   'player.buffer_size_ms': string;
   'player.preload_next': string;
+  'player.load_to_memory': string;
 }
 
 export interface LibrarySettings {

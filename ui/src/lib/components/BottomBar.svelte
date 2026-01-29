@@ -26,7 +26,7 @@
     }
   });
 
-  let isUnity = $derived($audioDebug?.policy === 'strict' && $audioDebug?.output_mode === 'exclusive');
+  let isUnity = $derived($audioDebug?.policy === 'strict' && ($audioDebug?.output_mode === 'exclusive' || $audioDebug?.output_mode === 'asio'));
 
   let isEmpty = $derived(!$currentTrack);
 

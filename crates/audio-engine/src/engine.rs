@@ -82,6 +82,7 @@ impl EngineState {
 
         if let Some(session) = &mut self.session {
             session.position_ms = position_ms;
+            session.last_play_start = Some(Instant::now());
         }
     }
 
