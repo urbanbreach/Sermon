@@ -178,8 +178,10 @@ pub async fn cmd_settings_reset_category(
 #[tauri::command]
 pub async fn cmd_settings_export_diagnostics(
     state: State<'_, LibraryState>,
+    diagnostics_state: State<'_, Arc<DiagnosticsState>>,
 ) -> Result<String, String> {
     let db_path = state.db_path.clone();
+    let diagnostics = diagnostics_state.inner().clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let conn = open_db(&db_path).map_err(|e| e.to_string())?;
@@ -209,8 +211,23 @@ pub async fn cmd_settings_export_diagnostics(
             .flatten()
             .unwrap_or_else(|| "exclusive".to_string());
 
+        // Get process metrics via sysinfo
+        let pid = Pid::from_u32(std::process::id());
+        let mut sys = System::new();
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
+        
+        let (cpu_pct, rss_bytes) = sys.process(pid)
+            .map(|p| (p.cpu_usage() as f64, p.memory()))
+            .unwrap_or((0.0, 0));
+
+        // Build metrics from DiagnosticsState
+        let startup_ms = diagnostics.startup_duration_ms();
+        let playback_start_ms = diagnostics.playback_start_duration_ms();
+        let seek_ms = diagnostics.seek_duration_ms();
+        let underruns = diagnostics.underruns();
+
         // Build diagnostics JSON
-        let diagnostics = json!({
+        let diagnostics_json = json!({
             "version": "0.1.0",
             "timestamp": Utc::now().to_rfc3339(),
             "system": {
@@ -221,12 +238,22 @@ pub async fn cmd_settings_export_diagnostics(
             "audio": {
                 "current_device": audio_device,
                 "output_mode": output_mode,
-                "wasapi_available": true
+                "wasapi_available": true,
+                "underruns": underruns
+            },
+            "metrics": {
+                "startup_ms": startup_ms,
+                "playback_start_ms": playback_start_ms,
+                "seek_ms": seek_ms
+            },
+            "process": {
+                "cpu_pct": cpu_pct,
+                "rss_bytes": rss_bytes
             },
             "settings": Value::Object(settings)
         });
 
-        serde_json::to_string_pretty(&diagnostics).map_err(|e| e.to_string())
+        serde_json::to_string_pretty(&diagnostics_json).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
