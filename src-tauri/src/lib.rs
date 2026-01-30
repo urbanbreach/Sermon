@@ -908,13 +908,27 @@ impl AudioPlayback {
     }
 
     fn seek(&mut self, position_ms: u64) -> Result<(), String> {
-        if let Some(ref mut gd) = self.gapless_decoder {
+        if self.is_dsd_playback {
+            // DSD seek path
+            if let Some(ref mut dsd) = self.dsd_decoder {
+                dsd.seek_ms(position_ms).map_err(|e| e.to_string())?;
+            }
+            if let Some(ref mut rb) = self.dop_ring_buffer {
+                rb.clear();
+            }
+            if let Some(ref mut packer) = self.dop_packer {
+                packer.reset();
+            }
+        } else if let Some(ref mut gd) = self.gapless_decoder {
             gd.seek(position_ms).map_err(|e| e.to_string())?;
         } else if let Some(ref mut decoder) = self.decoder {
             decoder.seek(position_ms).map_err(|e| e.to_string())?;
         }
         if let Some(ref mut ring_buffer) = self.ring_buffer {
             ring_buffer.clear();
+        }
+        if let Some(ref output) = self.output {
+            output.clear_ring_buffer();
         }
         if let Some(ref mut resampler) = self.resampler {
             resampler.reset();

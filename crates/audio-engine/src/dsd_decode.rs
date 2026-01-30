@@ -471,6 +471,25 @@ impl DsdDecoder {
             DsdDecoder::Dff(d) => d.read_block(8192), // Match DSF block size
         }
     }
+
+    /// Seek to a position in milliseconds.
+    ///
+    /// Converts the millisecond position to a byte offset based on the DSD
+    /// sample rate and channel count. DSD stores 1 bit per sample, so:
+    /// - bytes_per_second = sample_rate / 8 * channels
+    /// - byte_offset = position_ms * bytes_per_second / 1000
+    pub fn seek_ms(&mut self, position_ms: u64) -> Result<(), DsdError> {
+        let info = self.info();
+        // DSD: 1 bit per sample, so bytes = samples / 8
+        // bytes_per_second = sample_rate / 8 * channels
+        let bytes_per_ms = (info.sample_rate as u64 * info.channels as u64) / 8 / 1000;
+        let byte_offset = position_ms * bytes_per_ms;
+
+        match self {
+            DsdDecoder::Dsf(d) => d.seek(byte_offset),
+            DsdDecoder::Dff(d) => d.seek(byte_offset),
+        }
+    }
 }
 
 #[cfg(test)]
