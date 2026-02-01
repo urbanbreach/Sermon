@@ -1,0 +1,23 @@
+# Preferences Sidebar Accessibility Snapshot
+# Generated: 2026-01-31T22:10:39.494Z
+# Scoped to: .prefs-sidebar
+
+- complementary:
+  - heading Preferences [level=2]:
+    - text: Preferences
+  - navigation:
+    - button Player [cursor=pointer]:
+      - graphics-document [cursor=pointer]
+      - text: Player
+    - button Devices [cursor=pointer]:
+      - graphics-document [cursor=pointer]
+      - text: Devices
+    - button Library [cursor=pointer]:
+      - graphics-document [cursor=pointer]
+      - text: Library
+    - button Internet [cursor=pointer]:
+      - graphics-document [cursor=pointer]
+      - text: Internet
+    - button Appearance [cursor=pointer]:
+      - graphics-document [cursor=pointer]
+      - text: Appearance

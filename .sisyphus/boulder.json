@@ -1,13 +1,29 @@
 {
-  "active_plan": "/mnt/e/code/sermon/.sisyphus/plans/backend-optimization.md",
+  "active_plan": null,
   "started_at": "2026-01-29T20:29:18.575Z",
-  "session_ids": ["ses_3f48dd0baffepTD8yFe7S7TLWU"],
-  "plan_name": "backend-optimization",
-  "completed_at": "2026-01-29T21:30:00.000Z",
-  "status": "implementation_complete",
-  "progress": {
-    "checked": 37,
-    "total": 58,
-    "remaining_type": "manual_verification"
-  }
+  "completed_at": "2026-02-01T02:05:00.000Z",
+  "status": "all_plans_complete",
+  "completed_plans": [
+    {
+      "name": "backend-optimization",
+      "path": "/mnt/e/code/sermon/.sisyphus/plans/backend-optimization.md",
+      "status": "implementation_complete",
+      "progress": {
+        "checked": 37,
+        "total": 58,
+        "remaining_type": "manual_verification"
+      },
+      "completed_at": "2026-01-29T21:30:00.000Z"
+    },
+    {
+      "name": "frontend-ui-revamp-v2",
+      "path": "/mnt/e/code/sermon/.sisyphus/plans/frontend-ui-revamp-v2.md",
+      "status": "complete",
+      "progress": {
+        "checked": 12,
+        "total": 12
+      },
+      "completed_at": "2026-02-01T02:05:00.000Z"
+    }
+  ]
 }

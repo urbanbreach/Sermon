@@ -1,0 +1,53 @@
+# Tracks Row Accessibility Snapshot
+# Generated: 2026-01-31T22:08:23.698Z
+# Scoped to: .track-row (sample of first 5 rows)
+
+- row "1 — — — — — ⋯":
+  - text: "1"
+  - text: —
+  - text: —
+  - text: —
+  - text: —
+  - text: —
+  - button ⋯ [haspopup] [cursor=pointer]:
+    - text: ⋯
+
+- row "2 107 Steps Björk Selma Songs Alternativo & Indie 2:36 ⋯":
+  - text: "2"
+  - text: "107 Steps"
+  - text: Björk
+  - text: Selma Songs
+  - text: "Alternativo & Indie"
+  - text: "2:36"
+  - button ⋯ [haspopup] [cursor=pointer]:
+    - text: ⋯
+
+- row "3 5 Years Björk Homogenic Alternativo & Indie 4:29 ⋯":
+  - text: "3"
+  - text: "5 Years"
+  - text: Björk
+  - text: Homogenic
+  - text: "Alternativo & Indie"
+  - text: "4:29"
+  - button ⋯ [haspopup] [cursor=pointer]:
+    - text: ⋯
+
+- row "4 5 Years (Live) Björk Homogenic (Live) Alternativo & Indie 4:10 ⋯":
+  - text: "4"
+  - text: "5 Years (Live)"
+  - text: Björk
+  - text: Homogenic (Live)
+  - text: "Alternativo & Indie"
+  - text: "4:10"
+  - button ⋯ [haspopup] [cursor=pointer]:
+    - text: ⋯
+
+- row "5 Aeroplane Björk Debut Alternativo & Indie 3:54 ⋯":
+  - text: "5"
+  - text: Aeroplane
+  - text: Björk
+  - text: Debut
+  - text: "Alternativo & Indie"
+  - text: "3:54"
+  - button ⋯ [haspopup] [cursor=pointer]:
+    - text: ⋯
