@@ -6,3 +6,4 @@ export { default as Tooltip } from './Tooltip.svelte';
 export { default as SegmentedControl } from './SegmentedControl.svelte';
 export { default as SettingRow } from './SettingRow.svelte';
 export { default as SettingGroup } from './SettingGroup.svelte';
+export * as DropdownMenu from './DropdownMenu.svelte';

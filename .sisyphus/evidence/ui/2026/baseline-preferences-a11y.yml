@@ -1,0 +1,81 @@
+# Accessibility Snapshot: Preferences View
+# Generated: 2026-02-01
+# Scoped to: .preferences-view
+
+- complementary [ref=e1]:
+  - generic [ref=e2]:
+    - heading Preferences [level=2] [ref=e3]:
+      - text: Preferences
+  - navigation [ref=e4]:
+    - button Player [ref=e5] [cursor=pointer]:
+      - graphics-document [ref=e6] [cursor=pointer]
+      - text: Player
+    - button Devices [ref=e11] [cursor=pointer]:
+      - graphics-document [ref=e12] [cursor=pointer]
+      - text: Devices
+    - button Library [ref=e16] [cursor=pointer]:
+      - graphics-document [ref=e17] [cursor=pointer]
+      - text: Library
+    - button Internet [ref=e23] [cursor=pointer]:
+      - graphics-document [ref=e24] [cursor=pointer]
+      - text: Internet
+    - button Appearance [ref=e29] [cursor=pointer]:
+      - graphics-document [ref=e30] [cursor=pointer]
+      - text: Appearance
+- main [ref=e37]:
+  - generic [ref=e38]:
+    - heading Player [level=1] [ref=e39]:
+      - text: Player
+    - button Reset to Defaults [ref=e40] [cursor=pointer]:
+      - graphics-document [ref=e41] [cursor=pointer]
+      - text: Reset to Defaults
+  - generic Output Device [ref=e47]:
+    - text: Output Device
+  - combobox Output Device [valuenow=undefined] [ref=e48]:
+    - option Default Output [selected] [ref=e49]:
+      - text: Default Output
+  - generic Output Mode [ref=e51]:
+    - text: Output Mode
+  - combobox Output Mode [valuenow=undefined] [ref=e52]:
+    - option Shared (Windows Mixer) [ref=e53]:
+      - text: Shared (Windows Mixer)
+    - option Exclusive (Bit-Perfect) [ref=e54]:
+      - text: Exclusive (Bit-Perfect)
+    - option ASIO (Professional) [selected] [ref=e55]:
+      - text: ASIO (Professional)
+  - generic ASIO Driver [ref=e57]:
+    - text: ASIO Driver
+  - combobox ASIO Driver [valuenow=undefined] [ref=e58]:
+    - option Select Driver... [ref=e59]:
+      - text: Select Driver...
+    - option iFi USB Audio Device [selected] [ref=e60]:
+      - text: iFi USB Audio Device
+    - option Realtek ASIO [ref=e61]:
+      - text: Realtek ASIO
+  - button Open Control Panel [ref=e62] [cursor=pointer]:
+    - text: Open Control Panel
+  - generic Enable fade on format switch [ref=e64]:
+    - checkbox Enable fade on format switch [ref=e65]
+    - text: Enable fade on format switch
+  - generic Buffer Size (ms) [ref=e67]:
+    - text: Buffer Size (ms)
+  - combobox Buffer Size (ms) [valuenow=undefined] [ref=e68]:
+    - option "100ms (Low Latency)" [ref=e69]:
+      - text: "100ms (Low Latency)"
+    - option "250ms" [ref=e70]:
+      - text: "250ms"
+    - option "500ms (Default)" [selected] [ref=e71]:
+      - text: "500ms (Default)"
+    - option "1000ms" [ref=e72]:
+      - text: "1000ms"
+    - option "2000ms (High Buffer)" [ref=e73]:
+      - text: "2000ms (High Buffer)"
+  - text: Requires restart to take effect
+  - generic Preload Next Track [ref=e76]:
+    - checkbox Preload Next Track [checked] [ref=e77]
+    - text: Preload Next Track
+  - text: Takes effect in future update
+  - generic Load tracks to memory [ref=e80]:
+    - checkbox Load tracks to memory [checked] [ref=e81]
+    - text: Load tracks to memory
+  - text: Load entire file to RAM before playback (reduces disk I/O jitter)

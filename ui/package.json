@@ -24,6 +24,7 @@
     "@tauri-apps/api": "^2.9.1",
     "@tauri-apps/plugin-dialog": "^2",
     "@tauri-apps/plugin-fs": "^2",
+    "bits-ui": "^2.15.5",
     "liquid-glass-svelte": "^1.2.0",
     "virtua": "^0.48.3"
   }
