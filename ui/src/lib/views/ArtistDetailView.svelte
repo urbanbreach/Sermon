@@ -203,13 +203,13 @@
 <style>
   .view-container {
     padding: 2rem;
-    color: #fff;
+    color: var(--text-primary);
     height: 100%;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 2rem;
-    background: transparent;
+    gap: 3rem;
+    background: var(--bg-main);
   }
 
   .top-bar {
@@ -217,23 +217,26 @@
   }
 
   .back-btn {
-    background: var(--glass-bg);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    border: 1px solid var(--glass-border);
-    color: #ccc;
+    background: transparent;
+    border: 1px solid var(--border-dim);
+    color: var(--text-secondary);
     cursor: pointer;
     font-size: 0.9rem;
-    padding: 0.5rem 1rem;
-    border-radius: 20px;
+    padding: 0.5rem 1.2rem;
+    border-radius: 0;
     transition: all 0.2s;
-    box-shadow: var(--glass-shadow);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .back-btn:hover {
-    color: #fff;
-    background: var(--glass-border);
-    transform: translateX(-2px);
+    color: var(--text-primary);
+    background: var(--surface-hover);
+    border-color: var(--text-primary);
   }
 
   .back-btn:disabled {
@@ -243,85 +246,96 @@
 
   .artist-header {
     display: flex;
-    gap: 2rem;
-    align-items: center;
+    gap: 2.5rem;
+    align-items: flex-end;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--border-dim);
   }
 
   .artist-icon {
-    width: 150px;
-    height: 150px;
-    background: var(--glass-bg);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    border: 1px solid var(--glass-border);
-    border-radius: 50%;
+    width: 180px;
+    height: 180px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-dim);
+    border-radius: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #444;
+    color: var(--text-secondary);
     flex-shrink: 0;
-    box-shadow: var(--glass-shadow);
   }
 
   .artist-info {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 1rem;
   }
 
   h1 {
-    font-size: 2.5rem;
-    font-weight: 700;
+    font-size: 4rem;
+    font-weight: 800;
     margin: 0;
-    line-height: 1.1;
-    text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+    line-height: 0.9;
+    letter-spacing: -0.03em;
+    color: var(--text-primary);
+    text-transform: uppercase;
   }
 
   h2 {
-    font-size: 1.5rem;
+    font-size: 1.2rem;
     font-weight: 600;
-    margin: 0 0 1rem 0;
-    color: #fff;
+    margin: 0 0 1.5rem 0;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border-dim);
+    padding-bottom: 0.5rem;
+    display: inline-block;
   }
 
   .meta {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    color: #aaa;
-    font-size: 1rem;
+    gap: 1rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-family: var(--font-mono);
   }
 
   .bullet {
-    color: #666;
+    color: var(--border-dim);
   }
 
   .artist-actions {
-    margin-top: 1rem;
+    margin-top: 1.5rem;
   }
 
   .primary-btn {
-    background: #fff;
-    color: #000;
+    background: var(--text-primary);
+    color: var(--bg-main);
     border: none;
-    padding: 0.8rem 2rem;
-    border-radius: 30px;
-    font-weight: 600;
+    padding: 1rem 2.5rem;
+    border-radius: 0;
+    font-weight: 700;
     font-size: 1rem;
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
-    box-shadow: 0 4px 12px rgba(255,255,255,0.2);
+    transition: all 0.2s;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .primary-btn:hover:not(:disabled) {
-    transform: scale(1.05);
-    box-shadow: 0 6px 16px rgba(255,255,255,0.3);
+    background: var(--accent-primary);
+    color: #fff;
+    transform: translateY(-2px);
   }
 
   .primary-btn:disabled {
     opacity: 0.5;
     cursor: default;
+    background: var(--surface-3);
+    color: var(--text-tertiary);
   }
 
   .content {
@@ -330,39 +344,47 @@
 
   .albums-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 2rem;
   }
 
   .album-card {
-    background: var(--glass-bg);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    border-radius: var(--glass-radius);
-    border: 1px solid var(--glass-border);
-    box-shadow: var(--glass-shadow);
+    background: transparent;
+    border-radius: 0;
+    border: 1px solid transparent;
     overflow: hidden;
     cursor: pointer;
-    transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), border-color 0.2s;
+    transition: all 0.2s ease-out;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
   }
 
   .album-card:hover {
-    transform: scale(1.02);
-    border-color: rgba(255,255,255,0.3);
+    transform: translateY(-4px);
+  }
+
+  .album-card:hover .album-artwork {
+    border-color: var(--text-primary);
   }
 
   .album-artwork {
     width: 100%;
     aspect-ratio: 1;
-    background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+    background: var(--surface-2);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #555;
+    color: var(--text-tertiary);
+    border: 1px solid var(--border-dim);
+    transition: border-color 0.2s;
   }
 
   .album-info {
-    padding: 0.75rem;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
   }
 
   .album-title {
@@ -370,16 +392,16 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: 0.95rem;
-    margin-bottom: 0.25rem;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    font-size: 1rem;
+    color: var(--text-primary);
   }
 
   .album-meta {
     font-size: 0.8rem;
-    color: #aaa;
+    color: var(--text-secondary);
     display: flex;
     gap: 0.5rem;
+    font-family: var(--font-mono);
   }
 
   .loading-state, .empty-state, .error-state {
@@ -387,27 +409,38 @@
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    height: 200px;
+    height: 300px;
     font-size: 1.2rem;
-    color: #888;
+    color: var(--text-secondary);
     gap: 1rem;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .error-state {
-    color: #f66;
+    color: var(--error);
   }
 
   .error-detail {
     font-size: 0.9rem;
-    color: #888;
+    color: var(--text-tertiary);
+    text-transform: none;
   }
 
   .error-state button {
-    background: rgba(255,255,255,0.1);
-    border: 1px solid rgba(255,255,255,0.2);
-    color: #fff;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
+    background: transparent;
+    border: 1px solid var(--text-secondary);
+    color: var(--text-primary);
+    padding: 0.5rem 1.5rem;
+    border-radius: 0;
     cursor: pointer;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+  }
+  
+  .error-state button:hover {
+    background: var(--text-primary);
+    color: var(--bg-main);
   }
 </style>

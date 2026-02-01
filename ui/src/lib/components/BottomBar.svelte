@@ -532,7 +532,7 @@
     border-radius: 50%;
     background: var(--text-primary);
     box-shadow: var(--shadow-1);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--divider-color);
     transition: transform var(--motion-fast) var(--ease-out);
   }
   .volume-control input[type=range]:hover::-webkit-slider-thumb {

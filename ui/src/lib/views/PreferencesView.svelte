@@ -108,31 +108,32 @@
     height: 100%;
     width: 100%;
     overflow: hidden;
+    background: var(--surface-0, #0a0a0a);
+    color: var(--text-primary, rgba(255, 255, 255, 0.92));
   }
 
   .prefs-sidebar {
-    width: 220px;
-    background: var(--glass-bg);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    border-right: 1px solid var(--glass-border);
+    width: 240px;
+    background: var(--surface-1, rgba(255, 255, 255, 0.04));
+    border-right: 1px solid var(--divider-color, rgba(255, 255, 255, 0.07));
     padding: var(--space-4);
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
+    gap: var(--space-6);
     flex-shrink: 0;
   }
 
   .sidebar-header {
-    padding-bottom: var(--space-3);
-    border-bottom: 1px solid var(--glass-border);
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--divider-color, rgba(255, 255, 255, 0.07));
   }
 
   .prefs-sidebar h2 {
-    font-size: var(--text-section);
+    font-size: var(--text-section, 18px);
     font-weight: 600;
     margin: 0;
-    color: var(--text-primary);
+    color: var(--text-primary, rgba(255, 255, 255, 0.92));
+    letter-spacing: -0.01em;
   }
 
   .category-nav {
@@ -144,27 +145,27 @@
   .category-nav button {
     background: transparent;
     border: none;
-    color: var(--text-secondary);
+    color: var(--text-secondary, rgba(255, 255, 255, 0.70));
     text-align: left;
     padding: var(--space-2) var(--space-3);
     cursor: pointer;
-    font-size: var(--text-body);
-    border-radius: var(--radius-sm);
+    font-size: var(--text-body, 14px);
+    border-radius: var(--radius-sm, 4px);
     transition: all 0.15s ease;
     display: flex;
     align-items: center;
     gap: var(--space-3);
+    font-weight: 500;
   }
 
   .category-nav button:hover {
-    color: var(--text-primary);
-    background: var(--surface-hover);
+    color: var(--text-primary, rgba(255, 255, 255, 0.92));
+    background: var(--surface-hover, rgba(255, 255, 255, 0.10));
   }
 
   .category-nav button.active {
-    color: var(--text-primary);
-    background: var(--surface-active);
-    font-weight: 500;
+    color: var(--text-primary, rgba(255, 255, 255, 0.92));
+    background: var(--surface-active, rgba(255, 255, 255, 0.06));
   }
 
   .prefs-content {
@@ -172,51 +173,52 @@
     display: flex;
     flex-direction: column;
     position: relative;
-    background: rgba(0, 0, 0, 0.15);
+    background: var(--surface-0, #0a0a0a);
     min-width: 0;
   }
 
   .prefs-header {
-    padding: var(--space-4) var(--space-6);
+    padding: var(--space-6) var(--space-8);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid var(--glass-border);
-    background: rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid var(--divider-color, rgba(255, 255, 255, 0.07));
     flex-shrink: 0;
   }
 
   .prefs-header h1 {
     margin: 0;
-    font-size: var(--text-view-title);
+    font-size: var(--text-view-title, 22px);
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--text-primary, rgba(255, 255, 255, 0.92));
+    letter-spacing: -0.02em;
   }
 
   .prefs-body {
     flex: 1;
-    padding: var(--space-6);
-    padding-bottom: calc(var(--layout-player-height) + var(--space-6));
+    padding: var(--space-8);
+    padding-bottom: calc(var(--layout-player-height) + var(--space-8));
     overflow-y: auto;
+    max-width: 800px;
   }
 
   .btn {
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
-    color: var(--text-primary);
+    background: var(--surface-2, rgba(255, 255, 255, 0.08));
+    border: 1px solid transparent;
+    color: var(--text-primary, rgba(255, 255, 255, 0.92));
     padding: var(--space-2) var(--space-4);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-sm, 4px);
     cursor: pointer;
     transition: all 0.15s ease;
-    font-size: var(--text-body);
+    font-size: var(--text-body, 14px);
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
+    font-weight: 500;
   }
 
   .btn:hover:not(:disabled) {
-    background: var(--surface-hover);
-    border-color: var(--glass-border-highlight);
+    background: var(--surface-hover, rgba(255, 255, 255, 0.10));
   }
 
   .btn:disabled {
@@ -225,9 +227,16 @@
   }
 
   .btn-secondary {
-    font-size: var(--text-meta);
-    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-meta, 12px);
+    padding: var(--space-2) var(--space-3);
     background: transparent;
+    border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.07));
+    color: var(--text-secondary, rgba(255, 255, 255, 0.70));
+  }
+  
+  .btn-secondary:hover:not(:disabled) {
+    border-color: var(--text-secondary, rgba(255, 255, 255, 0.70));
+    color: var(--text-primary, rgba(255, 255, 255, 0.92));
   }
 
   .status-message {
@@ -237,13 +246,13 @@
     background: rgba(40, 167, 69, 0.15);
     color: #4ade80;
     padding: var(--space-2) var(--space-4);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-sm, 4px);
     border: 1px solid rgba(40, 167, 69, 0.3);
     animation: slide-up 0.2s ease;
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: var(--text-body);
+    font-size: var(--text-body, 14px);
   }
 
   .status-message.error {

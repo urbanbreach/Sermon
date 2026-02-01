@@ -301,7 +301,7 @@
 <style>
   .view-container {
     padding: 2rem;
-    color: #fff;
+    color: var(--text-primary);
     height: 100%;
     overflow-y: auto;
     display: flex;
@@ -320,9 +320,10 @@
     width: 280px;
     height: 280px;
     border-radius: var(--artwork-radius-album-detail, 12px);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    box-shadow: none;
     flex-shrink: 0;
     overflow: hidden;
+    background: var(--surface-2);
   }
   
   .artwork img {
@@ -334,14 +335,14 @@
   .artwork-placeholder {
     width: 280px;
     height: 280px;
-    background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
+    background: var(--surface-2);
     border-radius: var(--artwork-radius-album-detail, 12px);
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    box-shadow: none;
     flex-shrink: 0;
-    color: #444;
+    color: var(--text-disabled);
   }
   
   .album-info {
@@ -357,8 +358,9 @@
     font-weight: 700;
     margin: 0;
     line-height: 1.1;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.35);
+    text-shadow: none;
     letter-spacing: -0.02em;
+    color: var(--text-primary);
   }
   
   .artist-row {
@@ -372,28 +374,28 @@
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--theme-accent, #4aafff), rgba(255,255,255,0.2));
+    background: var(--surface-2);
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 14px;
     font-weight: 600;
-    color: #fff;
+    color: var(--text-secondary);
   }
 
   .artist-name {
     font-size: 16px;
     font-weight: 600;
-    color: #fff;
+    color: var(--text-primary);
   }
 
   .artist-follow-btn {
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: #fff;
+    background: var(--surface-2);
+    border: none;
+    color: var(--text-secondary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -402,7 +404,8 @@
   }
   
   .artist-follow-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--surface-hover);
+    color: var(--text-primary);
   }
 
   /* Metadata Line */
@@ -416,13 +419,13 @@
   .meta-item {
     font-size: 12px;
     font-weight: 500;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--text-tertiary);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
 
   .meta-separator {
-    color: rgba(255, 255, 255, 0.3);
+    color: var(--text-disabled);
     font-size: 10px;
   }
 
@@ -441,7 +444,7 @@
 
   /* Play Button (accent filled) */
   .play-btn {
-    background: rgba(255,255,255,0.95);
+    background: var(--theme-accent);
     color: #000;
     border: none;
     padding: 0 24px;
@@ -466,9 +469,9 @@
 
   /* Shuffle Button (outlined) */
   .shuffle-btn {
-    background: transparent;
-    color: #fff;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: var(--surface-2);
+    color: var(--text-primary);
+    border: none;
     padding: 0 20px;
     height: 38px;
     border-radius: var(--radius-pill, 999px);
@@ -482,7 +485,7 @@
   }
   
   .shuffle-btn:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--surface-hover);
   }
 
   /* Circle buttons */
@@ -490,9 +493,9 @@
     width: 38px;
     height: 38px;
     border-radius: 50%;
-    background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    color: #fff;
+    background: var(--surface-2);
+    border: none;
+    color: var(--text-secondary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -501,7 +504,8 @@
   }
   
   .add-btn:hover, .more-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--surface-hover);
+    color: var(--text-primary);
   }
 
   .play-btn:disabled, .shuffle-btn:disabled, .add-btn:disabled {
@@ -516,7 +520,7 @@
     justify-content: space-between;
     align-items: center;
     padding-bottom: 1rem;
-    border-bottom: 1px solid var(--divider-color, rgba(255, 255, 255, 0.07));
+    border-bottom: 1px solid var(--border-dim);
     margin-bottom: 0.5rem;
   }
 
@@ -524,26 +528,26 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--surface-2);
+    border: none;
     border-radius: 6px;
     padding: 0 12px;
     height: 34px;
     width: 220px;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--text-secondary);
   }
 
   .search-field input {
     background: transparent;
     border: none;
     outline: none;
-    color: #fff;
+    color: var(--text-primary);
     font-size: 13px;
     width: 100%;
   }
   
   .search-field input::placeholder {
-    color: rgba(255, 255, 255, 0.3);
+    color: var(--text-disabled);
   }
 
   .sort-controls {
@@ -555,12 +559,12 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: var(--surface-2);
+    border: none;
     border-radius: var(--radius-pill, 999px);
     padding: 0 14px;
     height: 30px;
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--text-secondary);
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
@@ -568,8 +572,8 @@
   }
   
   .sort-pill:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: var(--surface-hover);
+    color: var(--text-primary);
   }
 
   .tracks-list {
@@ -585,13 +589,13 @@
   td {
     padding: 0 var(--table-cell-gap, 12px);
     height: 56px; /* Increased from 36px */
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04); /* Subtle border */
-    color: #ddd;
+    border-bottom: 1px solid var(--border-dim);
+    color: var(--text-secondary);
     vertical-align: middle;
   }
   
   tr:hover {
-    background: var(--glass-highlight, rgba(255,255,255,0.05));
+    background: var(--surface-hover);
   }
   
   tr.missing {
@@ -601,13 +605,13 @@
   .col-num {
     width: 50px;
     text-align: right;
-    color: #666;
+    color: var(--text-tertiary);
     font-size: 13px;
     font-weight: 500;
   }
   
   .col-title {
-    color: #fff;
+    color: var(--text-primary);
   }
   
   .title-cell {
@@ -619,7 +623,7 @@
   
   .track-artist {
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--text-tertiary);
   }
 
   .col-duration {
@@ -627,7 +631,7 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
     font-size: 13px;
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--text-tertiary);
   }
   
   .col-actions {
@@ -639,7 +643,7 @@
   .row-more-btn {
     background: transparent;
     border: none;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--text-tertiary);
     width: 32px;
     height: 32px;
     border-radius: 6px;
@@ -652,8 +656,8 @@
   }
   
   .row-more-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: var(--surface-2);
+    color: var(--text-primary);
   }
 
   tr:hover .row-more-btn {
@@ -667,7 +671,7 @@
     align-items: center;
     height: 200px;
     font-size: 1.2rem;
-    color: #888;
+    color: var(--text-tertiary);
     gap: 1rem;
   }
 
@@ -677,19 +681,19 @@
 
   .error-detail {
     font-size: 0.9rem;
-    color: #888;
+    color: var(--text-tertiary);
   }
 
   .error-state button {
-    background: rgba(255,255,255,0.1);
-    border: 1px solid rgba(255,255,255,0.2);
-    color: #fff;
+    background: var(--surface-2);
+    border: none;
+    color: var(--text-primary);
     padding: 0.5rem 1rem;
     border-radius: 4px;
     cursor: pointer;
   }
 
   .error-state button:hover {
-    background: rgba(255,255,255,0.2);
+    background: var(--surface-hover);
   }
 </style>

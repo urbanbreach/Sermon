@@ -145,8 +145,9 @@
     padding: 0 var(--space-3, 12px);
     padding-right: 1rem;
     margin-bottom: 0;
-    border-radius: var(--radius-sm, 8px);
+    border-radius: 0;
     border: none;
+    border-bottom: 1px solid var(--border-dim);
     background: transparent;
     display: flex;
     align-items: center;
@@ -162,15 +163,15 @@
 
   .item:focus-visible {
     background: var(--surface-hover);
-    box-shadow: inset 0 0 0 1px var(--accent-medium);
-    outline: none;
+    outline: 2px solid var(--accent-primary);
+    outline-offset: -2px;
   }
 
   .avatar {
     width: 36px;
     height: 36px;
-    background: linear-gradient(135deg, #3a3a3a, #252525);
-    border-radius: 50%;
+    background: var(--surface-2);
+    border-radius: 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -178,6 +179,7 @@
     font-size: 14px;
     color: var(--text-secondary);
     flex-shrink: 0;
+    border: 1px solid var(--border-dim);
   }
 
   .info {
@@ -190,19 +192,22 @@
 
   .name {
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    letter-spacing: -0.01em;
   }
 
   .stats {
     font-size: 12px;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    font-family: var(--font-mono);
+    opacity: 0.8;
   }
 
   .loading-state, .empty-state {

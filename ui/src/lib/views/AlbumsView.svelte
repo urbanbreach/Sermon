@@ -298,7 +298,7 @@
   }
 
   .card {
-    background: transparent;
+    background: var(--surface-1);
     border-radius: var(--artwork-radius-albums, 10px);
     border: 1px solid transparent;
     box-shadow: none;
@@ -307,16 +307,18 @@
     flex-direction: column;
     cursor: pointer;
     position: relative;
-    transition: box-shadow var(--motion-fast) var(--ease-out);
+    transition: background var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out);
+    padding: 12px;
   }
 
   .card:hover {
-    box-shadow: var(--shadow-2);
+    background: var(--surface-hover);
+    transform: translateY(-2px);
   }
   
   .card:focus-visible {
     outline: none;
-    box-shadow: var(--focus-ring), var(--shadow-2);
+    box-shadow: var(--focus-ring);
   }
 
   .play-overlay {
@@ -327,11 +329,11 @@
     width: 48px;
     height: 48px;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.75);
+    background: var(--theme-accent);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: white;
+    color: #000;
     opacity: 0 !important;
     visibility: hidden;
     transition: all var(--motion-fast) var(--ease-out);
@@ -343,10 +345,11 @@
   .card:hover .play-overlay {
     opacity: 1 !important;
     visibility: visible;
+    transform: translate(-50%, -50%) scale(1.1);
   }
 
   .card:hover .artwork img {
-    opacity: 0.85;
+    opacity: 1;
   }
 
   .card:hover .choose-artwork-btn {
@@ -357,10 +360,10 @@
     position: absolute;
     top: 8px;
     right: 8px;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    background: rgba(0, 0, 0, 0.7);
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.6);
     border: none;
     color: var(--text-secondary);
     cursor: pointer;
@@ -370,18 +373,18 @@
     align-items: center;
     justify-content: center;
     padding: 0;
+    backdrop-filter: none;
   }
 
   .choose-artwork-btn:hover {
     background: var(--theme-accent);
     color: #000;
-    box-shadow: var(--shadow-2);
   }
 
   .artwork-placeholder {
     width: 100%;
     aspect-ratio: 1;
-    background: var(--surface-1);
+    background: var(--surface-2);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -396,36 +399,38 @@
     overflow: hidden;
     border-radius: var(--artwork-radius-albums, 10px);
     position: relative;
+    background: var(--surface-2);
   }
 
   .artwork img {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: opacity 0.15s ease;
+    transition: none;
   }
 
   .info {
-    padding: 8px 4px 4px 4px;
+    padding: 12px 0 0 0;
     min-height: auto;
     display: flex;
     flex-direction: column;
+    gap: 2px;
   }
 
   .title {
     font-weight: 600;
-    margin-bottom: 0.25rem;
+    margin-bottom: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.3;
     color: var(--text-primary);
   }
 
   .artist {
-    font-size: 12px;
-    color: var(--text-tertiary);
+    font-size: 13px;
+    color: var(--text-secondary);
     font-weight: 400;
     white-space: nowrap;
     overflow: hidden;

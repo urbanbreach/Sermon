@@ -1,14 +1,12 @@
 <script lang="ts">
   import { goBack } from '../state/route';
   import { 
-    currentTrack, playbackState, queue, currentIndex, progress, 
-    positionMs, durationMs, seek, audioDebug, isPlaying, playNow
+    currentTrack, playbackState, progress, 
+    positionMs, durationMs, seek, audioDebug
   } from '../state/playback';
-  import { Fixtures } from '../data/fixtures';
   import { currentArtworkUrl } from '../state/artwork';
+  import { ArrowLeft, Disc, Activity, Cpu, Speaker } from 'lucide-svelte';
   
-  let isDebugging = false;
-
   function handleGoBack() {
     goBack();
   }
@@ -27,119 +25,162 @@
     seek(ms);
   }
 
-  function toggleDebug() {
-    isDebugging = !isDebugging;
+  // Helper to format sample rate (e.g. 44100 -> 44.1 kHz)
+  function formatSampleRate(hz?: number): string {
+    if (!hz) return 'Unknown';
+    return (hz / 1000).toFixed(1) + ' kHz';
+  }
+
+  // Helper for channels
+  function formatChannels(ch?: number): string {
+    if (!ch) return 'Stereo';
+    if (ch === 1) return 'Mono';
+    if (ch === 2) return 'Stereo';
+    return `${ch} Ch`;
   }
 </script>
 
 <div class="now-playing-view">
   <div class="top-nav">
     <button class="back-btn" onclick={handleGoBack}>
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-      Back
+      <ArrowLeft size={20} />
+      <span>Back</span>
     </button>
   </div>
   
-  <div class="main-layout">
-    <div class="track-area">
-      <div class="art-large">
+  <div class="content-grid">
+    <div class="artwork-section">
+      <div class="art-container">
         {#if $currentArtworkUrl}
           <img src={$currentArtworkUrl} alt="Album artwork" class="art-image" />
         {:else}
           <div class="art-placeholder">
-            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="placeholder-icon"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            <Disc size={64} strokeWidth={1} />
           </div>
         {/if}
       </div>
-      
-      <div class="info-large">
+    </div>
+
+    <div class="info-section">
+      <div class="track-header">
         <h1>{$currentTrack?.title || 'Nothing Playing'}</h1>
         <h2>{$currentTrack?.artist || 'Unknown Artist'}</h2>
         <h3>{$currentTrack?.album || 'Unknown Album'}</h3>
       </div>
 
-      <div class="scrubber-area">
-        <div class="time-labels">
-          <span>{formatDuration($positionMs)}</span>
-          <span>{formatDuration($durationMs)}</span>
+      {#if $audioDebug}
+        <div class="tech-grid">
+          <div class="tech-item">
+            <span class="label">Format</span>
+            <span class="value">{$audioDebug.decode_format.codec?.toUpperCase() || 'PCM'}</span>
+          </div>
+          <div class="tech-item">
+            <span class="label">Bit Depth</span>
+            <span class="value">{$audioDebug.decode_format.bit_depth}-bit</span>
+          </div>
+          <div class="tech-item">
+            <span class="label">Sample Rate</span>
+            <span class="value">{formatSampleRate($audioDebug.decode_format.sample_rate)}</span>
+          </div>
+          <div class="tech-item">
+            <span class="label">Channels</span>
+            <span class="value">{formatChannels($audioDebug.decode_format.channels)}</span>
+          </div>
         </div>
-        <input 
-          type="range" 
-          class="scrubber"
-          min="0" 
-          max="1" 
-          step="0.001" 
-          value={$progress} 
-          onchange={handleSeek}
-        />
-      </div>
+
+        <div class="signal-path">
+          <div class="path-header">
+            <Activity size={14} />
+            <span>SIGNAL PATH</span>
+          </div>
+          <div class="path-flow">
+            <div class="node source">
+              <span class="node-icon"><Disc size={14} /></span>
+              <div class="node-info">
+                <span class="node-title">Source</span>
+                <span class="node-detail">
+                  {$audioDebug.decode_format.codec?.toUpperCase()} 
+                  {formatSampleRate($audioDebug.decode_format.sample_rate)} / {$audioDebug.decode_format.bit_depth}bit
+                </span>
+              </div>
+            </div>
+            
+            <div class="connector"></div>
+
+            <div class="node engine">
+              <span class="node-icon"><Cpu size={14} /></span>
+              <div class="node-info">
+                <span class="node-title">Engine</span>
+                <span class="node-detail">
+                  {$audioDebug.output_mode === 'exclusive' ? 'WASAPI Exclusive' : 'WASAPI Shared'}
+                  {#if $audioDebug.bit_perfect === 'yes'}
+                    <span class="badge-perfect">BIT-PERFECT</span>
+                  {/if}
+                </span>
+              </div>
+            </div>
+
+            <div class="connector"></div>
+
+            <div class="node output">
+              <span class="node-icon"><Speaker size={14} /></span>
+              <div class="node-info">
+                <span class="node-title">Output</span>
+                <span class="node-detail">
+                  {$audioDebug.device_name}
+                  <br/>
+                  {formatSampleRate($audioDebug.output_format.sample_rate)} / {$audioDebug.output_format.bit_depth}bit
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      {/if}
     </div>
   </div>
 
-  <div class="debug-container">
-    <button class="debug-toggle" class:active={isDebugging} onclick={toggleDebug}>
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-      Debug
-    </button>
-
-    {#if isDebugging && $audioDebug}
-      <div class="debug-overlay">
-        <h4>Audio Engine</h4>
-        <div class="debug-grid">
-          <div class="debug-row">
-            <span class="label">Mode</span>
-            <span>{$audioDebug.output_mode}</span>
-          </div>
-          <div class="debug-row">
-            <span class="label">Device</span>
-            <span class="truncate">{$audioDebug.device_name}</span>
-          </div>
-          <div class="debug-section">
-            <h5>Source</h5>
-            <div>{$audioDebug.decode_format.codec || 'Unknown'} / {$audioDebug.decode_format.container || 'Unknown'}</div>
-            <div class="mono">{$audioDebug.decode_format.sample_rate}Hz / {$audioDebug.decode_format.bit_depth}-bit</div>
-          </div>
-          <div class="debug-section">
-            <h5>Output</h5>
-            <div class="mono">{$audioDebug.output_format.sample_rate}Hz / {$audioDebug.output_format.bit_depth}-bit</div>
-          </div>
-        </div>
+  <div class="bottom-controls">
+    <div class="scrubber-container">
+      <div class="time-info">
+        <span>{formatDuration($positionMs)}</span>
+        <span>{formatDuration($durationMs)}</span>
       </div>
-    {/if}
+      <input 
+        type="range" 
+        class="scrubber"
+        min="0" 
+        max="1" 
+        step="0.001" 
+        value={$progress} 
+        onchange={handleSeek}
+      />
+    </div>
   </div>
 </div>
 
 <style>
   .now-playing-view {
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: 100%;
+    inset: 0;
     background: transparent;
     z-index: 100;
-    padding: 2rem;
     display: flex;
     flex-direction: column;
+    padding: 2rem;
     color: var(--text-primary);
     box-sizing: border-box;
     overflow: hidden;
   }
 
   .top-nav {
-    position: absolute;
-    top: 2rem;
-    left: 2rem;
-    z-index: 10;
+    margin-bottom: 2rem;
   }
 
   .back-btn {
     background: rgba(255, 255, 255, 0.05);
     backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    padding: 0.5rem 1rem 0.5rem 0.75rem;
+    padding: 0.5rem 1rem;
     color: var(--text-secondary);
     cursor: pointer;
     border-radius: 99px;
@@ -150,106 +191,222 @@
     font-size: 0.9rem;
     font-weight: 500;
   }
+
   .back-btn:hover {
     background: rgba(255, 255, 255, 0.1);
     color: var(--text-primary);
     border-color: rgba(255, 255, 255, 0.2);
   }
 
-  .main-layout {
-    display: flex;
-    flex-direction: column;
+  .content-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4rem;
     align-items: center;
-    justify-content: center;
-    height: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
     width: 100%;
+    padding-bottom: 4rem; /* Space for bottom controls */
   }
 
-  .track-area {
-    width: 100%;
-    max-width: 800px;
+  .artwork-section {
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 2.5rem;
+    justify-content: flex-end;
   }
 
-  .art-large {
-    width: clamp(350px, 40vh, 450px);
-    height: clamp(350px, 40vh, 450px);
+  .art-container {
+    width: 100%;
+    max-width: 500px;
+    aspect-ratio: 1;
     background: #111;
-    border-radius: var(--artwork-radius-album-detail, 12px);
-    box-shadow: 0 24px 60px rgba(0,0,0,0.6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    border-radius: 4px; /* Brutalist: sharp or small radius */
+    box-shadow: 0 30px 80px rgba(0,0,0,0.5);
     position: relative;
     overflow: hidden;
-  }
-  
-  .art-placeholder {
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(135deg, #1a1a1a, #2a2a2a);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: rgba(255, 255, 255, 0.1);
   }
 
   .art-image {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    border-radius: var(--artwork-radius-album-detail, 12px);
   }
 
-  .info-large {
-    text-align: center;
+  .art-placeholder {
+    width: 100%;
+    height: 100%;
+    background: #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.1);
+  }
+
+  .info-section {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    justify-content: center;
     max-width: 600px;
   }
-  
-  .info-large h1 { 
-    font-size: var(--text-view-title); 
-    margin: 0; 
-    font-weight: 600;
-    color: var(--text-primary);
-    letter-spacing: -0.02em;
+
+  .track-header {
+    margin-bottom: 3rem;
   }
-  
-  .info-large h2 { 
-    font-size: var(--text-section); 
-    color: var(--text-secondary); 
-    margin: 0; 
+
+  .track-header h1 {
+    font-size: clamp(2rem, 4vw, 3.5rem);
+    font-weight: 800;
+    line-height: 1.1;
+    margin: 0 0 0.5rem 0;
+    letter-spacing: -0.03em;
+  }
+
+  .track-header h2 {
+    font-size: clamp(1.2rem, 2vw, 1.75rem);
     font-weight: 500;
+    color: var(--text-secondary);
+    margin: 0 0 0.25rem 0;
+    letter-spacing: -0.01em;
   }
-  
-  .info-large h3 { 
-    font-size: var(--text-body); 
-    color: var(--text-tertiary); 
-    margin: 0; 
+
+  .track-header h3 {
+    font-size: 1.1rem;
+    color: var(--text-tertiary);
+    margin: 0;
     font-weight: 400;
   }
 
-  .scrubber-area {
+  .tech-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 2rem;
+    margin-bottom: 3rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+
+  .tech-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .tech-item .label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-tertiary);
+    font-weight: 600;
+  }
+
+  .tech-item .value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.25rem;
+    color: var(--text-primary);
+  }
+
+  .signal-path {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .path-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-tertiary);
+    font-weight: 600;
+  }
+
+  .path-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    position: relative;
+  }
+
+  .node {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 4px;
+  }
+
+  .node-icon {
+    color: var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .node-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .node-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .node-detail {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .connector {
+    width: 1px;
+    height: 0.75rem;
+    background: rgba(255,255,255,0.1);
+    margin-left: 1.25rem; /* Align with icon center roughly */
+  }
+
+  .badge-perfect {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-size: 0.6rem;
+    padding: 0.1rem 0.3rem;
+    border-radius: 2px;
+    font-weight: 600;
+  }
+
+  .bottom-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 2rem 4rem;
+    background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+  }
+
+  .scrubber-container {
     width: 100%;
-    max-width: 600px;
+    max-width: 800px;
+    margin: 0 auto;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
   }
-  
-  .time-labels {
+
+  .time-info {
     display: flex;
     justify-content: space-between;
-    font-size: 0.75rem;
+    font-size: 0.8rem;
     color: var(--text-tertiary);
-    font-variant-numeric: tabular-nums;
-    font-weight: 500;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .scrubber {
@@ -267,10 +424,9 @@
     width: 12px;
     height: 12px;
     background: #fff;
-    border-radius: 50%;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    border-radius: 0; /* Square thumb for brutalist feel */
     transition: transform 0.1s;
-    margin-top: -4px; /* Center thumb on track */
+    margin-top: -4px;
   }
   
   .scrubber::-webkit-slider-runnable-track {
@@ -279,105 +435,36 @@
   }
   
   .scrubber::-webkit-slider-thumb:hover {
-    transform: scale(1.3);
+    transform: scale(1.5);
   }
 
-  /* Debug Section */
-  .debug-container {
-    position: absolute;
-    bottom: 2rem;
-    right: 2rem;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 1rem;
-    z-index: 20;
-  }
+  @media (max-width: 900px) {
+    .content-grid {
+      grid-template-columns: 1fr;
+      gap: 2rem;
+      text-align: center;
+    }
 
-  .debug-toggle {
-    background: transparent;
-    border: none;
-    color: var(--text-disabled);
-    font-size: 0.75rem;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem;
-    border-radius: 6px;
-    transition: color 0.2s;
-  }
-  
-  .debug-toggle:hover, .debug-toggle.active {
-    color: var(--text-secondary);
-    background: rgba(255, 255, 255, 0.05);
-  }
+    .artwork-section {
+      justify-content: center;
+    }
 
-  .debug-overlay {
-    width: 260px;
-    background: rgba(10, 10, 12, 0.9);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    padding: 1rem;
-    border-radius: 8px;
-    font-size: 0.75rem;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-  }
-  
-  .debug-overlay h4 { 
-    color: var(--text-secondary); 
-    margin: 0 0 0.75rem 0; 
-    font-size: 0.8rem;
-    font-weight: 600;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-    padding-bottom: 0.5rem;
-  }
-  
-  .debug-row { 
-    display: flex; 
-    justify-content: space-between; 
-    margin-bottom: 0.4rem; 
-    align-items: center;
-  }
-  
-  .debug-row .label { 
-    color: var(--text-tertiary); 
-  }
-  
-  .debug-row span {
-    color: var(--text-primary);
-    text-align: right;
-  }
-  
-  .truncate {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 140px;
-  }
-  
-  .debug-section { 
-    margin-top: 0.75rem; 
-    border-top: 1px dashed rgba(255,255,255,0.1); 
-    padding-top: 0.5rem; 
-  }
-  
-  .debug-section h5 { 
-    margin: 0 0 0.25rem 0; 
-    color: var(--text-tertiary); 
-    font-weight: 500;
-    font-size: 0.7rem;
-  }
-  
-  .debug-section div {
-    color: var(--text-secondary);
-    margin-bottom: 0.1rem;
-  }
-  
-  .mono {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.7rem;
-    opacity: 0.8;
+    .info-section {
+      align-items: center;
+    }
+
+    .track-header h1 {
+      font-size: 2rem;
+    }
+
+    .tech-grid {
+      width: 100%;
+      text-align: left;
+    }
+
+    .signal-path {
+      width: 100%;
+      text-align: left;
+    }
   }
 </style>
