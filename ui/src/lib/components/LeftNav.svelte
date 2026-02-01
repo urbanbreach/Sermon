@@ -110,6 +110,9 @@
               onclick={() => handleNavigate(item.routeName)}
               use:pressScale
             >
+              {#if $currentRouteName === item.routeName}
+                <div class="active-indicator"></div>
+              {/if}
               <item.icon size={18} strokeWidth={1.5} />
               <span>{item.label}</span>
             </button>
@@ -146,14 +149,14 @@
   .left-nav {
     display: flex;
     flex-direction: column;
-    width: var(--layout-sidebar-width, 250px);
+    width: var(--layout-sidebar-width, 240px);
     /* Integrated look: transparent background, no independent glass effect */
     background: transparent;
     /* No backdrop-filter - unified with window background */
     padding: 12px 12px 12px 12px;
     height: 100%;
     box-sizing: border-box;
-    gap: 12px;
+    gap: 16px;
     user-select: none;
     box-shadow: none;
   }
@@ -166,22 +169,23 @@
     -webkit-app-region: no-drag;
     flex-shrink: 0;
     box-sizing: border-box;
+    margin-bottom: 4px;
   }
 
   .search-bar {
     width: 100%;
     display: flex;
     align-items: center;
-    gap: 6px;
-    height: 28px;
+    gap: 8px;
+    height: 32px;
     padding: 0 10px;
     background: var(--surface-1);
     border: 1px solid var(--glass-border);
-    border-radius: 6px;
+    border-radius: 8px;
     color: var(--text-tertiary);
     cursor: text;
     transition: all var(--motion-fast) var(--ease-out);
-    font-size: 12px;
+    font-size: 13px;
     box-sizing: border-box;
   }
 
@@ -193,7 +197,7 @@
   .search-bar.focused {
     border-color: var(--accent-medium);
     background: var(--surface-2);
-    box-shadow: var(--focus-ring);
+    box-shadow: 0 0 0 2px var(--accent-weak);
   }
 
   .search-bar input {
@@ -233,18 +237,20 @@
   .shortcut-hint {
     font-size: 10px;
     color: var(--text-disabled);
-    padding: 2px 4px;
-    background: var(--surface-1);
+    padding: 2px 5px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.05);
     border-radius: 4px;
     font-family: system-ui;
     flex-shrink: 0;
+    font-weight: 500;
   }
 
   /* Navigation Sections */
   .nav-section {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
   }
 
   .section-header {
@@ -252,16 +258,19 @@
     align-items: center;
     justify-content: space-between;
     gap: 6px;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text-secondary);
-    padding: 8px 12px;
-    margin-bottom: 2px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    padding: 0 12px;
+    margin-bottom: 4px;
     background: transparent;
     border: none;
     cursor: pointer;
     transition: color var(--motion-fast) var(--ease-out);
     -webkit-app-region: no-drag;
+    height: 24px;
   }
 
   .section-header:hover {
@@ -287,34 +296,46 @@
   }
 
   .nav-item {
+    position: relative;
     background: transparent;
     border: none;
-    color: var(--text-primary);
+    color: var(--text-secondary);
     text-align: left;
-    padding: 0 12px;
+    padding: 0 12px 0 16px; /* Extra left padding for indicator space if needed, but we use absolute */
     height: 36px;
     cursor: pointer;
     font-size: 14px;
     font-weight: 500;
-    border-radius: 8px;
+    border-radius: 6px;
     transition: all var(--motion-fast) var(--ease-out);
     display: flex;
     align-items: center;
     gap: 12px;
     width: 100%;
     -webkit-app-region: no-drag;
+    overflow: hidden;
   }
 
   .nav-item:hover:not(.active) {
     background: var(--surface-hover);
+    color: var(--text-primary);
   }
 
   .nav-item.active {
     background: var(--accent-weak);
     color: var(--theme-accent);
-    font-weight: 500;
-    border: 1px solid var(--accent-medium);
-    box-shadow: var(--shadow-1);
+    font-weight: 600;
+  }
+
+  .active-indicator {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 20px;
+    background-color: var(--theme-accent);
+    border-radius: 0 4px 4px 0;
   }
 
   .nav-item :global(svg) {
@@ -329,11 +350,11 @@
   .now-playing-widget {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+    gap: 12px;
+    padding: 10px;
+    background: var(--surface-1);
     border: 1px solid var(--glass-border);
-    border-radius: 8px;
+    border-radius: 10px;
     cursor: pointer;
     transition: all var(--motion-fast) var(--ease-out);
     -webkit-app-region: no-drag;
@@ -341,31 +362,36 @@
     text-align: left;
     width: 100%;
     box-sizing: border-box;
+    margin-top: auto;
   }
 
   .now-playing-widget:hover {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
-    border-color: rgba(255, 255, 255, 0.15);
+    background: var(--surface-2);
+    border-color: rgba(255, 255, 255, 0.12);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-2);
   }
 
   .np-widget-art {
     width: 40px;
     height: 40px;
-    border-radius: 4px;
+    border-radius: 6px;
     object-fit: cover;
     flex-shrink: 0;
+    box-shadow: var(--shadow-1);
   }
 
   .np-widget-art-placeholder {
     width: 40px;
     height: 40px;
-    border-radius: 4px;
-    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+    border-radius: 6px;
+    background: linear-gradient(135deg, var(--surface-3), var(--surface-1));
     display: flex;
     align-items: center;
     justify-content: center;
     color: var(--text-tertiary);
     flex-shrink: 0;
+    border: 1px solid var(--glass-border);
   }
 
   .np-widget-info {
@@ -373,12 +399,12 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 3px;
   }
 
   .np-widget-title {
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
@@ -387,7 +413,7 @@
 
   .np-widget-artist {
     font-size: 11px;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
