@@ -7,8 +7,12 @@
   import type { SortBy, TrackRow } from '../types/library';
   import TagEditor from '../components/TagEditor.svelte';
   import SkeletonRow from '../components/SkeletonRow.svelte';
-  import { ChevronUp, Play, ListMusic } from '@lucide/svelte';
+  import { ChevronUp, Play, ListMusic, Check, Square } from '@lucide/svelte';
   import { fadeIn } from '../utils/animations';
+
+  // Multi-select state
+  let selectionMode = $state(false);
+  let selectedIds = $state<Set<number>>(new Set());
 
   // Tag editor state
   let editingTrack = $state<TrackRow | null>(null);
@@ -79,6 +83,48 @@
     e.stopPropagation();
     handleTrackDoubleClick(track, trackIndex);
   }
+
+  // Selection functions
+  function enterSelectionMode() {
+    selectionMode = true;
+  }
+
+  function toggleSelection(id: number) {
+    const newSet = new Set(selectedIds);
+    if (newSet.has(id)) {
+      newSet.delete(id);
+    } else {
+      newSet.add(id);
+    }
+    selectedIds = newSet;
+  }
+
+  function handleRowClick(e: MouseEvent, track: TrackRow) {
+    if (selectionMode) {
+      e.preventDefault();
+      toggleSelection(track.id);
+    }
+  }
+
+  function playSelected() {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    playNowWithQueue(ids, 0);
+    clearSelection();
+  }
+
+  function queueSelected() {
+    if (selectedIds.size === 0) return;
+    for (const id of selectedIds) {
+      addToQueue(id);
+    }
+    clearSelection();
+  }
+
+  function clearSelection() {
+    selectedIds = new Set();
+    selectionMode = false;
+  }
 </script>
 
 <svelte:window onclick={closeMenu} />
@@ -87,6 +133,17 @@
   {#if $scanStatus === 'scanning'}
     <div class="scan-progress">
       Scanning... {$scanProgress.scanned}/{$scanProgress.total}
+    </div>
+  {/if}
+
+  {#if selectedIds.size > 0}
+    <div class="selection-bar" data-testid="tracks-selection-bar">
+      <span class="selection-count">{selectedIds.size} selected</span>
+      <div class="selection-actions">
+        <button class="selection-btn primary" onclick={playSelected}>Play Now</button>
+        <button class="selection-btn" onclick={queueSelected}>Add to Queue</button>
+        <button class="selection-btn cancel" onclick={clearSelection}>Cancel</button>
+      </div>
     </div>
   {/if}
   
@@ -119,7 +176,13 @@
       </div>
       <div class="col-genre header-cell">Genre</div>
       <div class="col-time header-cell">Time</div>
-      <div class="col-actions header-cell"></div>
+      <div class="col-actions header-cell">
+        {#if !selectionMode}
+          <button class="select-btn" onclick={enterSelectionMode}>Select</button>
+        {:else}
+          <button class="select-btn active" onclick={clearSelection}>Done</button>
+        {/if}
+      </div>
     </div>
 
     {#if !initialLoadComplete && $tracks.length === 0}
@@ -142,18 +205,35 @@
               class="track-row"
               class:missing={track.isMissing} 
               class:playing={$currentTrack?.id === track.id}
+              class:selected={selectedIds.has(track.id)}
+              class:selection-mode={selectionMode}
               ondblclick={() => handleTrackDoubleClick(track, i)}
+              onclick={(e) => handleRowClick(e, track)}
               role="row"
               tabindex="0"
               aria-rowindex={i + 1}
+              aria-selected={selectedIds.has(track.id)}
             >
               <div class="col-index cell">
-                <div class="row-index">
-                  <span class="number">{i + 1}</span>
-                  <button class="play-icon" onclick={(e) => handlePlayIconClick(e, track, i)}>
-                    <Play size={12} fill="currentColor" />
+                {#if selectionMode}
+                  <button 
+                    class="checkbox-btn"
+                    onclick={(e) => { e.stopPropagation(); toggleSelection(track.id); }}
+                  >
+                    {#if selectedIds.has(track.id)}
+                      <Check size={14} />
+                    {:else}
+                      <Square size={14} />
+                    {/if}
                   </button>
-                </div>
+                {:else}
+                  <div class="row-index">
+                    <span class="number">{i + 1}</span>
+                    <button class="play-icon" onclick={(e) => handlePlayIconClick(e, track, i)}>
+                      <Play size={12} fill="currentColor" />
+                    </button>
+                  </div>
+                {/if}
               </div>
               <div class="col-name cell">{track.title || '—'}</div>
               <div class="col-artist cell">{track.artist || '—'}</div>
@@ -210,6 +290,89 @@
     border: 1px solid var(--glass-border);
     box-shadow: var(--glass-shadow);
     margin-bottom: 1rem;
+  }
+
+  /* Selection Bar */
+  .selection-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    padding: 8px 16px;
+    border-radius: var(--glass-radius);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    margin-bottom: 12px;
+    margin-right: 1rem;
+  }
+
+  .selection-count {
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  .selection-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .selection-btn {
+    background: var(--surface-hover);
+    border: 1px solid var(--glass-border);
+    color: var(--text-primary);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all var(--motion-fast) var(--ease-out);
+  }
+
+  .selection-btn:hover {
+    background: var(--surface-active);
+  }
+
+  .selection-btn.primary {
+    background: var(--theme-accent);
+    border-color: var(--theme-accent);
+    color: #fff;
+  }
+
+  .selection-btn.primary:hover {
+    filter: brightness(1.1);
+  }
+
+  .selection-btn.cancel {
+    background: transparent;
+    border-color: transparent;
+    color: var(--text-tertiary);
+  }
+
+  .selection-btn.cancel:hover {
+    color: var(--text-primary);
+  }
+
+  /* Select button in header */
+  .select-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-tertiary);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all var(--motion-fast) var(--ease-out);
+  }
+
+  .select-btn:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+  }
+
+  .select-btn.active {
+    color: var(--theme-accent);
   }
   
   .tracks-list-container {
@@ -297,6 +460,41 @@
   .track-row.missing .cell {
     color: var(--text-disabled);
     font-style: italic;
+  }
+
+  /* Selection mode styling */
+  .track-row.selection-mode {
+    cursor: pointer;
+  }
+
+  .track-row.selected {
+    background: var(--accent-weak);
+  }
+
+  .track-row.selected:hover {
+    background: var(--accent-medium, rgba(214, 30, 48, 0.15));
+  }
+
+  .checkbox-btn {
+    background: transparent;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-tertiary);
+    border-radius: 4px;
+    transition: all var(--motion-fast) var(--ease-out);
+  }
+
+  .checkbox-btn:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+  }
+
+  .track-row.selected .checkbox-btn {
+    color: var(--theme-accent);
   }
   
   .cell {

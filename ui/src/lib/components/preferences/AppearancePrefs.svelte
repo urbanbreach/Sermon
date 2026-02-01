@@ -19,6 +19,8 @@
     applyEffects, loadEffectsSettings
   } from '../../state/effects';
   import { loadCategorySettings, saveCategorySetting } from '../../state/preferences';
+  import SettingGroup from '../primitives/SettingGroup.svelte';
+  import SettingRow from '../primitives/SettingRow.svelte';
   
   const isMock = import.meta.env.SERMON_MOCK === '1';
 
@@ -161,48 +163,17 @@
     <span class="setting-hint">Disables blur, glow, and animation effects for better performance</span>
   </div>
 
-  <div class="setting-group">
-    <h3>Cover Art</h3>
-    
-    <div class="setting">
-      <label>
-        <input 
-          type="checkbox" 
-          checked={$artworkRoundedSidebar}
-          onchange={(e) => setArtworkRoundedSidebar(e.currentTarget.checked)}
-          disabled={isMock}
-        />
-        Rounded Corners in Sidebar
-      </label>
-      <span class="setting-hint">Apply rounded corners to the large artwork in the right sidebar</span>
-    </div>
-
-    <div class="setting">
-      <label>
-        <input 
-          type="checkbox" 
-          checked={$artworkRoundedAlbums}
-          onchange={(e) => setArtworkRoundedAlbums(e.currentTarget.checked)}
-          disabled={isMock}
-        />
-        Rounded Corners on Album Grid
-      </label>
-      <span class="setting-hint">Apply rounded corners to album covers on the Albums page</span>
-    </div>
-
-    <div class="setting">
-      <label>
-        <input 
-          type="checkbox" 
-          checked={$artworkRoundedAlbumDetail}
-          onchange={(e) => setArtworkRoundedAlbumDetail(e.currentTarget.checked)}
-          disabled={isMock}
-        />
-        Rounded Corners on Album Detail
-      </label>
-      <span class="setting-hint">Apply rounded corners to the artwork on individual album pages</span>
-    </div>
-  </div>
+    <SettingGroup title="Cover Art">
+      <SettingRow label="Rounded corners in sidebar" description="Apply rounded corners to artwork in the sidebar and Now Playing">
+        <input type="checkbox" checked={$artworkRoundedSidebar} onchange={(e) => setArtworkRoundedSidebar(e.currentTarget.checked)} disabled={isMock} />
+      </SettingRow>
+      <SettingRow label="Rounded corners on album grid" description="Apply rounded corners to album artwork in grid views">
+        <input type="checkbox" checked={$artworkRoundedAlbums} onchange={(e) => setArtworkRoundedAlbums(e.currentTarget.checked)} disabled={isMock} />
+      </SettingRow>
+      <SettingRow label="Rounded corners on album detail" description="Apply rounded corners to artwork on album detail pages">
+        <input type="checkbox" checked={$artworkRoundedAlbumDetail} onchange={(e) => setArtworkRoundedAlbumDetail(e.currentTarget.checked)} disabled={isMock} />
+      </SettingRow>
+    </SettingGroup>
 
   <div class="setting">
     <label data-testid="appearance-toggle-reduce">

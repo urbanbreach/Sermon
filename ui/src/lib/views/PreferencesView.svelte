@@ -47,7 +47,9 @@
 
 <div class="preferences-view">
   <aside class="prefs-sidebar">
-    <h2>Preferences</h2>
+    <header class="sidebar-header">
+      <h2>Preferences</h2>
+    </header>
     <nav class="category-nav">
       {#each categories as cat}
         <button
@@ -110,54 +112,58 @@
 
   .prefs-sidebar {
     width: 220px;
-    background: var(--glass-bg, rgba(20, 20, 20, 0.85));
-    backdrop-filter: blur(var(--glass-blur, 18px));
-    -webkit-backdrop-filter: blur(var(--glass-blur, 18px));
-    border-right: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
-    padding: var(--space-4, 16px);
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border-right: 1px solid var(--glass-border);
+    padding: var(--space-4);
     display: flex;
     flex-direction: column;
-    gap: var(--space-4, 16px);
+    gap: var(--space-4);
+    flex-shrink: 0;
+  }
+
+  .sidebar-header {
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--glass-border);
   }
 
   .prefs-sidebar h2 {
-    font-size: var(--text-section, 18px);
+    font-size: var(--text-section);
     font-weight: 600;
     margin: 0;
-    color: #fff;
-    padding-bottom: var(--space-3, 12px);
-    border-bottom: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+    color: var(--text-primary);
   }
 
   .category-nav {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1, 4px);
+    gap: var(--space-1);
   }
 
   .category-nav button {
     background: transparent;
     border: none;
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--text-secondary);
     text-align: left;
-    padding: var(--space-2, 8px) var(--space-3, 12px);
+    padding: var(--space-2) var(--space-3);
     cursor: pointer;
-    font-size: var(--text-body, 14px);
-    border-radius: var(--radius-sm, 8px);
+    font-size: var(--text-body);
+    border-radius: var(--radius-sm);
     transition: all 0.15s ease;
     display: flex;
     align-items: center;
-    gap: var(--space-3, 12px);
+    gap: var(--space-3);
   }
 
   .category-nav button:hover {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-primary);
+    background: var(--surface-hover);
   }
 
   .category-nav button.active {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    background: var(--surface-active);
     font-weight: 500;
   }
 
@@ -171,46 +177,46 @@
   }
 
   .prefs-header {
-    padding: var(--space-4, 16px) var(--space-6, 24px);
+    padding: var(--space-4) var(--space-6);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+    border-bottom: 1px solid var(--glass-border);
     background: rgba(0, 0, 0, 0.1);
     flex-shrink: 0;
   }
 
   .prefs-header h1 {
     margin: 0;
-    font-size: var(--text-view-title, 22px);
+    font-size: var(--text-view-title);
     font-weight: 600;
-    color: #fff;
+    color: var(--text-primary);
   }
 
   .prefs-body {
     flex: 1;
-    padding: var(--space-6, 24px);
-    padding-bottom: calc(var(--layout-player-height, 80px) + var(--space-6, 24px));
+    padding: var(--space-6);
+    padding-bottom: calc(var(--layout-player-height) + var(--space-6));
     overflow-y: auto;
   }
 
   .btn {
-    background: var(--glass-bg, rgba(255, 255, 255, 0.08));
-    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
-    color: #fff;
-    padding: var(--space-2, 8px) var(--space-4, 16px);
-    border-radius: var(--radius-sm, 8px);
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    color: var(--text-primary);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-sm);
     cursor: pointer;
     transition: all 0.15s ease;
-    font-size: var(--text-body, 14px);
+    font-size: var(--text-body);
     display: inline-flex;
     align-items: center;
-    gap: var(--space-2, 8px);
+    gap: var(--space-2);
   }
 
   .btn:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.12);
-    border-color: rgba(255, 255, 255, 0.15);
+    background: var(--surface-hover);
+    border-color: var(--glass-border-highlight);
   }
 
   .btn:disabled {
@@ -219,25 +225,25 @@
   }
 
   .btn-secondary {
-    font-size: var(--text-meta, 12px);
-    padding: var(--space-1, 4px) var(--space-3, 12px);
+    font-size: var(--text-meta);
+    padding: var(--space-1) var(--space-3);
     background: transparent;
   }
 
   .status-message {
     position: absolute;
     bottom: 4.5rem;
-    right: var(--space-6, 24px);
+    right: var(--space-6);
     background: rgba(40, 167, 69, 0.15);
     color: #4ade80;
-    padding: var(--space-2, 8px) var(--space-4, 16px);
-    border-radius: var(--radius-sm, 8px);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-sm);
     border: 1px solid rgba(40, 167, 69, 0.3);
     animation: slide-up 0.2s ease;
     display: flex;
     align-items: center;
-    gap: var(--space-2, 8px);
-    font-size: var(--text-body, 14px);
+    gap: var(--space-2);
+    font-size: var(--text-body);
   }
 
   .status-message.error {
