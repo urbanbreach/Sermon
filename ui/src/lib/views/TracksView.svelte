@@ -7,6 +7,7 @@
   import type { SortBy, TrackRow } from '../types/library';
   import TagEditor from '../components/TagEditor.svelte';
   import SkeletonRow from '../components/SkeletonRow.svelte';
+  import * as DropdownMenu from '../components/primitives/DropdownMenu.svelte';
   import { ChevronUp, Play, ListMusic, Check, Square } from '@lucide/svelte';
   import { fadeIn } from '../utils/animations';
 
@@ -18,8 +19,6 @@
   let editingTrack = $state<TrackRow | null>(null);
   let tagEditorOpen = $state(false);
 
-  // Ellipsis menu state
-  let openMenuTrackId = $state<number | null>(null);
   let initialLoadComplete = $state(false);
 
   onMount(async () => {
@@ -58,15 +57,6 @@
   function closeTagEditor() {
     tagEditorOpen = false;
     editingTrack = null;
-  }
-
-  function toggleMenu(trackId: number, e: MouseEvent) {
-    e.stopPropagation();
-    openMenuTrackId = openMenuTrackId === trackId ? null : trackId;
-  }
-
-  function closeMenu() {
-    openMenuTrackId = null;
   }
 
   function handleTrackDoubleClick(track: TrackRow, trackIndex: number) {
@@ -126,8 +116,6 @@
     selectionMode = false;
   }
 </script>
-
-<svelte:window onclick={closeMenu} />
 
 <div class="view-container" use:fadeIn={{ duration: 300 }}>
   {#if $scanStatus === 'scanning'}
@@ -241,21 +229,28 @@
               <div class="col-genre cell">{track.genre || '—'}</div>
               <div class="col-time cell">{formatDuration(track.durationMs)}</div>
               <div class="col-actions cell">
-                <button 
-                  class="ellipsis-btn" 
-                  onclick={(e) => toggleMenu(track.id, e)}
-                  aria-haspopup="true"
-                  aria-expanded={openMenuTrackId === track.id}
-                >
-                  ⋯
-                </button>
-                {#if openMenuTrackId === track.id}
-                  <div class="row-menu" onclick={(e) => e.stopPropagation()} role="menu" tabindex="0">
-                    <button onclick={() => { playNow(track.id); closeMenu(); }}>Play Now</button>
-                    <button onclick={() => { addToQueue(track.id); closeMenu(); }}>Add to Queue</button>
-                    <button onclick={() => { openTagEditor(track); closeMenu(); }}>Edit Tags...</button>
-                  </div>
-                {/if}
+                <DropdownMenu.Root>
+                  <DropdownMenu.Trigger 
+                    class="ellipsis-btn" 
+                    onclick={(e: MouseEvent) => e.stopPropagation()}
+                  >
+                    ⋯
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.Content class="dropdown-content" align="end" sideOffset={5}>
+                      <DropdownMenu.Item class="dropdown-item" onclick={() => playNow(track.id)}>
+                        Play Now
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item class="dropdown-item" onclick={() => addToQueue(track.id)}>
+                        Add to Queue
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Separator class="dropdown-separator" />
+                      <DropdownMenu.Item class="dropdown-item" onclick={() => openTagEditor(track)}>
+                        Edit Tags...
+                      </DropdownMenu.Item>
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Root>
               </div>
             </div>
           {/snippet}
@@ -551,7 +546,7 @@
   }
   
   /* Ellipsis button */
-  .ellipsis-btn {
+  :global(.ellipsis-btn) {
     background: transparent;
     border: none;
     color: var(--text-tertiary);
@@ -563,18 +558,18 @@
     opacity: 0;
     transition: all var(--motion-fast) var(--ease-out);
   }
-  .track-row:hover .ellipsis-btn {
+  .track-row:hover :global(.ellipsis-btn) {
     opacity: 1;
   }
-  .ellipsis-btn[aria-expanded="true"],
-  .ellipsis-btn:focus-visible {
+  :global(.ellipsis-btn[aria-expanded="true"]),
+  :global(.ellipsis-btn:focus-visible) {
     opacity: 1;
   }
-  .ellipsis-btn:hover {
+  :global(.ellipsis-btn:hover) {
     color: var(--text-primary);
     background: var(--surface-hover);
   }
-  .ellipsis-btn:focus-visible {
+  :global(.ellipsis-btn:focus-visible) {
     outline: none;
     box-shadow: var(--focus-ring);
   }
@@ -635,34 +630,5 @@
     border-radius: 0 2px 2px 0;
   }
 
-  /* Dropdown menu */
-  .row-menu {
-    position: absolute;
-    right: 0;
-    top: 100%;
-    background: rgba(30, 30, 34, 0.95);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--glass-border);
-    border-radius: 8px;
-    padding: 4px 0;
-    min-width: 140px;
-    z-index: 100;
-    box-shadow: var(--shadow-3);
-  }
-  .row-menu button {
-    display: block;
-    width: 100%;
-    padding: 8px 12px;
-    background: transparent;
-    border: none;
-    color: var(--text-primary);
-    text-align: left;
-    cursor: pointer;
-    font-size: 13px;
-    transition: background var(--motion-fast) var(--ease-out);
-  }
-  .row-menu button:hover {
-    background: var(--surface-hover);
-  }
+
 </style>

@@ -391,69 +391,13 @@ export async function setGlassEdgeGradientWidth(value: number): Promise<void> {
   applyAppearanceToCSS();
 }
 
-// Apply effects to document based on current settings
 export function applyEffects(): void {
-  const root = document.documentElement;
-  const reduce = get(reduceEffects);
-  const blur = get(themeBlur);
-  const glow = get(themeGlow);
-  const border = get(themeBorderHighlight);
-
-  // When reduce_effects is on, disable all effects
-  if (reduce) {
-    root.classList.add('reduce-effects');
-    root.classList.remove('effects-blur', 'effects-glow', 'effects-border');
-  } else {
-    root.classList.remove('reduce-effects');
-    
-    // Apply individual toggles
-    if (blur) {
-      root.classList.add('effects-blur');
-    } else {
-      root.classList.remove('effects-blur');
-    }
-
-    if (glow) {
-      root.classList.add('effects-glow');
-    } else {
-      root.classList.remove('effects-glow');
-    }
-
-    if (border) {
-      root.classList.add('effects-border');
-    } else {
-      root.classList.remove('effects-border');
-    }
-  }
-
-  // Apply numeric CSS variables
   applyAppearanceToCSS();
 }
 
-// Apply appearance settings to CSS custom properties
 export function applyAppearanceToCSS(): void {
   const root = document.documentElement;
   
-  root.style.setProperty('--blur-px', `${get(blurPx)}px`);
-  root.style.setProperty('--glow-strength', String(get(glowStrength)));
-  root.style.setProperty('--border-strength', String(get(borderStrength)));
-  root.style.setProperty('--bg-intensity', String(get(bgIntensity)));
-  root.style.setProperty('--bg-noise-opacity', String(get(bgNoiseOpacity)));
-  root.style.setProperty('--bg-crossfade-ms', String(get(bgCrossfadeMs)));
-  root.style.setProperty('--bg-static-color', get(bgStaticColor));
-  
-  // Liquid Glass Variables
-  root.style.setProperty('--glass-main-blur', `${get(glassMainBlur)}px`);
-  root.style.setProperty('--glass-edge-blur', `${get(glassEdgeBlur)}px`);
-  root.style.setProperty('--glass-edge-width', `${get(glassEdgeWidth)}px`);
-  root.style.setProperty('--glass-main-bg', get(glassMainBg));
-  root.style.setProperty('--glass-edge-bg', get(glassEdgeBg));
-  root.style.setProperty('--glass-sheen-blur', `${get(glassSheenBlur)}px`);
-  root.style.setProperty('--glass-sheen-bg', get(glassSheenBg));
-  root.style.setProperty('--glass-sheen-width', `${get(glassSheenWidth)}px`);
-  root.style.setProperty('--glass-edge-gradient-width', `${get(glassEdgeGradientWidth)}px`);
-  
-  // Apply accent color and extract RGB components
   const accent = get(accentColor);
   root.style.setProperty('--theme-accent', accent);
   const rgb = hexToRgb(accent);
@@ -463,8 +407,6 @@ export function applyAppearanceToCSS(): void {
     root.style.setProperty('--theme-accent-b', String(rgb.b));
   }
   
-  // Artwork radius CSS variables
-  // When rounded is enabled, use the default radius; when disabled, use 0
   root.style.setProperty('--artwork-radius-sidebar', get(artworkRoundedSidebar) ? '6px' : '0');
   root.style.setProperty('--artwork-radius-albums', get(artworkRoundedAlbums) ? '10px' : '0');
   root.style.setProperty('--artwork-radius-album-detail', get(artworkRoundedAlbumDetail) ? '12px' : '0');

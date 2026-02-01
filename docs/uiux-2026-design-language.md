@@ -122,3 +122,81 @@ Bits UI components are unstyled by default. We apply brutalist-matte styles via:
 - Use `data-disabled` attribute for disabled item styling
 - State is managed via `bind:open` for two-way binding
 - Bits UI handles focus management, keyboard navigation, and ARIA automatically
+
+---
+
+## L. Appearance Settings Migration Matrix
+
+This matrix documents every appearance-related setting key from `effects.ts` and its classification under the Brutalist-Matte design system.
+
+### Classification Key
+- **KEEP (active)**: Setting has UI controls and applies to CSS
+- **IGNORE (legacy)**: Setting persists in DB but no longer affects UI or CSS. No UI controls exposed.
+
+### Settings Matrix
+
+| Key | Classification | New Default | Notes |
+|-----|----------------|-------------|-------|
+| `ui.theme.accent_color` | **KEEP** | `#4aafff` | Palette + hex picker with contrast clamping. Accent for primary buttons and focus rings ONLY. |
+| `ui.bottombar.waveform_seekbar` | **KEEP** | `off` | Toggle waveform visualization on/off |
+| `ui.bottombar.waveform_style` | **KEEP** | `pills` | `'pills'` or `'raw'` style selection |
+| `ui.bottombar.waveform_color` | **IGNORE** | — | Waveform is now **grayscale only** (`rgba(255,255,255,0.6)` played, `0.15` unplayed) per design language Section C |
+| `ui.artwork.rounded_sidebar` | **KEEP** | `on` | Toggle rounded corners on sidebar artwork |
+| `ui.artwork.rounded_albums` | **KEEP** | `on` | Toggle rounded corners on album grid artwork |
+| `ui.artwork.rounded_album_detail` | **KEEP** | `on` | Toggle rounded corners on album detail artwork |
+| `ui.sidebar.visible` | **KEEP** | `on` | Toggle sidebar visibility |
+| `ui.reduce_effects` | **IGNORE** | — | Now **OS-only** via `prefers-reduced-motion` media query. No JS toggle. |
+| `ui.theme.blur` | **IGNORE** | — | No blur effects in Brutalist-Matte |
+| `ui.theme.glow` | **IGNORE** | — | No glow effects in Brutalist-Matte |
+| `ui.theme.border_highlight` | **IGNORE** | — | No glass border highlights in Brutalist-Matte |
+| `ui.theme.blur_px` | **IGNORE** | — | Blur slider removed |
+| `ui.theme.glow_strength` | **IGNORE** | — | Glow slider removed |
+| `ui.theme.border_strength` | **IGNORE** | — | Border slider removed |
+| `ui.background.intensity` | **IGNORE** | — | Background is now static true black `#0a0a0a` |
+| `ui.background.noise_opacity` | **IGNORE** | — | No noise texture in Brutalist-Matte |
+| `ui.background.crossfade_ms` | **IGNORE** | — | No dynamic background transitions |
+| `ui.background.static_color` | **IGNORE** | — | Fixed to true black `#0a0a0a` |
+| `ui.background.dynamic_library` | **IGNORE** | — | Dynamic backgrounds disabled |
+| `ui.background.dynamic_now_playing` | **IGNORE** | — | Dynamic backgrounds disabled |
+| `ui.background.dynamic_album_detail` | **IGNORE** | — | Dynamic backgrounds disabled |
+| `ui.theme.glass.main_blur` | **IGNORE** | — | Liquid Glass system removed |
+| `ui.theme.glass.edge_blur` | **IGNORE** | — | Liquid Glass system removed |
+| `ui.theme.glass.edge_width` | **IGNORE** | — | Liquid Glass system removed |
+| `ui.theme.glass.main_bg` | **IGNORE** | — | Liquid Glass system removed |
+| `ui.theme.glass.edge_bg` | **IGNORE** | — | Liquid Glass system removed |
+| `ui.theme.glass.sheen_blur` | **IGNORE** | — | Liquid Glass system removed |
+| `ui.theme.glass.sheen_bg` | **IGNORE** | — | Liquid Glass system removed |
+| `ui.theme.glass.sheen_width` | **IGNORE** | — | Liquid Glass system removed |
+| `ui.theme.glass.edge_gradient_width` | **IGNORE** | — | Liquid Glass system removed |
+
+### Non-Appearance Settings (unchanged)
+| Key | Classification | Notes |
+|-----|----------------|-------|
+| `artwork.provider.itunes` | **KEEP** | Artwork provider toggle (not appearance) |
+| `artwork.provider.deezer` | **KEEP** | Artwork provider toggle (not appearance) |
+
+### Implementation Notes
+
+1. **KEYS and stores remain in `effects.ts`** — we don't delete them to preserve user data and maintain backward compatibility.
+
+2. **`applyAppearanceToCSS()` changes:**
+   - REMOVE: All `--blur-px`, `--glow-strength`, `--border-strength` CSS var settings
+   - REMOVE: All `--bg-intensity`, `--bg-noise-opacity`, `--bg-crossfade-ms`, `--bg-static-color` CSS var settings
+   - REMOVE: All `--glass-*` CSS var settings
+   - KEEP: `--theme-accent`, `--theme-accent-r/g/b` for accent color
+   - KEEP: `--artwork-radius-*` for artwork rounding
+
+3. **`applyEffects()` changes:**
+   - REMOVE: Class toggling for `effects-blur`, `effects-glow`, `effects-border`
+   - The `reduce-effects` class is kept but only responds to `prefers-reduced-motion` via CSS
+
+4. **Waveform color:**
+   - `WaveformSeekbar.svelte` no longer reads `$waveformColor` store
+   - Uses hardcoded grayscale: `rgba(255,255,255,0.6)` for played, `rgba(255,255,255,0.15)` for unplayed
+
+5. **CSS respects `prefers-reduced-motion`:**
+   ```css
+   @media (prefers-reduced-motion: reduce) {
+     * { transition-duration: 0s !important; animation-duration: 0s !important; }
+   }
+   ```

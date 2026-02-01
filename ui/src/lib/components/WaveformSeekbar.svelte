@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import { waveformColor, bottomBarWaveformStyle } from '../state/effects';
+  import { bottomBarWaveformStyle } from '../state/effects';
   
   interface Props {
     peaks: Uint8Array | null;
@@ -35,7 +35,8 @@
   let displayProgress = $derived(isDragging ? dragProgress : progress);
   let displayTime = $derived(formatTime((hoverProgress ?? displayProgress) * durationMs));
   
-  // Constants
+  const WAVEFORM_PLAYED_COLOR = 'rgba(255, 255, 255, 0.6)';
+  const WAVEFORM_UNPLAYED_COLOR = 'rgba(255, 255, 255, 0.15)';
   const BAR_WIDTH = 3;
   const BAR_GAP = 1;
   const MIN_BAR_HEIGHT = 2;
@@ -55,14 +56,6 @@
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
-  function hexToRgba(hex: string, alpha: number): string {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  }
-
-  // Draw raw waveform (continuous mirrored envelope - MusicBee style)
   function drawRawWaveform(
     ctx: CanvasRenderingContext2D,
     peaksData: Uint8Array,
@@ -103,7 +96,7 @@
 
     // Draw unplayed portion (full waveform in muted color)
     buildEnvelopePath();
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.fillStyle = WAVEFORM_UNPLAYED_COLOR;
     ctx.fill();
 
     // Draw played portion with clipping
@@ -115,7 +108,7 @@
       ctx.clip();
       
       buildEnvelopePath();
-      ctx.fillStyle = hexToRgba($waveformColor, 0.85);
+      ctx.fillStyle = WAVEFORM_PLAYED_COLOR;
       ctx.fill();
       
       ctx.restore();
@@ -151,9 +144,9 @@
       const isPlayed = barProgress <= displayProg;
       
       if (isPlayed) {
-        ctx.fillStyle = hexToRgba($waveformColor, 0.9);
+        ctx.fillStyle = WAVEFORM_PLAYED_COLOR;
       } else {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.fillStyle = WAVEFORM_UNPLAYED_COLOR;
       }
       
       // Draw rounded bar
@@ -243,7 +236,7 @@
       
       // Progress
       const progressWidth = width * displayProgress;
-      ctx.fillStyle = hexToRgba($waveformColor, 0.9);
+      ctx.fillStyle = WAVEFORM_PLAYED_COLOR;
       ctx.beginPath();
       ctx.roundRect(0, centerY - trackHeight/2, progressWidth, trackHeight, trackHeight/2);
       ctx.fill();

@@ -2,30 +2,50 @@
   font-family: 'Inter Variable', Inter, system-ui, sans-serif;
   font-feature-settings: 'tnum' 1; /* tabular numerals */
   
+  /* ===== BRUTALIST-MATTE COLOR SYSTEM ===== */
+  /* Base */
+  background-color: #0a0a0a; /* True black */
+  
+  /* Matte Surfaces */
+  --surface-0: #0a0a0a; /* True black base */
+  --surface-1: rgba(255, 255, 255, 0.04);
+  --surface-2: rgba(255, 255, 255, 0.08);
+  --surface-hover: rgba(255, 255, 255, 0.10);
+  --surface-active: rgba(255, 255, 255, 0.06);
+  --surface-sidebar: rgba(255, 255, 255, 0.02); /* Kept from original, aligned with surface-1 concept */
+  --surface-header: rgba(255, 255, 255, 0.03); /* Kept from original */
+  
+  /* Hairlines */
+  --divider-color: rgba(255, 255, 255, 0.07);
+  
+  /* Text Hierarchy */
+  --text-primary: rgba(255, 255, 255, 0.92);
+  --text-secondary: rgba(255, 255, 255, 0.70);
+  --text-tertiary: rgba(255, 255, 255, 0.45);
+  --text-disabled: rgba(255, 255, 255, 0.25);
+
   /* Layout tokens */
   --layout-sidebar-width: 240px;
   --layout-rail-width: 320px;
   --layout-header-height: 44px;
   --layout-player-height: 88px;
   
-  /* Liquid Glass Bar positioning */
+  /* Liquid Glass Bar positioning - Kept for layout logic */
   --layout-rail-open: 0; /* 0 or 1, toggled by JS */
-  /* Bottom bar spans full width - sidebars overlay it */
   --layout-bar-left: 0;
   --layout-bar-right: 0;
-
-  /* Liquid Glass effect defaults */
-  --glass-main-blur: 22px;
-  --glass-edge-blur: 14px;
-  --glass-edge-width: 22px;
-  --glass-main-bg: rgba(20, 20, 24, 0.38);
-  --glass-edge-bg: rgba(255, 255, 255, 0.12);
-  --glass-sheen-blur: 18px;
-  --glass-sheen-bg: rgba(255, 255, 255, 0.22);
-  --glass-sheen-width: 30px;
-  --glass-edge-gradient-width: 28px;
-
   --layout-bottom-bar-progress-height: 28px;
+
+  /* DEPRECATED: Liquid Glass effect defaults */
+  /* --glass-main-blur: 22px; */
+  /* --glass-edge-blur: 14px; */
+  /* --glass-edge-width: 22px; */
+  /* --glass-main-bg: rgba(20, 20, 24, 0.38); */
+  /* --glass-edge-bg: rgba(255, 255, 255, 0.12); */
+  /* --glass-sheen-blur: 18px; */
+  /* --glass-sheen-bg: rgba(255, 255, 255, 0.22); */
+  /* --glass-sheen-width: 30px; */
+  /* --glass-edge-gradient-width: 28px; */
   
   /* Spacing scale */
   --space-1: 4px;
@@ -38,25 +58,21 @@
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-pill: 999px;
-  --glass-radius: var(--radius-md);
+  /* --glass-radius: var(--radius-md); */ /* Deprecated */
   
-  /* Glass Effects System */
-  /* Base variables set by effects.ts */
-  --blur-px: 16px;
-  --glow-strength: 0.35;
-  --border-strength: 0.08;
+  /* DEPRECATED: Glass Effects System */
+  /* --blur-px: 16px; */
+  /* --glow-strength: 0.35; */
+  /* --border-strength: 0.08; */
   
-  /* Derived Glass Tokens (Default: Off/Minimal) */
-  --glass-blur: 0px;
-  --glass-border-opacity: 0.05;
-  --glass-shadow-opacity: 0;
-  
-  --glass-bg: rgba(14, 14, 18, 0.32);
-  --glass-border: rgba(255, 255, 255, var(--glass-border-opacity));
-  --glass-highlight: rgba(255, 255, 255, 0.12);
-  
-  /* Shadow is tinted with accent color when glow is enabled */
-  --glass-shadow: 0 8px 20px rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), var(--glass-shadow-opacity));
+  /* DEPRECATED: Derived Glass Tokens */
+  /* --glass-blur: 0px; */
+  /* --glass-border-opacity: 0.05; */
+  /* --glass-shadow-opacity: 0; */
+  /* --glass-bg: rgba(14, 14, 18, 0.32); */
+  /* --glass-border: rgba(255, 255, 255, var(--glass-border-opacity)); */
+  /* --glass-highlight: rgba(255, 255, 255, 0.12); */
+  /* --glass-shadow: 0 8px 20px rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), var(--glass-shadow-opacity)); */
 
   /* Typography scale */
   --text-meta: 12px;
@@ -67,16 +83,17 @@
   --text-view-title: 22px;
   --text-title: 22px;
   
-  /* Icon sizes */
+  /* Monospace Font */
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
   
   /* Table tokens */
   --table-header-height: 28px;
   --table-cell-gap: 12px;
   
-  /* Background tokens */
-  --bg-intensity: 0.35;
-  --bg-noise-opacity: 0.06; /* Reduced from 0.18 - Cider uses subtle matte, not heavy grain */
-  --bg-crossfade-ms: 1200;
+  /* DEPRECATED: Background tokens */
+  /* --bg-intensity: 0.35; */
+  /* --bg-noise-opacity: 0.06; */
+  /* --bg-crossfade-ms: 1200; */
   
   /* Scrollbar tokens */
   --scrollbar-track: rgba(255, 255, 255, 0.06);
@@ -96,20 +113,6 @@
   --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.25);
   --shadow-glow: 0 0 16px rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.35);
 
-  /* ===== SEMANTIC TEXT COLORS ===== */
-  --text-primary: rgba(255, 255, 255, 0.92);
-  --text-secondary: rgba(255, 255, 255, 0.7);
-  --text-tertiary: rgba(255, 255, 255, 0.45);
-  --text-disabled: rgba(255, 255, 255, 0.25);
-
-  /* ===== SURFACE TOKENS ===== */
-  --surface-1: rgba(255, 255, 255, 0.04);
-  --surface-2: rgba(255, 255, 255, 0.08);
-  --surface-hover: rgba(255, 255, 255, 0.1);
-  --surface-active: rgba(255, 255, 255, 0.06);
-  --surface-sidebar: rgba(255, 255, 255, 0.02);
-  --surface-header: rgba(255, 255, 255, 0.03);
-
   /* ===== ACCENT VARIANTS ===== */
   --accent-weak: rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.12);
   --accent-medium: rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.25);
@@ -119,14 +122,10 @@
   --focus-ring: 0 0 0 2px rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.5);
   --focus-ring-offset: 0 0 0 3px rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.25);
 
-  /* Divider token (Cider-style subtle separator) */
-  --divider-color: rgba(255, 255, 255, 0.07);
-
   /* Color scheme */
   color-scheme: dark;
   color: rgba(255, 255, 255, 0.87);
-  background-color: #0a0a0a;
-
+  
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -160,6 +159,7 @@ body {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+  background-color: #0a0a0a; /* Ensure body matches base */
 }
 
 #app {
@@ -179,6 +179,17 @@ body {
 .snapshot-mode, .snapshot-mode * {
   transition: none !important;
   animation: none !important;
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Scrollbar styling */
@@ -233,29 +244,10 @@ a, [role="button"] {
     box-shadow var(--motion-fast) var(--ease-out);
 }
 
-/* Glass Effect Classes (Toggled by effects.ts) */
-:root.effects-blur {
-  --glass-blur: var(--blur-px);
-}
+/* DEPRECATED: Glass Effect Classes */
+/* :root.effects-blur { --glass-blur: var(--blur-px); } */
+/* :root.effects-glow { --glass-shadow-opacity: var(--glow-strength); } */
+/* :root.effects-border { --glass-border-opacity: var(--border-strength); } */
 
-:root.effects-glow {
-  --glass-shadow-opacity: var(--glow-strength);
-}
-
-:root.effects-border {
-  --glass-border-opacity: var(--border-strength);
-}
-
-/* Reduce motion mode */
-.reduce-effects {
-  --glass-blur: 0px !important;
-  --glass-shadow-opacity: 0 !important;
-  --bg-intensity: 0 !important;
-  --bg-noise-opacity: 0 !important;
-}
-
-.reduce-effects,
-.reduce-effects * {
-  transition-duration: 0.01ms !important;
-  animation-duration: 0.01ms !important;
-}
+/* DEPRECATED: Reduce motion mode (now handled by media query) */
+/* .reduce-effects { ... } */
