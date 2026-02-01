@@ -244,7 +244,7 @@
     padding-top: 12px;
     padding-right: 0;
     padding-bottom: 0;
-    color: #fff;
+    color: var(--text-primary);
     height: 100%;
     overflow-y: auto;
     box-sizing: border-box;
@@ -381,11 +381,11 @@
   .artwork-placeholder {
     width: 100%;
     aspect-ratio: 1;
-    background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
+    background: var(--surface-1);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #555;
+    color: var(--text-disabled);
     border-radius: var(--artwork-radius-albums, 10px);
     position: relative;
   }
@@ -437,14 +437,6 @@
     display: none;
   }
 
-  .loading-state {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 200px;
-    font-size: 1.2rem;
-    color: #888;
-  }
 
   .empty-state {
     display: flex;
@@ -453,7 +445,7 @@
     justify-content: center;
     gap: 12px;
     padding: 48px;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--text-tertiary);
     height: 400px;
   }
 
@@ -465,18 +457,18 @@
     font-size: 16px;
     font-weight: 500;
     margin: 0;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--text-secondary);
   }
 
   .empty-hint {
     font-size: 13px;
     margin: 0;
-    color: rgba(255, 255, 255, 0.35);
+    color: var(--text-tertiary);
   }
 
   .loading-more {
     text-align: center;
     padding: 2rem;
-    color: #888;
+    color: var(--text-tertiary);
   }
 </style>

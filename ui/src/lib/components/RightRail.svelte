@@ -374,8 +374,8 @@
       top: 0;
       right: 0;
       bottom: 0;
-      background: rgba(10, 10, 10, 0.95);
-      box-shadow: -2px 0 12px rgba(0,0,0,0.25);
+      background: var(--bar-bg, rgba(10, 10, 10, 0.95));
+      box-shadow: var(--shadow-3);
     }
     
     .rail-scrim {
@@ -505,7 +505,7 @@
     align-items: flex-start;
     padding: 6px;
     border-radius: 6px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
+    background: var(--surface-1);
     border: 1px solid var(--glass-border);
   }
 
