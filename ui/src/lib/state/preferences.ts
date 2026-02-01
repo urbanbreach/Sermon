@@ -7,6 +7,7 @@
 
 import { writable } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
+import { loadEffectsSettings } from './effects';
 
 // Types for each category's settings
 export interface PlayerSettings {
@@ -43,6 +44,26 @@ export interface AppearanceSettings {
 export interface DevicesSettings {
   'devices.dsd_dop_enabled': string;
   'devices.dsd_dop_strict': string;
+}
+
+const APPEARANCE_DEFAULTS: Record<string, string> = {
+  'ui.sidebar.visible': 'on',
+  'ui.reduce_effects': 'off',
+  'ui.theme.accent_color': '#4aafff',
+  'ui.background.dynamic_now_playing': 'on',
+  'ui.bottombar.waveform_seekbar': 'off',
+  'ui.bottombar.waveform_color': '#4aafff',
+  'ui.bottombar.waveform_style': 'pills',
+  'ui.artwork.rounded_sidebar': 'on',
+  'ui.artwork.rounded_albums': 'on',
+  'ui.artwork.rounded_album_detail': 'on',
+};
+
+async function resetAppearanceDefaults(): Promise<void> {
+  for (const [key, value] of Object.entries(APPEARANCE_DEFAULTS)) {
+    await invoke('cmd_settings_set', { request: { key, value } });
+  }
+  await loadEffectsSettings();
 }
 
 export type PreferenceCategory = 'player' | 'library' | 'internet' | 'appearance' | 'devices';
@@ -124,11 +145,13 @@ export async function saveCategorySetting(
   }
 }
 
-// Reset a category to defaults
 export async function resetCategoryToDefaults(category: PreferenceCategory): Promise<void> {
   try {
+    if (category === 'appearance') {
+      await resetAppearanceDefaults();
+      return;
+    }
     await invoke('cmd_settings_reset_category', { category });
-    // Reload to get fresh defaults
     await loadCategorySettings(category);
   } catch (e) {
     console.error(`Failed to reset ${category} settings:`, e);
