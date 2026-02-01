@@ -302,21 +302,21 @@
   }
 
   .back-btn {
-    background: var(--glass-bg);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    border: 1px solid var(--glass-border);
+    background: var(--surface-1);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid var(--divider-color);
     color: #ccc;
     font-size: 1rem;
     cursor: pointer;
     padding: 0.5rem 1rem;
     border-radius: 20px;
     transition: all 0.2s;
-    box-shadow: var(--glass-shadow);
+    box-shadow: var(--shadow-2);
   }
 
   .back-btn:hover {
-    background: var(--glass-border);
+    background: var(--divider-color);
     color: #fff;
     transform: translateX(-2px);
   }
@@ -334,7 +334,7 @@
     margin-bottom: 1rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    border-bottom: 1px solid var(--glass-border);
+    border-bottom: 1px solid var(--divider-color);
     padding-bottom: 0.5rem;
   }
 
@@ -369,10 +369,10 @@
     width: 120px;
     height: 120px;
     border-radius: 50%;
-    background: var(--glass-bg);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    border: 1px solid var(--glass-border);
+    background: var(--surface-1);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid var(--divider-color);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -380,7 +380,7 @@
     font-weight: bold;
     color: #555;
     overflow: hidden;
-    box-shadow: var(--glass-shadow);
+    box-shadow: var(--shadow-2);
   }
 
   .artist-name {
@@ -402,12 +402,12 @@
   }
 
   .album-card {
-    background: var(--glass-bg);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    border-radius: var(--glass-radius);
-    border: 1px solid var(--glass-border);
-    box-shadow: var(--glass-shadow);
+    background: var(--surface-1);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--divider-color);
+    box-shadow: var(--shadow-2);
     overflow: hidden;
     cursor: pointer;
     transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), border-color 0.2s;
@@ -464,10 +464,10 @@
     display: flex;
     align-items: center;
     padding: 0.8rem;
-    background: var(--glass-bg);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    border: 1px solid var(--glass-border);
+    background: var(--surface-1);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid var(--divider-color);
     border-radius: 6px;
     cursor: pointer;
     transition: background 0.2s, border-color 0.2s;
@@ -476,7 +476,7 @@
   }
 
   .track-row:hover {
-    background: var(--glass-highlight);
+    background: var(--surface-hover);
     border-color: rgba(255,255,255,0.3);
   }
 

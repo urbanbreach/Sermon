@@ -275,15 +275,15 @@
     flex-direction: column;
   }
   .scan-progress {
-    background: var(--glass-bg);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
+    background: var(--surface-1);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     padding: 0.5rem 1rem;
-    border-radius: var(--glass-radius);
+    border-radius: var(--radius-md);
     font-size: 0.85rem;
     color: #d61e30;
-    border: 1px solid var(--glass-border);
-    box-shadow: var(--glass-shadow);
+    border: 1px solid var(--divider-color);
+    box-shadow: var(--shadow-2);
     margin-bottom: 1rem;
   }
 
@@ -293,8 +293,8 @@
     align-items: center;
     justify-content: space-between;
     background: var(--surface-2);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     padding: 8px 16px;
     border-radius: var(--radius-md, 8px);
     border: 1px solid var(--border-subtle);

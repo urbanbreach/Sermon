@@ -626,11 +626,11 @@
 
   /* Overview Panel */
   .overview-panel {
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
+    background: var(--surface-1);
+    border: 1px solid var(--divider-color);
     border-radius: var(--radius-md);
     padding: 1.5rem;
-    backdrop-filter: blur(var(--glass-blur));
+    backdrop-filter: none;
     box-shadow: var(--shadow-2);
   }
 
@@ -696,7 +696,7 @@
     background: rgba(0, 0, 0, 0.2);
     border-radius: var(--radius-md);
     padding: 1rem 1.5rem;
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--divider-color);
   }
 
   .flow-node {
@@ -732,7 +732,7 @@
   /* Section Styles */
   .section-container {
     background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--divider-color);
     border-radius: var(--radius-md);
     overflow: hidden;
     transition: background 0.2s;
@@ -774,7 +774,7 @@
 
   .section-content {
     padding: 0 1.5rem 1.5rem 1.5rem;
-    border-top: 1px solid var(--glass-border);
+    border-top: 1px solid var(--divider-color);
     margin-top: -1px; /* Align border */
     padding-top: 1.5rem;
   }
@@ -794,7 +794,7 @@
     padding: 1rem 0.5rem;
     /* Hide scrollbar but keep functionality */
     scrollbar-width: thin;
-    scrollbar-color: var(--glass-border) transparent;
+    scrollbar-color: var(--divider-color) transparent;
   }
 
   .graph-scroll-container::-webkit-scrollbar {
@@ -806,7 +806,7 @@
   }
 
   .graph-scroll-container::-webkit-scrollbar-thumb {
-    background-color: var(--glass-border);
+    background-color: var(--divider-color);
     border-radius: 3px;
   }
 
@@ -825,7 +825,7 @@
     width: 110px;
     height: 80px;
     background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--divider-color);
     border-radius: var(--radius-md);
     padding: 0.75rem;
     transition: all 0.2s ease;
@@ -853,7 +853,7 @@
   .graph-node.touching .node-icon { color: #fb923c; }
 
   .graph-node.unknown {
-    border-color: var(--glass-border);
+    border-color: var(--divider-color);
     opacity: 0.8;
   }
   .graph-node.unknown .node-icon { color: var(--text-tertiary); }
@@ -916,7 +916,7 @@
     transform: translateX(-50%) translateY(-10px);
     width: 220px;
     background: #1a1a1a;
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--divider-color);
     padding: 0.75rem;
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-3);
@@ -1159,7 +1159,7 @@
     display: grid;
     gap: 2px;
     background: rgba(255, 255, 255, 0.05); /* Grid lines */
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--divider-color);
     border-radius: var(--radius-md);
     overflow: hidden;
   }
@@ -1171,7 +1171,7 @@
   }
 
   .matrix-cell {
-    background: var(--glass-bg); /* Reset bg for cells to create gaps */
+    background: var(--surface-1); /* Reset bg for cells to create gaps */
     padding: 0.75rem;
     display: flex;
     align-items: center;
@@ -1214,7 +1214,7 @@
 
   .dot.unsupported {
     background: rgba(255, 255, 255, 0.1);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--divider-color);
     width: 8px;
     height: 8px;
   }
@@ -1281,7 +1281,7 @@
   .harness-field input[type="text"] {
     width: 100%;
     background: rgba(255, 255, 255, 0.08);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--divider-color);
     border-radius: 6px;
     color: #fff;
     padding: 0.5rem 0.75rem;
@@ -1307,7 +1307,7 @@
     gap: 0.75rem;
     margin-top: 1.5rem;
     padding-top: 1rem;
-    border-top: 1px solid var(--glass-border);
+    border-top: 1px solid var(--divider-color);
   }
 
   .harness-btn {
@@ -1319,7 +1319,7 @@
     cursor: pointer;
     font-size: 0.9rem;
     transition: all 0.2s;
-    backdrop-filter: blur(var(--glass-blur));
+    backdrop-filter: none;
   }
 
   .harness-btn:hover {
@@ -1328,7 +1328,7 @@
 
   .harness-btn.secondary {
     background: rgba(255, 255, 255, 0.08);
-    border-color: var(--glass-border);
+    border-color: var(--divider-color);
     color: #ccc;
   }
 
