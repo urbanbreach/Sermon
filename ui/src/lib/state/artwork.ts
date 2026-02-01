@@ -1,7 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { currentTrack } from './playback';
 import { getArtworkBestForTrack, getArtworkBytes } from '../api/artwork';
-import { computeThemeFromImageSrc, applyThemeToDocument, resetTheme } from '../theme/dynamicTheme';
 import { Fixtures } from '../data/fixtures';
 
 export const currentArtworkUrl = writable<string | null>(null);
@@ -34,12 +33,10 @@ export function initArtworkStore() {
     
     if (url) {
       currentArtworkUrl.set(url);
-      applyArtworkTheme(url);
     } else {
       // If we have a track but no artwork, we might want to clear immediately or keep previous?
       // Usually better to clear or show placeholder. For now, clear to allow placeholder UI.
       currentArtworkUrl.set(null);
-      resetTheme();
     }
   });
 }
@@ -50,7 +47,6 @@ function handleNoTrack() {
     if (!fallbackTimer) {
       fallbackTimer = setTimeout(() => {
         currentArtworkUrl.set(null);
-        resetTheme();
         lastTrackId = null;
         fallbackTimer = null;
       }, 10000);
@@ -58,7 +54,6 @@ function handleNoTrack() {
   } else {
     // Already empty, just ensure clean state
     lastTrackId = null;
-    resetTheme();
   }
 }
 
@@ -96,18 +91,4 @@ async function resolveArtworkUrl(track: any): Promise<string | null> {
   }
   
   return null;
-}
-
-export async function applyArtworkTheme(url: string | null) {
-  if (url) {
-    try {
-      const theme = await computeThemeFromImageSrc(url);
-      applyThemeToDocument(theme);
-    } catch (e) {
-      console.warn('Theme extraction failed:', e);
-      resetTheme();
-    }
-  } else {
-    resetTheme();
-  }
 }

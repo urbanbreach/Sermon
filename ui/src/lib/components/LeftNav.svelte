@@ -59,7 +59,7 @@
   }
 </script>
 
-<nav class="left-nav" data-testid="glass-panel">
+<nav class="left-nav">
   <!-- Cider-style Search Bar -->
   <div class="search-container">
     <div class="search-bar" class:focused={searchFocused}>
@@ -150,9 +150,9 @@
     display: flex;
     flex-direction: column;
     width: var(--layout-sidebar-width, 240px);
-    /* Integrated look: transparent background, no independent glass effect */
-    background: transparent;
-    /* No backdrop-filter - unified with window background */
+    /* Integrated look: matte background */
+    background: var(--surface-1);
+    border-right: 1px solid var(--divider-color);
     padding: 12px 12px 12px 12px;
     height: 100%;
     box-sizing: border-box;
@@ -180,7 +180,7 @@
     height: 32px;
     padding: 0 10px;
     background: var(--surface-1);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--divider-color);
     border-radius: 8px;
     color: var(--text-tertiary);
     cursor: text;
@@ -322,8 +322,8 @@
   }
 
   .nav-item.active {
-    background: var(--accent-weak);
-    color: var(--theme-accent);
+    background: var(--surface-2);
+    color: var(--text-primary);
     font-weight: 600;
   }
 
@@ -334,7 +334,7 @@
     transform: translateY(-50%);
     width: 3px;
     height: 20px;
-    background-color: var(--theme-accent);
+    background-color: var(--text-primary);
     border-radius: 0 4px 4px 0;
   }
 
@@ -353,7 +353,7 @@
     gap: 12px;
     padding: 10px;
     background: var(--surface-1);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--divider-color);
     border-radius: 10px;
     cursor: pointer;
     transition: all var(--motion-fast) var(--ease-out);
@@ -391,7 +391,7 @@
     justify-content: center;
     color: var(--text-tertiary);
     flex-shrink: 0;
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--divider-color);
   }
 
   .np-widget-info {

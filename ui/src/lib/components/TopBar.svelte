@@ -8,6 +8,14 @@
   import { ChevronLeft, ChevronRight, PanelRight, Disc3, Users, ListMusic, Activity, Settings } from '@lucide/svelte';
   import AlphabetSelector from './AlphabetSelector.svelte';
   import { SegmentedControl } from './primitives';
+  import WindowControls from './WindowControls.svelte';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
+
+  const appWindow = getCurrentWindow();
+
+  async function handleDoubleClick() {
+    await appWindow.toggleMaximize();
+  }
 
   type SimpleRouteName = 'albums' | 'artists' | 'tracks' | 'diagnostics' | 'preferences';
 
@@ -34,7 +42,7 @@
   }));
 </script>
 
-<div class="top-bar">
+<div class="top-bar" ondblclick={handleDoubleClick}>
   <!-- Left Region: Navigation & Tabs -->
   <div class="region-left">
     <div class="nav-buttons">
@@ -108,6 +116,8 @@
     >
       <PanelRight size={20} strokeWidth={1.5} />
     </button>
+
+    <WindowControls />
   </div>
 </div>
 
@@ -121,7 +131,7 @@
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    padding: 0 16px;
+    padding: 0 0 0 16px; /* No right padding for window controls */
     -webkit-app-region: drag;
     user-select: none;
     position: relative;
@@ -150,6 +160,7 @@
     align-items: center;
     justify-content: flex-end;
     gap: 12px;
+    height: 100%;
   }
 
   /* Navigation Buttons */

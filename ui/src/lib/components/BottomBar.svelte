@@ -98,7 +98,7 @@
 {/if}
 
 <div class="bottom-bar-wrapper">
-  <div class="bottom-bar" data-testid="glass-panel" style="--bar-blur: {$glassMainBlur}px; --bar-bg: {$glassMainBg};">
+  <div class="bottom-bar" style="--bar-blur: {$glassMainBlur}px; --bar-bg: {$glassMainBg};">
     {#if $bottomBarWaveformSeekbar && $waveformPeaks.status === 'ready'}
       <!-- WAVEFORM MODE: Single-row MusicBee-like layout -->
       <div class="waveform-single-row" class:empty={isEmpty}>
@@ -301,11 +301,9 @@
     display: flex;
     flex-direction: column;
     
-    /* Glassmorphism effect */
-    background: var(--bar-bg, rgba(18, 18, 22, 0.75));
-    backdrop-filter: blur(var(--bar-blur, 16px));
-    -webkit-backdrop-filter: blur(var(--bar-blur, 16px));
-    border-top: 1px solid var(--glass-border);
+    /* Matte styling */
+    background: var(--surface-0);
+    border-top: 1px solid var(--divider-color);
     box-shadow: var(--shadow-3);
   }
 
@@ -345,19 +343,13 @@
 
   .progress-fill {
     height: 100%;
-    background: linear-gradient(
-      90deg,
-      rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.85),
-      rgba(255, 255, 255, 0.95)
-    );
+    background: rgba(255, 255, 255, 0.6);
     border-radius: 1.5px;
     position: relative;
-    box-shadow: 0 0 8px rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.25);
   }
 
   .progress-track:hover .progress-fill {
     border-radius: 2.5px;
-    box-shadow: 0 0 12px rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.4);
   }
 
   .progress-thumb {
@@ -372,7 +364,7 @@
     opacity: 0;
     transition: transform var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out);
     box-shadow: var(--shadow-2);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--divider-color);
   }
 
   .progress-track:hover .progress-thumb,
@@ -593,7 +585,7 @@
     gap: 8px;
     padding: 4px 12px 4px 4px;
     background: var(--surface-1);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--divider-color);
     border-radius: 999px;
     cursor: pointer;
     transition: all var(--motion-fast) var(--ease-out);
@@ -603,7 +595,7 @@
   }
   .compact-now-playing:hover {
     background: var(--surface-hover);
-    border-color: var(--glass-highlight);
+    border-color: rgba(255, 255, 255, 0.12);
   }
 
   .compact-artwork {

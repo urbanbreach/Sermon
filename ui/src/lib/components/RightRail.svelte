@@ -348,7 +348,8 @@
   .right-rail-panel {
     width: var(--layout-rail-width, 320px);
     height: 100%;
-    background: transparent;
+    background: var(--surface-1);
+    border-left: 1px solid var(--divider-color);
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
@@ -386,7 +387,6 @@
       bottom: 0;
       background: rgba(0,0,0,0.5);
       z-index: 89;
-      backdrop-filter: blur(2px);
     }
   }
 
@@ -432,8 +432,8 @@
   }
 
   .pill-icon.active {
-    color: var(--theme-accent);
-    background: var(--accent-weak);
+    color: var(--text-primary);
+    background: var(--surface-2);
   }
 
   .count-pill {
@@ -506,7 +506,7 @@
     padding: 6px;
     border-radius: 6px;
     background: var(--surface-1);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--divider-color);
   }
 
   .album-thumb {
@@ -579,7 +579,7 @@
     padding: 6px 4px 3px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    border-bottom: 1px solid var(--glass-border);
+    border-bottom: 1px solid var(--divider-color);
     margin-bottom: 3px;
   }
 
@@ -607,11 +607,11 @@
   }
 
   .track-row.playing {
-    color: var(--theme-accent);
+    color: var(--text-primary);
   }
 
   .track-row.playing .track-no {
-    color: var(--theme-accent);
+    color: var(--text-primary);
   }
 
   .track-no {
@@ -624,7 +624,7 @@
   }
 
   .track-no :global(.playing-icon) {
-    color: var(--theme-accent);
+    color: var(--text-primary);
   }
 
   .track-title {
