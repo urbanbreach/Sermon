@@ -65,6 +65,7 @@
   --text-label: 16px;
   --text-section: 18px;
   --text-view-title: 22px;
+  --text-title: 22px;
   
   /* Icon sizes */
   
@@ -106,6 +107,8 @@
   --surface-2: rgba(255, 255, 255, 0.08);
   --surface-hover: rgba(255, 255, 255, 0.1);
   --surface-active: rgba(255, 255, 255, 0.06);
+  --surface-sidebar: rgba(255, 255, 255, 0.02);
+  --surface-header: rgba(255, 255, 255, 0.03);
 
   /* ===== ACCENT VARIANTS ===== */
   --accent-weak: rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.12);
