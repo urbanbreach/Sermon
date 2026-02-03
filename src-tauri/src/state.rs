@@ -2,9 +2,11 @@ use audio_engine::EngineState;
 use crossbeam_channel::Sender;
 use parking_lot::Mutex;
 use parking_lot::Mutex as ParkingMutex;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
+use tokio::sync::Semaphore;
 
 pub struct LibraryState {
     pub db_path: PathBuf,
@@ -63,6 +65,47 @@ impl WaveformCacheState {
             cache_dir,
             lock: ParkingMutex::new(()),
         }
+    }
+}
+
+pub struct ThumbnailCacheState {
+    pub cache_dir: PathBuf,
+    pub lock: ParkingMutex<()>,
+    pub cap_bytes: u64,
+    /// Negative cache: keys for which artwork lookup failed or generation failed.
+    /// Prevents repeated work for missing/corrupt artwork.
+    pub negative_cache: ParkingMutex<HashSet<String>>,
+    /// Concurrency limiter for thumbnail generation (max 8 simultaneous).
+    pub concurrent_gen: Semaphore,
+}
+
+/// Maximum concurrent thumbnail generations allowed.
+pub const THUMB_MAX_CONCURRENT: u32 = 8;
+
+impl ThumbnailCacheState {
+    pub fn new(cache_dir: PathBuf) -> Self {
+        Self {
+            cache_dir,
+            lock: ParkingMutex::new(()),
+            cap_bytes: 1_750 * 1024 * 1024, // 1.75GB default
+            negative_cache: ParkingMutex::new(HashSet::new()),
+            concurrent_gen: Semaphore::new(THUMB_MAX_CONCURRENT as usize),
+        }
+    }
+
+    /// Check if a cache_key is in the negative cache (artwork not available).
+    pub fn is_negative_cached(&self, key: &str) -> bool {
+        self.negative_cache.lock().contains(key)
+    }
+
+    /// Add a cache_key to the negative cache (artwork not available or corrupt).
+    pub fn add_negative_cache(&self, key: String) {
+        self.negative_cache.lock().insert(key);
+    }
+
+    /// Clear the negative cache (e.g., after library scan).
+    pub fn clear_negative_cache(&self) {
+        self.negative_cache.lock().clear();
     }
 }
 

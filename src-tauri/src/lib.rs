@@ -10,29 +10,32 @@ use audio_engine::output::{
 };
 use audio_engine::{PlaybackState, TrackInfo};
 use commands::{
-    cmd_artwork_embed_to_file, cmd_artwork_extract_embedded, cmd_artwork_find_folder,
-    cmd_artwork_get_best_for_album, cmd_artwork_get_best_for_track, cmd_artwork_get_bytes,
-    cmd_artwork_search_candidates, cmd_artwork_select_candidate_for_album, cmd_library_add_folder,
-    cmd_library_get_folder_track_count, cmd_library_get_raw_tags, cmd_library_get_stats,
-    cmd_library_get_track_by_id, cmd_library_list_album_tracks_page, cmd_library_list_albums_page,
-    cmd_library_list_artist_tracks_page, cmd_library_list_artists_page, cmd_library_list_folders,
-    cmd_library_list_tracks, cmd_library_list_tracks_page, cmd_library_remove_folder,
-    cmd_library_search_albums_page, cmd_library_search_artists_page, cmd_library_search_suggest,
-    cmd_library_search_tracks_page, cmd_library_update_folder_enabled,
-    cmd_library_update_folder_options, cmd_library_update_track_tags, cmd_list_asio_drivers,
-    cmd_open_asio_control_panel, cmd_output_get_settings, cmd_output_list_devices,
-    cmd_output_probe_capabilities, cmd_output_set_device, cmd_output_set_settings,
-    cmd_playback_next, cmd_playback_pause, cmd_playback_previous, cmd_playback_resume,
-    cmd_playback_seek, cmd_playback_start, cmd_playback_stop, cmd_queue_add, cmd_queue_play_now,
-    cmd_queue_set_and_play, cmd_scan_start, cmd_settings_export_diagnostics, cmd_settings_get,
-    cmd_settings_get_category, cmd_settings_reset_category, cmd_settings_set,
-    cmd_settings_set_category, cmd_volume_get, cmd_volume_set, cmd_waveform_get_peaks,
-    AudioDebugEvent, AudioFormatData, DeviceChangedEvent, NowPlayingEvent, PlaybackErrorEvent,
-    PlaybackPositionEvent, PlaybackStateEvent, QueueChangedEvent, QueueItemData, TrackEventData,
+    cache_exists, cmd_artwork_embed_to_file, cmd_artwork_extract_embedded,
+    cmd_artwork_find_folder, cmd_artwork_get_best_for_album, cmd_artwork_get_best_for_track,
+    cmd_artwork_get_bytes, cmd_artwork_search_candidates, cmd_artwork_select_candidate_for_album,
+    cmd_library_add_folder, cmd_library_get_folder_track_count, cmd_library_get_raw_tags,
+    cmd_library_get_stats, cmd_library_get_track_by_id, cmd_library_list_album_tracks_page,
+    cmd_library_list_albums_page, cmd_library_list_artist_tracks_page,
+    cmd_library_list_artists_page, cmd_library_list_folders, cmd_library_list_tracks,
+    cmd_library_list_tracks_page, cmd_library_remove_folder, cmd_library_search_albums_page,
+    cmd_library_search_artists_page, cmd_library_search_suggest, cmd_library_search_tracks_page,
+    cmd_library_update_folder_enabled, cmd_library_update_folder_options,
+    cmd_library_update_track_tags, cmd_list_asio_drivers, cmd_open_asio_control_panel,
+    cmd_output_get_settings, cmd_output_list_devices, cmd_output_probe_capabilities,
+    cmd_output_set_device, cmd_output_set_settings, cmd_playback_next, cmd_playback_pause,
+    cmd_playback_previous, cmd_playback_resume, cmd_playback_seek, cmd_playback_start,
+    cmd_playback_stop, cmd_queue_add, cmd_queue_play_now, cmd_queue_set_and_play,
+    cmd_scan_start, cmd_settings_export_diagnostics, cmd_settings_get, cmd_settings_get_category,
+    cmd_settings_reset_category, cmd_settings_set, cmd_settings_set_category, cmd_volume_get,
+    cmd_volume_set, cmd_waveform_get_peaks, generate_thumbnail, try_local_artwork,
+    AudioDebugEvent, AudioFormatData,
+    DeviceChangedEvent, NowPlayingEvent, PlaybackErrorEvent, PlaybackPositionEvent,
+    PlaybackStateEvent, QueueChangedEvent, QueueItemData, TrackEventData,
 };
 use crossbeam_channel::{select, tick, unbounded, Receiver, Sender};
 use parking_lot::Mutex;
-use state::{ArtworkCacheState, AudioState, DiagnosticsState, LibraryState, PlaybackCommand, WaveformCacheState};
+use rusqlite::OptionalExtension;
+use state::{ArtworkCacheState, AudioState, DiagnosticsState, LibraryState, PlaybackCommand, ThumbnailCacheState, WaveformCacheState};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -86,6 +89,155 @@ pub fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
     guard
 }
 
+fn resolve_album_cache_key(
+    app_handle: &tauri::AppHandle,
+    album_artist_sort: &str,
+    album_title_sort: &str,
+) -> Result<String, (tauri::http::StatusCode, String)> {
+    use tauri::http::StatusCode;
+
+    let library_state = app_handle.state::<LibraryState>();
+    let artwork_state = app_handle.state::<ArtworkCacheState>();
+
+    let conn = library::open_db(&library_state.db_path)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let album_result: Option<(String, String)> = conn
+        .query_row(
+            "SELECT cache_key, mime FROM artwork_cache_map_album 
+             WHERE album_artist_sort = ?1 AND album_title_sort = ?2",
+            rusqlite::params![album_artist_sort, album_title_sort],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if let Some((cache_key, _mime)) = album_result {
+        if cache_exists(&artwork_state.cache_dir, &cache_key) {
+            return Ok(cache_key);
+        }
+    }
+
+    let representative_track: Option<(i64, String)> = conn
+        .query_row(
+            r#"SELECT id, path FROM tracks 
+               WHERE LOWER(COALESCE(NULLIF(TRIM(album_artist), ''), NULLIF(TRIM(artist), ''), 'unknown artist')) = ?1
+                 AND LOWER(COALESCE(NULLIF(TRIM(album), ''), 'unknown album')) = ?2
+                 AND is_missing = 0
+               ORDER BY disc_no, track_no, id
+               LIMIT 1"#,
+            rusqlite::params![album_artist_sort, album_title_sort],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if let Some((track_id, track_path)) = representative_track {
+        if let Some((source, cache_key, mime)) =
+            try_local_artwork(track_id, &track_path, &artwork_state.cache_dir)
+        {
+            let existing_provider: Option<String> = conn
+                .query_row(
+                    "SELECT provider FROM artwork_cache_map_album WHERE album_artist_sort = ?1 AND album_title_sort = ?2",
+                    rusqlite::params![album_artist_sort, album_title_sort],
+                    |row| row.get(0),
+                )
+                .optional()
+                .ok()
+                .flatten();
+
+            let should_insert = existing_provider
+                .map(|provider| provider == "embedded" || provider == "folder")
+                .unwrap_or(true);
+
+            if should_insert {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|duration| duration.as_secs() as i64)
+                    .unwrap_or(0);
+                let _ = conn.execute(
+                    "INSERT OR REPLACE INTO artwork_cache_map_album \
+                     (album_artist_sort, album_title_sort, cache_key, mime, provider, provider_item_id, selected_at)\
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    rusqlite::params![
+                        album_artist_sort,
+                        album_title_sort,
+                        &cache_key,
+                        &mime,
+                        &source,
+                        "",
+                        now,
+                    ],
+                );
+            }
+
+            return Ok(cache_key);
+        }
+    }
+
+    Err((StatusCode::NOT_FOUND, format!("Artwork not found for album: {}/{}", album_artist_sort, album_title_sort)))
+}
+
+fn resolve_track_cache_key(
+    app_handle: &tauri::AppHandle,
+    track_id: i64,
+) -> Result<String, (tauri::http::StatusCode, String)> {
+    use tauri::http::StatusCode;
+
+    let library_state = app_handle.state::<LibraryState>();
+    let artwork_state = app_handle.state::<ArtworkCacheState>();
+
+    let conn = library::open_db(&library_state.db_path)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let track_result: Option<(String, String)> = conn
+        .query_row(
+            "SELECT cache_key, mime FROM artwork_cache_map_track WHERE track_id = ?1",
+            rusqlite::params![track_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if let Some((cache_key, _mime)) = track_result {
+        if cache_exists(&artwork_state.cache_dir, &cache_key) {
+            return Ok(cache_key);
+        }
+    }
+
+    let album_info: Option<(String, String)> = conn
+        .query_row(
+            r#"SELECT 
+                LOWER(COALESCE(NULLIF(TRIM(album_artist), ''), NULLIF(TRIM(artist), ''), 'unknown artist')),
+                LOWER(COALESCE(NULLIF(TRIM(album), ''), 'unknown album'))
+             FROM tracks WHERE id = ?1"#,
+            rusqlite::params![track_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if let Some((album_artist_sort, album_title_sort)) = album_info {
+        let album_result: Option<(String, String)> = conn
+            .query_row(
+                "SELECT cache_key, mime FROM artwork_cache_map_album 
+                 WHERE album_artist_sort = ?1 AND album_title_sort = ?2",
+                rusqlite::params![&album_artist_sort, &album_title_sort],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        if let Some((cache_key, _mime)) = album_result {
+            if cache_exists(&artwork_state.cache_dir, &cache_key) {
+                return Ok(cache_key);
+            }
+        }
+    }
+
+    Err((StatusCode::NOT_FOUND, format!("Artwork not found for track: {}", track_id)))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Record startup start time
@@ -111,6 +263,284 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .register_asynchronous_uri_scheme_protocol(
+            "sermon-artwork",
+            |ctx, request, responder| {
+                use tauri::http::{header, Response, StatusCode};
+
+                let start = std::time::Instant::now();
+
+                // Parse the URL path - extract owned copies for the spawned task
+                let uri = request.uri();
+                let path = uri.path().to_string();
+                let query = uri.query().unwrap_or("").to_string();
+
+                // Parse size from query string (default 256)
+                let size: u32 = query
+                    .split('&')
+                    .find_map(|pair| {
+                        let mut parts = pair.splitn(2, '=');
+                        if parts.next() == Some("s") {
+                            parts.next().and_then(|v| v.parse().ok())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(256);
+
+                    // Parse route: /album/{artist}/{title}, /track/{id}, or /thumb/{cache_key}
+                    let segments: Vec<String> = path.split('/').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect();
+
+                let app_handle = ctx.app_handle().clone();
+
+                tauri::async_runtime::spawn(async move {
+                    let log_request =
+                        |status: StatusCode, cache_hit: Option<bool>, gen_ms: Option<u128>| {
+                            let total_ms = start.elapsed().as_millis();
+                            match (cache_hit, gen_ms) {
+                                (Some(cache_hit), Some(gen_ms)) => {
+                                    info!(
+                                        status = status.as_u16(),
+                                        cache_hit,
+                                        gen_ms,
+                                        total_ms,
+                                        "artwork_thumb_request"
+                                    );
+                                }
+                                (Some(cache_hit), None) => {
+                                    info!(
+                                        status = status.as_u16(),
+                                        cache_hit,
+                                        total_ms,
+                                        "artwork_thumb_request"
+                                    );
+                                }
+                                (None, Some(gen_ms)) => {
+                                    info!(
+                                        status = status.as_u16(),
+                                        gen_ms,
+                                        total_ms,
+                                        "artwork_thumb_request"
+                                    );
+                                }
+                                (None, None) => {
+                                    info!(
+                                        status = status.as_u16(),
+                                        total_ms,
+                                        "artwork_thumb_request"
+                                    );
+                                }
+                            }
+                        };
+
+                    let make_error = |status: StatusCode, msg: &str| {
+                        Response::builder()
+                            .status(status)
+                            .header(header::CONTENT_TYPE, "text/plain")
+                            .body(msg.as_bytes().to_vec())
+                            .unwrap()
+                    };
+
+                    // Validate route structure
+                    if segments.is_empty() {
+                        log_request(StatusCode::BAD_REQUEST, None, None);
+                        responder.respond(make_error(StatusCode::BAD_REQUEST, "Empty path"));
+                        return;
+                    }
+
+                    let is_lqip = segments[0] == "lqip";
+                    let cache_key_result: Result<String, (StatusCode, String)> = match segments[0].as_str() {
+                        "album" => {
+                            if segments.len() < 3 {
+                                Err((StatusCode::BAD_REQUEST, "Album route requires /album/{artist}/{title}".to_string()))
+                            } else {
+                                // URL decode the path segments
+                                let artist = urlencoding::decode(&segments[1])
+                                    .map(|s| s.into_owned())
+                                    .unwrap_or_else(|_| segments[1].clone());
+                                let title = urlencoding::decode(&segments[2])
+                                    .map(|s| s.into_owned())
+                                    .unwrap_or_else(|_| segments[2].clone());
+
+                                resolve_album_cache_key(&app_handle, &artist, &title)
+                            }
+                        }
+                        "track" => {
+                            if segments.len() < 2 {
+                                Err((StatusCode::BAD_REQUEST, "Track route requires /track/{id}".to_string()))
+                            } else {
+                                match segments[1].parse::<i64>() {
+                                    Ok(track_id) => resolve_track_cache_key(&app_handle, track_id),
+                                    Err(_) => Err((StatusCode::BAD_REQUEST, "Invalid track ID".to_string())),
+                                }
+                            }
+                        }
+                        "thumb" => {
+                            if segments.len() < 2 {
+                                Err((StatusCode::BAD_REQUEST, "Thumb route requires /thumb/{cache_key}".to_string()))
+                            } else {
+                                let cache_key = urlencoding::decode(&segments[1])
+                                    .map(|s| s.into_owned())
+                                    .unwrap_or_else(|_| segments[1].clone());
+                                Ok(cache_key)
+                            }
+                        }
+                        "lqip" => {
+                            if segments.len() < 2 {
+                                Err((StatusCode::BAD_REQUEST, "LQIP route requires /lqip/{cache_key}".to_string()))
+                            } else {
+                                let cache_key = urlencoding::decode(&segments[1])
+                                    .map(|s| s.into_owned())
+                                    .unwrap_or_else(|_| segments[1].clone());
+                                Ok(cache_key)
+                            }
+                        }
+                        _ => Err((StatusCode::BAD_REQUEST, format!("Unknown route: {}", segments[0]))),
+                    };
+
+                    let cache_key = match cache_key_result {
+                        Ok(key) => key,
+                        Err((status, msg)) => {
+                            log_request(status, None, None);
+                            responder.respond(make_error(status, &msg));
+                            return;
+                        }
+                    };
+
+                    let thumb_state = app_handle.state::<ThumbnailCacheState>();
+
+                    let normalized_size = if is_lqip {
+                        32
+                    } else {
+                        commands::artwork::normalize_thumbnail_size(size)
+                    };
+                    let thumb_filename = format!("{}_{}.jpg", cache_key, normalized_size);
+                    let thumb_path = thumb_state.cache_dir.join(&thumb_filename);
+                    let cache_hit = {
+                        let _lock = thumb_state.lock.lock();
+                        thumb_path.exists()
+                    };
+
+                    if cache_hit {
+                        match std::fs::read(&thumb_path) {
+                            Ok(bytes) => {
+                                log_request(StatusCode::OK, Some(true), None);
+                                responder.respond(
+                                    Response::builder()
+                                        .status(StatusCode::OK)
+                                        .header(header::CONTENT_TYPE, "image/jpeg")
+                                        .header(header::CACHE_CONTROL, "max-age=31536000, immutable")
+                                        .body(bytes)
+                                        .unwrap(),
+                                );
+                            }
+                            Err(e) => {
+                                warn!("Failed to read thumbnail {}: {}", thumb_path.display(), e);
+                                log_request(StatusCode::INTERNAL_SERVER_ERROR, None, None);
+                                responder.respond(make_error(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    "Failed to read thumbnail",
+                                ));
+                            }
+                        }
+                        return;
+                    }
+
+                    if thumb_state.is_negative_cached(&cache_key) {
+                        log_request(StatusCode::NOT_FOUND, None, None);
+                        responder.respond(make_error(StatusCode::NOT_FOUND, "Artwork not available (cached negative)"));
+                        return;
+                    }
+
+                    let gen_permit = match thumb_state.concurrent_gen.acquire().await {
+                        Ok(permit) => permit,
+                        Err(_) => {
+                            log_request(StatusCode::INTERNAL_SERVER_ERROR, None, None);
+                            responder.respond(make_error(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "Thumbnail generation unavailable",
+                            ));
+                            return;
+                        }
+                    };
+
+                    let gen_start = std::time::Instant::now();
+                    let app_handle_for_gen = app_handle.clone();
+                    let cache_key_for_gen = cache_key.clone();
+                    let gen_result = tauri::async_runtime::spawn_blocking(move || {
+                        let artwork_state = app_handle_for_gen.state::<ArtworkCacheState>();
+                        let thumb_state = app_handle_for_gen.state::<ThumbnailCacheState>();
+                        generate_thumbnail(
+                            &artwork_state.cache_dir,
+                            &thumb_state.cache_dir,
+                            &thumb_state.lock,
+                            thumb_state.cap_bytes,
+                            &cache_key_for_gen,
+                            normalized_size,
+                        )
+                    })
+                    .await;
+                    let gen_ms = gen_start.elapsed().as_millis();
+                    drop(gen_permit);
+
+                    let gen_result = match gen_result {
+                        Ok(result) => result,
+                        Err(e) => {
+                            warn!("Thumbnail generation task failed: {}", e);
+                            log_request(StatusCode::INTERNAL_SERVER_ERROR, None, None);
+                            responder.respond(make_error(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "Thumbnail generation failed",
+                            ));
+                            return;
+                        }
+                    };
+
+                    match gen_result {
+                        Ok(thumb_path) => {
+                            match std::fs::read(&thumb_path) {
+                                Ok(bytes) => {
+                                    log_request(StatusCode::OK, Some(false), Some(gen_ms));
+                                    responder.respond(
+                                        Response::builder()
+                                            .status(StatusCode::OK)
+                                            .header(header::CONTENT_TYPE, "image/jpeg")
+                                            .header(header::CACHE_CONTROL, "max-age=31536000, immutable")
+                                            .body(bytes)
+                                            .unwrap(),
+                                    );
+                                }
+                                Err(e) => {
+                                    warn!("Failed to read thumbnail {}: {}", thumb_path.display(), e);
+                                    log_request(StatusCode::INTERNAL_SERVER_ERROR, None, None);
+                                    responder.respond(make_error(
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        "Failed to read thumbnail",
+                                    ));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            let is_negative_cacheable = e.contains("not found")
+                                || e.contains("Failed to decode")
+                                || e.contains("Failed to guess image format");
+                            if is_negative_cacheable {
+                                thumb_state.add_negative_cache(cache_key.clone());
+                            }
+
+                            if e.contains("not found") {
+                                log_request(StatusCode::NOT_FOUND, None, None);
+                                responder.respond(make_error(StatusCode::NOT_FOUND, &e));
+                            } else {
+                                warn!("Thumbnail generation failed: {}", e);
+                                log_request(StatusCode::INTERNAL_SERVER_ERROR, None, None);
+                                responder.respond(make_error(StatusCode::INTERNAL_SERVER_ERROR, &e));
+                            }
+                        }
+                    }
+                });
+            },
+        )
         .setup(move |app| {
             // Manage diagnostics state for Tauri commands
             app.manage(diagnostics.clone());
@@ -151,6 +581,188 @@ pub fn run() {
             fs::create_dir_all(&waveform_cache_dir)?;
             info!("Waveform cache path: {:?}", waveform_cache_dir);
             app.manage(WaveformCacheState::new(waveform_cache_dir));
+
+            // Setup thumbnail cache directory
+            let thumbnail_cache_dir = app_data_dir.join("artwork-thumbs");
+            fs::create_dir_all(&thumbnail_cache_dir)?;
+            info!("Thumbnail cache path: {:?}", thumbnail_cache_dir);
+            app.manage(ThumbnailCacheState::new(thumbnail_cache_dir));
+
+            let app_handle_for_scan = app.handle().clone();
+            app.listen("evt_scan_complete", move |_event| {
+                let thumb_state = app_handle_for_scan.state::<ThumbnailCacheState>();
+                thumb_state.clear_negative_cache();
+                info!("Cleared thumbnail negative cache after scan complete");
+
+                let app_handle_for_pregen = app_handle_for_scan.clone();
+                tauri::async_runtime::spawn(async move {
+                    let db_path = {
+                        let library_state = app_handle_for_pregen.state::<LibraryState>();
+                        library_state.db_path.clone()
+                    };
+
+                    let albums = match tauri::async_runtime::spawn_blocking(move || {
+                        let conn = library::open_db(&db_path)
+                            .map_err(|e| format!("failed to open DB: {}", e))?;
+
+                        let mut stmt = conn
+                            .prepare(
+                                "SELECT album_artist_sort, album_title_sort, cache_key FROM artwork_cache_map_album",
+                            )
+                            .map_err(|e| format!("failed to prepare query: {}", e))?;
+
+                        let rows = stmt
+                            .query_map([], |row| {
+                                Ok((
+                                    row.get::<_, String>(0)?,
+                                    row.get::<_, String>(1)?,
+                                    row.get::<_, String>(2)?,
+                                ))
+                            })
+                            .map_err(|e| format!("failed to query albums: {}", e))?;
+
+                        let mut albums = Vec::new();
+                        for row in rows {
+                            match row {
+                                Ok(values) => albums.push(values),
+                                Err(e) => warn!("Thumbnail pre-generation row read failed: {}", e),
+                            }
+                        }
+
+                        Ok::<_, String>(albums)
+                    })
+                    .await
+                    {
+                        Ok(Ok(albums)) => albums,
+                        Ok(Err(e)) => {
+                            warn!("Thumbnail pre-generation skipped: {}", e);
+                            return;
+                        }
+                        Err(e) => {
+                            warn!("Thumbnail pre-generation skipped: failed to join DB task: {}", e);
+                            return;
+                        }
+                    };
+
+                    if albums.is_empty() {
+                        info!("Thumbnail pre-generation skipped: no album artwork mappings found");
+                        return;
+                    }
+
+                    info!(album_count = albums.len(), "Starting album thumbnail pre-generation after scan");
+
+                    let thumb_cache_dir = app_handle_for_pregen
+                        .state::<ThumbnailCacheState>()
+                        .cache_dir
+                        .clone();
+
+                    let mut skipped = 0u32;
+                    let mut handles = Vec::new();
+
+                    for (album_artist_sort, album_title_sort, cache_key) in albums {
+                        let thumb_path = thumb_cache_dir.join(format!("{}_256.jpg", cache_key));
+                        if thumb_path.exists() {
+                            skipped += 1;
+                            continue;
+                        }
+
+                        let app_handle_for_task = app_handle_for_pregen.clone();
+                        let cache_key_for_task = cache_key.clone();
+                        let artist_for_task = album_artist_sort.clone();
+                        let title_for_task = album_title_sort.clone();
+
+                        handles.push(tauri::async_runtime::spawn(async move {
+                            let thumb_state = app_handle_for_task.state::<ThumbnailCacheState>();
+                            let gen_permit = match thumb_state.concurrent_gen.acquire().await {
+                                Ok(permit) => permit,
+                                Err(_) => {
+                                    warn!(
+                                        album_artist_sort = %artist_for_task,
+                                        album_title_sort = %title_for_task,
+                                        cache_key = %cache_key_for_task,
+                                        "Thumbnail pre-generation unavailable"
+                                    );
+                                    return Err("Thumbnail pre-generation unavailable".to_string());
+                                }
+                            };
+
+                            let gen_start = std::time::Instant::now();
+                            let app_handle_for_gen = app_handle_for_task.clone();
+                            let cache_key_for_gen = cache_key_for_task.clone();
+                            let gen_result = tauri::async_runtime::spawn_blocking(move || {
+                                let artwork_state = app_handle_for_gen.state::<ArtworkCacheState>();
+                                let thumb_state = app_handle_for_gen.state::<ThumbnailCacheState>();
+                                generate_thumbnail(
+                                    &artwork_state.cache_dir,
+                                    &thumb_state.cache_dir,
+                                    &thumb_state.lock,
+                                    thumb_state.cap_bytes,
+                                    &cache_key_for_gen,
+                                    256,
+                                )
+                            })
+                            .await;
+                            let gen_ms = gen_start.elapsed().as_millis();
+                            drop(gen_permit);
+
+                            match gen_result {
+                                Ok(Ok(_thumb_path)) => {
+                                    info!(
+                                        album_artist_sort = %artist_for_task,
+                                        album_title_sort = %title_for_task,
+                                        cache_key = %cache_key_for_task,
+                                        gen_ms = gen_ms,
+                                        "thumbnail_pre_generated"
+                                    );
+                                    Ok(())
+                                }
+                                Ok(Err(e)) => {
+                                    warn!(
+                                        album_artist_sort = %artist_for_task,
+                                        album_title_sort = %title_for_task,
+                                        cache_key = %cache_key_for_task,
+                                        error = %e,
+                                        "thumbnail_pre_generate_failed"
+                                    );
+                                    Err(e)
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        album_artist_sort = %artist_for_task,
+                                        album_title_sort = %title_for_task,
+                                        cache_key = %cache_key_for_task,
+                                        error = %e,
+                                        "thumbnail_pre_generate_join_failed"
+                                    );
+                                    Err(e.to_string())
+                                }
+                            }
+                        }));
+                    }
+
+                    let mut generated = 0u32;
+                    let mut failed = 0u32;
+                    for handle in handles {
+                        match handle.await {
+                            Ok(Ok(())) => generated += 1,
+                            Ok(Err(_)) => failed += 1,
+                            Err(e) => {
+                                failed += 1;
+                                warn!("Thumbnail pre-generation task join failed: {}", e);
+                            }
+                        }
+                    }
+
+                    info!(generated, skipped, failed, "Thumbnail pre-generation complete");
+                });
+            });
+
+            let app_handle_for_quick_scan = app.handle().clone();
+            app.listen("evt_quick_scan_complete", move |_event| {
+                let thumb_state = app_handle_for_quick_scan.state::<ThumbnailCacheState>();
+                thumb_state.clear_negative_cache();
+                info!("Cleared thumbnail negative cache after quick scan complete");
+            });
 
             let library_state = LibraryState::new(db_path.clone());
 

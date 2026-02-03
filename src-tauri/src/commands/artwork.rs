@@ -3,12 +3,14 @@ use library::open_db;
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
+use std::io::Cursor;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tauri::State;
 use tracing::{info, warn};
 
 use crate::state::ArtworkCacheState;
+use crate::state::ThumbnailCacheState;
 
 const ARTWORK_CACHE_CAP_BYTES: u64 = 256 * 1024 * 1024;
 const ARTWORK_MAX_ENTRY_SIZE: u64 = ARTWORK_CACHE_CAP_BYTES / 4;
@@ -957,7 +959,7 @@ fn infer_mime_from_filename(filename: &str) -> String {
 
 /// Try to get artwork from embedded or folder sources for a track.
 /// Returns (source, cache_key, mime) if found.
-fn try_local_artwork(
+pub fn try_local_artwork(
     track_id: i64,
     track_path: &str,
     cache_dir: &std::path::Path,
@@ -976,12 +978,16 @@ fn try_local_artwork(
                 .clone()
                 .unwrap_or_else(|| "image/jpeg".to_string());
 
-            let cache_key = compute_cache_key(
-                &format!("track_{}", track_id),
-                "embedded",
-                "embedded",
-                &format!("{}", track_id),
-            );
+            let meta = std::fs::metadata(path).ok()?;
+            let mtime = meta
+                .modified()
+                .ok()?
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()?
+                .as_millis();
+            let size = meta.len();
+            let provider_item_id = format!("{}:{}:{}", track_path, mtime, size);
+            let cache_key = compute_cache_key("embedded", "embedded", "embedded", &provider_item_id);
 
             // Write to cache if not exists
             if !cache_exists(cache_dir, &cache_key) {
@@ -1001,8 +1007,21 @@ fn try_local_artwork(
             if artwork_path.exists() && artwork_path.is_file() {
                 if let Ok(bytes) = fs::read(&artwork_path) {
                     let mime = infer_mime_from_filename(filename);
-                    let folder_str = folder.to_string_lossy();
-                    let cache_key = compute_cache_key(&folder_str, filename, "folder", filename);
+                    let meta = match fs::metadata(&artwork_path) {
+                        Ok(meta) => meta,
+                        Err(_) => continue,
+                    };
+                    let mtime = match meta.modified() {
+                        Ok(time) => match time.duration_since(std::time::UNIX_EPOCH) {
+                            Ok(duration) => duration.as_millis(),
+                            Err(_) => continue,
+                        },
+                        Err(_) => continue,
+                    };
+                    let size = meta.len();
+                    let provider_item_id =
+                        format!("{}:{}:{}", artwork_path.to_string_lossy(), mtime, size);
+                    let cache_key = compute_cache_key("folder", "folder", "folder", &provider_item_id);
 
                     // Write to cache if not exists
                     if !cache_exists(cache_dir, &cache_key) {
@@ -1018,4 +1037,133 @@ fn try_local_artwork(
     }
 
     None
+}
+
+// ============================================================================
+// Thumbnail Cache Generation
+// ============================================================================
+
+const ALLOWED_THUMB_SIZES: [u32; 4] = [32, 128, 256, 512];
+const THUMB_JPEG_QUALITY: u8 = 80;
+
+pub fn normalize_thumbnail_size(requested: u32) -> u32 {
+    ALLOWED_THUMB_SIZES
+        .iter()
+        .min_by_key(|&&s| (s as i32 - requested as i32).abs())
+        .copied()
+        .unwrap_or(256)
+}
+
+pub fn evict_thumbnail_cache_lru(cache_dir: &Path, cap_bytes: u64, target_free: u64) {
+    let entries: Vec<(PathBuf, u64, std::time::SystemTime)> = match fs::read_dir(cache_dir) {
+        Ok(dir) => dir
+            .filter_map(|e| e.ok())
+            .filter_map(|entry| {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("jpg") {
+                    let meta = fs::metadata(&path).ok()?;
+                    let accessed = meta.accessed().or_else(|_| meta.modified()).ok()?;
+                    Some((path, meta.len(), accessed))
+                } else {
+                    None
+                }
+            })
+            .collect(),
+        Err(_) => return,
+    };
+
+    let total_size: u64 = entries.iter().map(|(_, size, _)| size).sum();
+    if total_size <= cap_bytes.saturating_sub(target_free) {
+        return;
+    }
+
+    let to_free = total_size.saturating_sub(cap_bytes.saturating_sub(target_free));
+    let mut freed: u64 = 0;
+
+    let mut sorted_entries = entries;
+    sorted_entries.sort_by_key(|(_, _, accessed)| *accessed);
+
+    for (path, size, _) in sorted_entries {
+        if fs::remove_file(&path).is_ok() {
+            freed += size;
+            info!(evicted_path = %path.display(), evicted_size = size, "thumbnail_cache_evict");
+            if freed >= to_free {
+                break;
+            }
+        }
+    }
+}
+
+pub fn generate_thumbnail(
+    artwork_cache_dir: &Path,
+    thumb_cache_dir: &Path,
+    thumb_lock: &parking_lot::Mutex<()>,
+    thumb_cap_bytes: u64,
+    cache_key: &str,
+    requested_size: u32,
+) -> Result<PathBuf, String> {
+    use image::codecs::jpeg::JpegEncoder;
+    use image::imageops::FilterType;
+    use image::{DynamicImage, ImageReader};
+
+    let size = normalize_thumbnail_size(requested_size);
+    let thumb_filename = format!("{}_{}.jpg", cache_key, size);
+    let thumb_path = thumb_cache_dir.join(&thumb_filename);
+
+    {
+        let _lock = thumb_lock.lock();
+        if thumb_path.exists() {
+            return Ok(thumb_path);
+        }
+    }
+
+    let source_path = artwork_cache_dir.join(cache_key);
+    if !source_path.exists() {
+        return Err(format!("Source artwork not found: {}", cache_key));
+    }
+
+    let source_bytes = fs::read(&source_path)
+        .map_err(|e| format!("Failed to read source artwork: {}", e))?;
+
+    let img = ImageReader::new(Cursor::new(&source_bytes))
+        .with_guessed_format()
+        .map_err(|e| format!("Failed to guess image format: {}", e))?
+        .decode()
+        .map_err(|e| format!("Failed to decode image: {}", e))?;
+
+    let (filter, quality) = if size <= 48 {
+        (FilterType::Triangle, 60)
+    } else {
+        (FilterType::Lanczos3, THUMB_JPEG_QUALITY)
+    };
+
+    let resized = img.resize(size, size, filter);
+
+    let rgb_image = resized.to_rgb8();
+
+    let mut jpeg_bytes: Vec<u8> = Vec::new();
+    {
+        let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_bytes, quality);
+        encoder
+            .encode_image(&rgb_image)
+            .map_err(|e| format!("Failed to encode JPEG: {}", e))?;
+    }
+
+    {
+        let _lock = thumb_lock.lock();
+
+        evict_thumbnail_cache_lru(thumb_cache_dir, thumb_cap_bytes, jpeg_bytes.len() as u64);
+
+        fs::write(&thumb_path, &jpeg_bytes)
+            .map_err(|e| format!("Failed to write thumbnail: {}", e))?;
+    }
+
+    info!(
+        cache_key = %cache_key,
+        size = size,
+        thumb_size = jpeg_bytes.len(),
+        "thumbnail_generated"
+    );
+
+    Ok(thumb_path)
 }
