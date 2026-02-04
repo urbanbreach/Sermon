@@ -6,7 +6,6 @@
   import { setAlphabetSelector, clearAlphabetSelector } from '../state/alphabetSelector';
   import {
     albumArtworkCacheVersion,
-    getAlbumArtworkSrc,
     getAlbumKey,
     bumpAlbumArtworkVersion,
     resetAlbumArtworkCache
@@ -104,19 +103,12 @@
     }
   }
 
-  async function warmThumbnailCache() {
-    const BATCH_SIZE = 4;
-    for (let i = 0; i < albums.length; i += BATCH_SIZE) {
-      const batch = albums.slice(i, i + BATCH_SIZE);
-      await Promise.all(
-        batch.map((album) => {
-          const url = getAlbumArtworkSrc(album, 256);
-          if (!url) return Promise.resolve();
-          return fetch(url).catch(() => {});
-        })
-      );
-    }
-  }
+  // Prefetching strategy:
+  // We rely on virtua's bufferSize={12} to render rows just outside the viewport.
+  // The <ArtworkImage> component handles loading:
+  // 1. Shows LQIP immediately (embedded in album metadata)
+  // 2. Fetches high-res thumbnail asynchronously on mount
+  // This avoids the need for a full-library warmup which wastes bandwidth.
 
   async function loadAllAlbums() {
     if (loading) return;
@@ -127,7 +119,6 @@
       const { albumCount } = await getLibraryStats();
       const page = await listAlbumsPage(albumCount + 10, undefined);
       albums = page.items;
-      void warmThumbnailCache();
     } catch (e) {
       console.error('Failed to load albums:', e);
     } finally {
