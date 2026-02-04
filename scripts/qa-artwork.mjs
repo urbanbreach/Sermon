@@ -30,9 +30,32 @@ console.log('║ 3. Get metrics:                                           ║')
 console.log('║    JSON.stringify(window.__artworkMetrics.get())          ║');
 console.log('║                                                           ║');
 console.log('╠═══════════════════════════════════════════════════════════╣');
+console.log('║ DEV MODE CHECKS (run in development only):                ║');
+console.log('║                                                           ║');
+console.log('║ 4. Check no sermon-artwork:// in images:                  ║');
+console.log('║    Array.from(document.images).every(                     ║');
+console.log('║      i => !i.src.startsWith(\'sermon-artwork://\')          ║');
+console.log('║    )                                                      ║');
+console.log('║    Expected: true                                         ║');
+console.log('║                                                           ║');
+console.log('║ 5. Check background wash URL (now playing):               ║');
+console.log('║    getComputedStyle(                                      ║');
+console.log('║      document.querySelector(\'.artwork-wash\')              ║');
+console.log('║    ).backgroundImage                                      ║');
+console.log('║    Expected: not \'sermon-artwork://\' and not \'none\'       ║');
+console.log('║                                                           ║');
+console.log('║ 6. Check inline detail background (album):                ║');
+console.log('║    document.querySelector(\'.inline-detail\')               ║');
+console.log('║      ?.style.getPropertyValue(\'--album-art\')              ║');
+console.log('║    Expected: not \'sermon-artwork://\'                      ║');
+console.log('╠═══════════════════════════════════════════════════════════╣');
 console.log('║ Success Criteria:                                         ║');
 console.log('║ - p95ThumbMs <= 200                                       ║');
 console.log('║ - errorCount === 0                                        ║');
+console.log('║ DEV SUCCESS:                                              ║');
+console.log('║ - No image src contains \'sermon-artwork://\'               ║');
+console.log('║ - Background wash uses blob: or data: URL                 ║');
+console.log('║ - Inline detail --album-art uses blob: or data: URL       ║');
 console.log('╚═══════════════════════════════════════════════════════════╝');
 
 // Exit successfully - actual QA done via MCP

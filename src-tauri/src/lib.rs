@@ -12,7 +12,7 @@ use audio_engine::{PlaybackState, TrackInfo};
 use commands::{
     cache_exists, cmd_artwork_embed_to_file, cmd_artwork_extract_embedded,
     cmd_artwork_find_folder, cmd_artwork_get_best_for_album, cmd_artwork_get_best_for_track,
-    cmd_artwork_get_bytes, cmd_artwork_search_candidates, cmd_artwork_select_candidate_for_album,
+    cmd_artwork_get_bytes, cmd_artwork_get_thumb_bytes, cmd_artwork_search_candidates, cmd_artwork_select_candidate_for_album,
     cmd_library_add_folder, cmd_library_get_folder_track_count, cmd_library_get_raw_tags,
     cmd_library_get_stats, cmd_library_get_track_by_id, cmd_library_list_album_tracks_page,
     cmd_library_list_albums_page, cmd_library_list_artist_tracks_page,
@@ -902,6 +902,7 @@ pub fn run() {
             cmd_volume_get,
             cmd_volume_set,
             cmd_artwork_get_bytes,
+            cmd_artwork_get_thumb_bytes,
             cmd_artwork_search_candidates,
             cmd_artwork_select_candidate_for_album,
             cmd_artwork_get_best_for_album,

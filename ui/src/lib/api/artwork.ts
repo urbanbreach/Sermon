@@ -24,6 +24,13 @@ export async function getArtworkBytes(cacheKey: string, mime: string): Promise<A
   return invoke('cmd_artwork_get_bytes', { request: { cacheKey, mime } });
 }
 
+export async function getArtworkThumbBytes(
+  cacheKey: string,
+  size: number
+): Promise<ArtworkBytesResponse> {
+  return invoke('cmd_artwork_get_thumb_bytes', { request: { cacheKey, size } });
+}
+
 export async function searchArtworkCandidates(
   albumArtist?: string,
   albumTitle?: string,

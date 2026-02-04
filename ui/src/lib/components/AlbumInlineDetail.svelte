@@ -1,6 +1,7 @@
 <script lang="ts">
   import { X } from '@lucide/svelte';
   import { listAlbumTracksPage } from '../api/library';
+  import { getDevArtworkUrl, retainDevArtworkUrl, releaseDevArtworkUrl } from '../utils/artworkDevUrls';
   import type { AlbumListItem, TrackRow } from '../types/library';
   import { getAlbumKey } from '../state/albumArtwork';
   import ArtworkImage from './ArtworkImage.svelte';
@@ -17,10 +18,44 @@
   let loadError = $state<string | null>(null);
   let activeAlbumKey = $state('');
 
-  let backgroundArtUrl = $derived.by(() => {
-    if (!album.artworkCacheKey) return '';
-    const key = encodeURIComponent(album.artworkCacheKey);
-    return `sermon-artwork://localhost/thumb/${key}?s=512`;
+  let backgroundArtUrl = $state('');
+
+  $effect(() => {
+    const cacheKey = album.artworkCacheKey;
+    if (!cacheKey) {
+      backgroundArtUrl = '';
+      return;
+    }
+
+    const useDevFallback = import.meta.env.DEV;
+
+    if (useDevFallback) {
+      let active = true;
+      let currentUrl: string | null = null;
+
+      getDevArtworkUrl(cacheKey, 512)
+        .then((url) => {
+          if (!active) {
+            releaseDevArtworkUrl(url);
+            return;
+          }
+          currentUrl = url;
+          retainDevArtworkUrl(url);
+          backgroundArtUrl = url;
+        })
+        .catch((err) => {
+          console.warn('Failed to load background artwork:', err);
+          if (active) backgroundArtUrl = '';
+        });
+
+      return () => {
+        active = false;
+        if (currentUrl) releaseDevArtworkUrl(currentUrl);
+      };
+    }
+
+    const key = encodeURIComponent(cacheKey);
+    backgroundArtUrl = `sermon-artwork://localhost/thumb/${key}?s=512`;
   });
 
   let detailEl = $state<HTMLDivElement | null>(null);

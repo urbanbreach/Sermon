@@ -86,6 +86,37 @@ pub async fn cmd_artwork_get_bytes(
     })
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetThumbBytesRequest {
+    pub cache_key: String,
+    pub size: u32,
+}
+
+#[tauri::command]
+pub async fn cmd_artwork_get_thumb_bytes(
+    request: GetThumbBytesRequest,
+    artwork_state: State<'_, ArtworkCacheState>,
+    thumb_state: State<'_, ThumbnailCacheState>,
+) -> Result<ArtworkBytesResponse, String> {
+    let thumb_path = generate_thumbnail(
+        &artwork_state.cache_dir,
+        &thumb_state.cache_dir,
+        &thumb_state.lock,
+        thumb_state.cap_bytes,
+        &request.cache_key,
+        request.size,
+    )?;
+
+    let bytes = fs::read(&thumb_path).map_err(|e| format!("Failed to read thumbnail: {}", e))?;
+    let bytes_base64 = BASE64.encode(&bytes);
+
+    Ok(ArtworkBytesResponse {
+        mime: "image/jpeg".to_string(),
+        bytes_base64,
+    })
+}
+
 /// Write bytes to cache (used by provider fetchers and embedded extraction)
 pub fn write_to_cache(
     cache_dir: &std::path::Path,
