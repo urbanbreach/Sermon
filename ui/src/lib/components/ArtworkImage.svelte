@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { recordLqipLoaded, recordThumbLoaded, recordArtworkError } from '../utils/artworkMetrics';
+
   interface Props {
     cacheKey: string | null | undefined;
     artistSort?: string;
@@ -34,6 +36,7 @@
 
     // Start with LQIP
     stage = 'lqip';
+    recordLqipLoaded(cacheKey);
     currentSrc = lqipUrl;
 
     // Preload and decode thumbnail
@@ -47,6 +50,7 @@
         // Swap to high-res but keep blur (stage 'thumb')
         currentSrc = thumbUrl;
         stage = 'thumb';
+        recordThumbLoaded(cacheKey);
 
         // Remove blur in next frame (stage 'full')
         requestAnimationFrame(() => {
@@ -58,6 +62,7 @@
         if (!active) return;
         console.warn('Artwork decode failed:', err);
         // On failure, show placeholder
+        recordArtworkError(cacheKey);
         stage = 'none';
       });
 
