@@ -3,7 +3,7 @@
   import { Disc3, Users, ListMusic, Activity, Settings, ChevronDown, ChevronRight, Search, X } from '@lucide/svelte';
   import { pressScale } from '../utils/animations';
   import { currentTrack } from '../state/playback';
-  import { currentArtworkUrl } from '../state/artwork';
+  import ArtworkImage from './ArtworkImage.svelte';
 
   type SimpleRouteName = 'albums' | 'artists' | 'tracks' | 'diagnostics' | 'preferences';
 
@@ -130,8 +130,12 @@
       onclick={() => navigate({ name: 'now-playing' })}
       use:pressScale={{ scale: 0.98 }}
     >
-      {#if $currentArtworkUrl}
-        <img src={$currentArtworkUrl} alt="" class="np-widget-art" />
+      {#if ($currentTrack as any)?.artworkCacheKey}
+        <ArtworkImage 
+          cacheKey={($currentTrack as any)?.artworkCacheKey} 
+          size={128} 
+          class="np-widget-art" 
+        />
       {:else}
         <div class="np-widget-art-placeholder">
           <Disc3 size={20} strokeWidth={1.5} />
@@ -195,9 +199,9 @@
   }
 
   .search-bar.focused {
-    border-color: var(--accent-medium);
+    border-color: var(--focus-ring);
     background: var(--surface-2);
-    box-shadow: 0 0 0 2px var(--accent-weak);
+    box-shadow: 0 0 0 2px var(--focus-ring);
   }
 
   .search-bar input {
@@ -372,10 +376,10 @@
     box-shadow: var(--shadow-2);
   }
 
-  .np-widget-art {
+  :global(.np-widget-art) {
     width: 40px;
     height: 40px;
-    border-radius: 6px;
+    border-radius: var(--artwork-radius-sidebar, 6px);
     object-fit: cover;
     flex-shrink: 0;
     box-shadow: var(--shadow-1);
@@ -384,8 +388,8 @@
   .np-widget-art-placeholder {
     width: 40px;
     height: 40px;
-    border-radius: 6px;
-    background: linear-gradient(135deg, var(--surface-3), var(--surface-1));
+    border-radius: var(--artwork-radius-sidebar, 6px);
+    background: var(--surface-2);
     display: flex;
     align-items: center;
     justify-content: center;

@@ -6,7 +6,7 @@
     positionMs, durationMs
   } from '../state/playback';
   import { seek } from '../state/playback';
-  import { currentArtworkUrl } from '../state/artwork';
+  import ArtworkImage from './ArtworkImage.svelte';
   import { isRailOpen } from '../state/rightRail';
   import { pressScale, hoverScale } from '../utils/animations';
   import { SkipBack, Pause, Play, SkipForward, Volume2, Shuffle, Repeat } from '@lucide/svelte';
@@ -14,7 +14,7 @@
   import { waveformPeaks, loadWaveformPeaks, clearWaveformPeaks } from '../state/waveform';
   
   import { 
-    glassMainBlur, glassMainBg, bottomBarWaveformSeekbar
+    bottomBarWaveformSeekbar
   } from '../state/effects';
 
   // Load waveform when track changes
@@ -98,7 +98,7 @@
 {/if}
 
 <div class="bottom-bar-wrapper">
-  <div class="bottom-bar" style="--bar-blur: {$glassMainBlur}px; --bar-bg: {$glassMainBg};">
+  <div class="bottom-bar">
     {#if $bottomBarWaveformSeekbar && $waveformPeaks.status === 'ready'}
       <!-- WAVEFORM MODE: Single-row MusicBee-like layout -->
       <div class="waveform-single-row" class:empty={isEmpty}>
@@ -110,8 +110,12 @@
           tabindex="0"
           onkeypress={handleKey}
         >
-          {#if $currentArtworkUrl}
-            <img src={$currentArtworkUrl} alt="" class="compact-artwork" />
+          {#if ($currentTrack as any)?.artworkCacheKey}
+            <ArtworkImage 
+              cacheKey={($currentTrack as any)?.artworkCacheKey} 
+              size={128} 
+              class="compact-artwork" 
+            />
           {:else}
             <div class="compact-artwork-placeholder"></div>
           {/if}
@@ -215,8 +219,12 @@
           onkeypress={handleKey}
           use:hoverScale={{ scale: 1.02 }}
         >
-          {#if $currentArtworkUrl}
-            <img src={$currentArtworkUrl} alt="" class="pill-artwork" />
+          {#if ($currentTrack as any)?.artworkCacheKey}
+            <ArtworkImage 
+              cacheKey={($currentTrack as any)?.artworkCacheKey} 
+              size={128} 
+              class="pill-artwork" 
+            />
           {:else}
             <div class="pill-artwork-placeholder"></div>
           {/if}
@@ -227,6 +235,8 @@
         </div>
         
         <!-- RIGHT: Volume -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
         <div class="right-cluster" onclick={(e) => e.stopPropagation()}>
           <div class="volume-control">
             {#if isUnity}
@@ -444,7 +454,7 @@
     gap: 10px;
     padding: 6px 16px 6px 6px;
     background: var(--surface-1);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--divider-color);
     border-radius: 999px;
     cursor: pointer;
     transition: all var(--motion-fast) var(--ease-out);
@@ -455,10 +465,10 @@
   .now-playing-pill:hover { 
     background: var(--surface-hover); 
     box-shadow: var(--shadow-2);
-    border-color: var(--glass-highlight);
+    border-color: var(--divider-color);
   }
 
-  .pill-artwork {
+  :global(.pill-artwork) {
     width: 32px;
     height: 32px;
     border-radius: 6px;
@@ -595,10 +605,10 @@
   }
   .compact-now-playing:hover {
     background: var(--surface-hover);
-    border-color: rgba(255, 255, 255, 0.12);
+    border-color: var(--divider-color);
   }
 
-  .compact-artwork {
+  :global(.compact-artwork) {
     width: 28px;
     height: 28px;
     border-radius: 4px;
@@ -690,7 +700,7 @@
     border-radius: 50%;
     background: var(--text-primary);
     box-shadow: var(--shadow-1);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--divider-color);
   }
   .volume-control-compact input[type=range]:disabled {
     opacity: 0.5;

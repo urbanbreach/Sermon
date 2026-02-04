@@ -1,7 +1,7 @@
 <script lang="ts">
   import { railMode, isRailOpen, setRailMode, toggleRail, albumTracks, albumTracksLoading } from '../state/rightRail';
   import { currentTrack, currentTrackFull, playNow } from '../state/playback';
-  import { currentArtworkUrl } from '../state/artwork';
+  import ArtworkImage from './ArtworkImage.svelte';
   import { currentLyrics, lyricsContext } from '../state/lyrics';
   import { railSplitRatio } from '../state/effects';
   import { navigate } from '../state/route';
@@ -193,8 +193,12 @@
           {#if $currentTrackFull}
             <!-- Album Info Card -->
             <div class="album-info-card">
-              {#if $currentArtworkUrl}
-                <img src={$currentArtworkUrl} alt="" class="album-thumb" />
+              {#if ($currentTrackFull as any)?.artworkCacheKey || ($currentTrack as any)?.artworkCacheKey}
+                <ArtworkImage 
+                  cacheKey={($currentTrackFull as any)?.artworkCacheKey || ($currentTrack as any)?.artworkCacheKey} 
+                  size={128} 
+                  class="album-thumb" 
+                />
               {:else}
                 <div class="album-thumb-placeholder"></div>
               {/if}
@@ -293,8 +297,12 @@
 
             <!-- Large Artwork -->
             <div class="large-artwork-container">
-              {#if $currentArtworkUrl}
-                <img src={$currentArtworkUrl} alt="" class="large-artwork" />
+              {#if ($currentTrackFull as any)?.artworkCacheKey || ($currentTrack as any)?.artworkCacheKey}
+                <ArtworkImage 
+                  cacheKey={($currentTrackFull as any)?.artworkCacheKey || ($currentTrack as any)?.artworkCacheKey} 
+                  size={512} 
+                  class="large-artwork" 
+                />
               {:else}
                 <div class="large-artwork-placeholder"></div>
               {/if}
@@ -509,7 +517,7 @@
     border: 1px solid var(--divider-color);
   }
 
-  .album-thumb {
+  :global(.album-thumb) {
     width: 48px;
     height: 48px;
     border-radius: 3px;
@@ -603,7 +611,7 @@
   .track-row:focus {
     background: var(--surface-2);
     outline: none;
-    box-shadow: inset 0 0 0 1px var(--accent-medium);
+    box-shadow: inset 0 0 0 1px var(--divider-color);
   }
 
   .track-row.playing {
@@ -683,7 +691,7 @@
     justify-content: center;
   }
 
-  .large-artwork {
+  :global(.large-artwork) {
     width: 100%;
     height: auto;
     max-height: 100%;
