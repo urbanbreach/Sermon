@@ -1,24 +1,30 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { listAlbumsPage } from '../api/library';
-  import type { AlbumListItem, AlbumCursor } from '../types/library';
-  import { navigate } from '../state/route';
+  import { getLibraryStats, listAlbumsPage } from '../api/library';
+  import type { AlbumListItem } from '../types/library';
   import { setViewTitle } from '../state/viewTitle';
   import { setAlphabetSelector, clearAlphabetSelector } from '../state/alphabetSelector';
-  import { Fixtures } from '../data/fixtures';
-  import { getArtworkBestForAlbum, getArtworkBytes } from '../api/artwork';
+  import {
+    albumArtworkCacheVersion,
+    getAlbumArtworkSrc,
+    getAlbumKey,
+    bumpAlbumArtworkVersion,
+    resetAlbumArtworkCache
+  } from '../state/albumArtwork';
   import ArtworkPickerModal from '../components/ArtworkPickerModal.svelte';
+  import AlbumInlineDetail from '../components/AlbumInlineDetail.svelte';
+  import ArtworkImage from '../components/ArtworkImage.svelte';
+  import { expandedAlbum, toggleAlbumInline, openAlbumInlineFromItem, clearAlbumInline } from '../state/albumInline';
   import SkeletonCard from '../components/SkeletonCard.svelte';
   import { MoreVertical, Play, Disc3 } from '@lucide/svelte';
-  import { hoverScale, staggeredFadeIn, fadeIn } from '../utils/animations';
+  import { fadeIn } from '../utils/animations';
   import { VList } from 'virtua/svelte';
+  import { fade, slide } from 'svelte/transition';
 
   let albums: AlbumListItem[] = $state([]);
   let loading = $state(false);
-  let nextCursor: AlbumCursor | undefined = $state(undefined);
-  let hasMore = $state(true);
   let initialLoadComplete = $state(false);
-  let artworkUrls: Map<string, string> = $state(new Map());
+  let artworkCacheSeed = $derived($albumArtworkCacheVersion);
 
   // Artwork picker modal state
   let pickerOpen = $state(false);
@@ -26,7 +32,11 @@
 
   // Virtualization state
   let containerWidth = $state(0);
-  let vlistRef: VList<typeof rows[0]> | undefined = $state();
+  type RowItem =
+    | { type: 'row'; albums: AlbumListItem[]; rowIndex: number }
+    | { type: 'detail'; album: AlbumListItem; rowIndex: number };
+
+  let vlistRef: VList<RowItem> | undefined = $state();
   
   // Compute columns based on container width (min 160px + 20px gap)
   // containerWidth - 32 accounts for 1rem (16px) padding on each side
@@ -42,23 +52,106 @@
     return res;
   });
 
+  let expandedRowIndex = $derived.by(() => {
+    const target = $expandedAlbum;
+    if (!target) return -1;
+    const index = albums.findIndex(
+      (album) =>
+        album.albumArtistSort === target.albumArtistSort &&
+        album.albumTitleSort === target.albumTitleSort
+    );
+    if (index === -1) return -1;
+    return Math.floor(index / columns);
+  });
+
+  let expandedAlbumItem = $derived.by(() => {
+    const target = $expandedAlbum;
+    if (!target) return null;
+    return (
+      albums.find(
+        (album) =>
+          album.albumArtistSort === target.albumArtistSort &&
+          album.albumTitleSort === target.albumTitleSort
+      ) || null
+    );
+  });
+
+
+  let displayRows = $derived.by(() => {
+    const res: RowItem[] = [];
+    rows.forEach((rowAlbums, rowIndex) => {
+      res.push({ type: 'row', albums: rowAlbums, rowIndex });
+      if (rowIndex === expandedRowIndex && expandedAlbumItem) {
+        res.push({ type: 'detail', album: expandedAlbumItem, rowIndex });
+      }
+    });
+    return res;
+  });
+
   let alphabetItems = $derived(albums.map(a => ({ sortKey: a.albumArtistSort })));
+
+  function getDisplayRowIndex(rowIndex: number): number {
+    if (expandedRowIndex >= 0 && expandedRowIndex < rowIndex) {
+      return rowIndex + 1;
+    }
+    return rowIndex;
+  }
 
   function handleAlphabetSelect(index: number) {
     const rowIndex = Math.floor(index / columns);
     if (vlistRef) {
-      vlistRef.scrollToIndex(rowIndex, { align: 'start', smooth: true });
+      vlistRef.scrollToIndex(getDisplayRowIndex(rowIndex), { align: 'start', smooth: true });
     }
   }
 
-  function getAlbumKey(album: AlbumListItem): string {
-    return `${album.albumArtistSort}||${album.albumTitleSort}`;
+  async function warmThumbnailCache() {
+    const BATCH_SIZE = 4;
+    for (let i = 0; i < albums.length; i += BATCH_SIZE) {
+      const batch = albums.slice(i, i + BATCH_SIZE);
+      await Promise.all(
+        batch.map((album) => {
+          const url = getAlbumArtworkSrc(album, 256);
+          if (!url) return Promise.resolve();
+          return fetch(url).catch(() => {});
+        })
+      );
+    }
   }
 
-  onMount(async () => {
+  async function loadAllAlbums() {
+    if (loading) return;
+    loading = true;
+    initialLoadComplete = false;
+
+    try {
+      const { albumCount } = await getLibraryStats();
+      const page = await listAlbumsPage(albumCount + 10, undefined);
+      albums = page.items;
+      void warmThumbnailCache();
+    } catch (e) {
+      console.error('Failed to load albums:', e);
+    } finally {
+      loading = false;
+      initialLoadComplete = true;
+    }
+  }
+
+  onMount(() => {
     setViewTitle('Albums');
-    await loadMore();
-    initialLoadComplete = true;
+    void loadAllAlbums();
+    
+    // Listen for library changes (after scan) to refresh artwork cache
+    const handleLibraryChange = () => {
+      // Reset album list to reload from scratch
+      albums = [];
+      resetAlbumArtworkCache();
+      void loadAllAlbums();
+    };
+    window.addEventListener('sermon:library-changed', handleLibraryChange);
+    
+    return () => {
+      window.removeEventListener('sermon:library-changed', handleLibraryChange);
+    };
   });
 
   onDestroy(() => {
@@ -73,64 +166,18 @@
     }
   });
 
-  async function loadMore() {
-    if (loading || !hasMore) return;
-    loading = true;
 
-    try {
-      const page = await listAlbumsPage(100, nextCursor);
-      albums = [...albums, ...page.items];
-      nextCursor = page.nextCursor;
-      hasMore = !!nextCursor;
-    } catch (e) {
-      console.error('Failed to load albums:', e);
-    } finally {
-      loading = false;
-    }
-  }
-
-  // VList range change handler for infinite scroll
-  function handleRangeChange(startIndex: number, endIndex: number) {
-    // Load more when approaching end of list
-    const rowsRemaining = rows.length - endIndex;
-    if (rowsRemaining < 5 && hasMore && !loading) {
-      loadMore();
-    }
-  }
-
-  function handleAlbumClick(album: AlbumListItem) {
-    navigate({
-      name: 'album-detail',
+  function handleAlbumClick(album: AlbumListItem, event?: Event) {
+    const clickCount = event instanceof MouseEvent ? event.detail : 1;
+    if (clickCount > 1) return;
+    toggleAlbumInline({
       albumArtistSort: album.albumArtistSort,
       albumTitleSort: album.albumTitleSort
     });
   }
 
-  async function loadAlbumArtwork(album: AlbumListItem) {
-    const key = getAlbumKey(album);
-    if (artworkUrls.has(key)) return;
-
-    // Runtime mode: use IPC
-    try {
-      const best = await getArtworkBestForAlbum(album.albumArtistSort, album.albumTitleSort);
-      if (best.source !== 'none' && best.cacheKey && best.mime) {
-        const bytes = await getArtworkBytes(best.cacheKey, best.mime);
-        const dataUrl = `data:${bytes.mime};base64,${bytes.bytesBase64}`;
-        artworkUrls = new Map(artworkUrls).set(key, dataUrl);
-      }
-    } catch (e) {
-      console.error('Failed to load album artwork:', e);
-    }
-  }
-
-  // Action for lazy loading artwork
-  function lazyArtwork(node: HTMLElement, album: AlbumListItem) {
-    loadAlbumArtwork(album);
-    return {
-      update(newAlbum: AlbumListItem) {
-        loadAlbumArtwork(newAlbum);
-      }
-    };
+  function handleAlbumDoubleClick(album: AlbumListItem) {
+    openAlbumInlineFromItem(album);
   }
 
   function openArtworkPicker(album: AlbumListItem, e: Event) {
@@ -144,17 +191,11 @@
     pickerAlbum = null;
   }
 
-  async function handleArtworkSelected(cacheKey: string) {
+  async function handleArtworkSelected(_cacheKey: string) {
     if (!pickerAlbum) return;
-    
-    // Reload artwork for this album
-    const key = getAlbumKey(pickerAlbum);
-    artworkUrls = new Map(artworkUrls);
-    artworkUrls.delete(key);
-    
-    // Force reload
-    await loadAlbumArtwork(pickerAlbum);
+    bumpAlbumArtworkVersion(pickerAlbum);
   }
+
 </script>
 
 <div 
@@ -163,7 +204,7 @@
 >
   {#if !initialLoadComplete && albums.length === 0}
     <div class="albums-grid">
-      {#each Array(12) as _}
+      {#each Array(12) as _, i (i)}
         <SkeletonCard />
       {/each}
     </div>
@@ -175,56 +216,68 @@
     </div>
   {:else}
     <div class="list-wrapper">
-      <VList bind:this={vlistRef} data={rows} getKey={(row) => getAlbumKey(row[0])}>
-        {#snippet children(row)}
-          <div class="grid-row" style="grid-template-columns: repeat({columns}, 1fr)">
-            {#each row as album, i (getAlbumKey(album))}
-              {@const artworkUrl = artworkUrls.get(getAlbumKey(album))}
-              <div 
-                class="card"
-                role="button"
-                tabindex="0"
-                use:lazyArtwork={album}
-                onkeydown={(e) => e.key === 'Enter' && handleAlbumClick(album)}
-                onclick={() => handleAlbumClick(album)}
-                use:hoverScale={{ scale: 1.02, duration: 200 }}
-              >
-                {#if artworkUrl}
-                  <div class="artwork">
-                    <img src={artworkUrl} alt="" loading="lazy" />
-                    <div class="play-overlay">
-                      <Play fill="white" size={24} />
-                    </div>
-                  </div>
-                {:else}
-                  <div class="artwork-placeholder">
-                    <div class="play-overlay">
-                      <Play fill="white" size={24} />
-                    </div>
-                  </div>
-                {/if}
-                <div class="info">
-                  <div class="title" title={album.albumTitleDisplay}>{album.albumTitleDisplay}</div>
-                  <div class="artist" title={album.albumArtistDisplay}>{album.albumArtistDisplay}</div>
-                  {#if album.year}<div class="year">{album.year}</div>{/if}
-                </div>
-                <button 
-                  class="choose-artwork-btn"
-                  onclick={(e) => openArtworkPicker(album, e)}
-                  title="Choose Artwork"
+      <VList
+        bind:this={vlistRef}
+        data={displayRows}
+        bufferSize={12}
+        getKey={(item) =>
+          item.type === 'row'
+            ? `row-${item.rowIndex}`
+            : `detail-${getAlbumKey(item.album)}`
+        }
+      >
+        {#snippet children(item)}
+          {#if item.type === 'row'}
+            <div class="grid-row" style="grid-template-columns: repeat({columns}, 1fr)">
+              {#each item.albums as album (getAlbumKey(album))}
+                <div 
+                  class="card"
+                  role="button"
+                  tabindex="0"
+                  onkeydown={(e) => e.key === 'Enter' && handleAlbumClick(album)}
+                  onclick={(e) => handleAlbumClick(album, e)}
+                  ondblclick={() => handleAlbumDoubleClick(album)}
                 >
-                  <MoreVertical size={16} />
-                </button>
+                  <div class="artwork">
+                    <ArtworkImage 
+                      cacheKey={album.artworkCacheKey}
+                      artistSort={album.albumArtistSort}
+                      titleSort={album.albumTitleSort}
+                      size={256}
+                      alt="{album.albumTitleDisplay} artwork"
+                    />
+                    <div class="play-overlay">
+                      <Play fill="white" size={24} />
+                    </div>
+                  </div>
+                  <div class="info">
+                    <div class="title" title={album.albumTitleDisplay}>{album.albumTitleDisplay}</div>
+                    <div class="artist" title={album.albumArtistDisplay}>{album.albumArtistDisplay}</div>
+                    {#if album.year}<div class="year">{album.year}</div>{/if}
+                  </div>
+                  <button 
+                    class="choose-artwork-btn"
+                    onclick={(e) => openArtworkPicker(album, e)}
+                    title="Choose Artwork"
+                  >
+                    <MoreVertical size={16} />
+                  </button>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <div class="detail-row" transition:slide={{ duration: 220 }}>
+              <div class="detail-fade" in:fade={{ duration: 220 }} out:fade={{ duration: 150 }}>
+                <AlbumInlineDetail
+                  album={item.album}
+                  onClose={() => clearAlbumInline()}
+                />
               </div>
-            {/each}
-          </div>
+            </div>
+          {/if}
         {/snippet}
       </VList>
     </div>
-    
-    {#if loading}
-      <div class="loading-more">Loading more...</div>
-    {/if}
   {/if}
 </div>
 
@@ -266,29 +319,6 @@
     padding-top: 0; /* Padding moved inside virtua scroll container */
   }
   
-  /* Allow hover scale shadow to overflow the scroll container top edge.
-     Virtua generates: div[overflow:auto] > div > div > grid-rows
-     We add padding inside the scroll container and use negative margin on 
-     the first grid row to maintain scroll start position. */
-  .list-wrapper :global(> div) {
-    /* The virtua scroll container - add internal padding for hover scale expansion.
-       contain: strict creates a paint boundary that clips at the content-box edge.
-       Cards scale(1.02) which expands ~2.3px upward. 20px padding ensures no clipping. */
-    padding-top: 20px !important;
-  }
-  
-  .list-wrapper :global(> div > div),
-  .list-wrapper :global(> div > div > div) {
-    overflow: visible !important;
-  }
-  
-  /* Add top margin to first visible row for hover scale expansion.
-     The first div[position:absolute] is the first virtualized chunk.
-     Using padding on inner containers won't work due to contain: size. */
-  .list-wrapper :global(> div > div > div:first-child) {
-    margin-top: 4px !important;
-  }
-  
   .grid-row {
     display: grid;
     gap: 20px;
@@ -297,23 +327,39 @@
     overflow: visible;
   }
 
+  .grid-row > .card {
+    min-width: 0; /* Allow grid items to shrink below content size */
+    max-width: 100%;
+  }
+
+  .detail-row {
+    padding-right: 1rem;
+    margin-bottom: 24px;
+  }
+
+  .detail-fade {
+    will-change: opacity, transform;
+  }
+
   .card {
-    background: var(--surface-1);
+    background: transparent;
     border-radius: var(--artwork-radius-albums, 10px);
-    border: 1px solid transparent;
+    border: none;
     box-shadow: none;
     overflow: hidden;
     display: flex;
     flex-direction: column;
     cursor: pointer;
     position: relative;
-    transition: background var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out);
-    padding: 12px;
+    transition: background var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
+    padding: 0;
+    width: 100%;
+    box-sizing: border-box;
   }
 
   .card:hover {
     background: var(--surface-hover);
-    transform: translateY(-2px);
+    box-shadow: var(--shadow-2);
   }
   
   .card:focus-visible {
@@ -340,16 +386,13 @@
     pointer-events: none;
     z-index: 2;
     box-shadow: var(--shadow-2);
+    will-change: transform, opacity;
   }
 
   .card:hover .play-overlay {
     opacity: 1 !important;
     visibility: visible;
     transform: translate(-50%, -50%) scale(1.1);
-  }
-
-  .card:hover .artwork img {
-    opacity: 1;
   }
 
   .card:hover .choose-artwork-btn {
@@ -381,17 +424,6 @@
     color: #000;
   }
 
-  .artwork-placeholder {
-    width: 100%;
-    aspect-ratio: 1;
-    background: var(--surface-2);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-disabled);
-    border-radius: var(--artwork-radius-albums, 10px);
-    position: relative;
-  }
 
   .artwork {
     width: 100%;
@@ -402,19 +434,14 @@
     background: var(--surface-2);
   }
 
-  .artwork img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    transition: none;
-  }
-
   .info {
-    padding: 12px 0 0 0;
+    padding: 10px 0 0 0;
     min-height: auto;
     display: flex;
     flex-direction: column;
     gap: 2px;
+    align-items: center;
+    text-align: center;
   }
 
   .title {
@@ -426,6 +453,7 @@
     font-size: 14px;
     line-height: 1.3;
     color: var(--text-primary);
+    width: 100%;
   }
 
   .artist {
@@ -436,6 +464,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     line-height: 1.3;
+    width: 100%;
   }
 
   .year {
@@ -471,9 +500,4 @@
     color: var(--text-tertiary);
   }
 
-  .loading-more {
-    text-align: center;
-    padding: 2rem;
-    color: var(--text-tertiary);
-  }
 </style>
