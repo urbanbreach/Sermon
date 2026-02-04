@@ -4,7 +4,7 @@
     currentTrack, playbackState, progress, 
     positionMs, durationMs, seek, audioDebug
   } from '../state/playback';
-  import { currentArtworkUrl } from '../state/artwork';
+  import ArtworkImage from '../components/ArtworkImage.svelte';
   import { ArrowLeft, Disc, Activity, Cpu, Speaker } from 'lucide-svelte';
   
   function handleGoBack() {
@@ -51,8 +51,13 @@
   <div class="content-grid">
     <div class="artwork-section">
       <div class="art-container">
-        {#if $currentArtworkUrl}
-          <img src={$currentArtworkUrl} alt="Album artwork" class="art-image" />
+        {#if ($currentTrack as any)?.artworkCacheKey}
+          <ArtworkImage 
+            cacheKey={($currentTrack as any)?.artworkCacheKey} 
+            size={512} 
+            alt="Album artwork" 
+            class="art-image" 
+          />
         {:else}
           <div class="art-placeholder">
             <Disc size={64} strokeWidth={1} />
@@ -177,9 +182,8 @@
   }
 
   .back-btn {
-    background: rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--surface-1);
+    border: 1px solid var(--divider-color);
     padding: 0.5rem 1rem;
     color: var(--text-secondary);
     cursor: pointer;
@@ -193,9 +197,9 @@
   }
 
   .back-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--surface-hover);
     color: var(--text-primary);
-    border-color: rgba(255, 255, 255, 0.2);
+    border-color: var(--text-primary);
   }
 
   .content-grid {
@@ -226,7 +230,7 @@
     overflow: hidden;
   }
 
-  .art-image {
+  :global(.art-image) {
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -389,7 +393,8 @@
     left: 0;
     right: 0;
     padding: 2rem 4rem;
-    background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+    background: var(--surface-0);
+    border-top: 1px solid var(--divider-color);
   }
 
   .scrubber-container {

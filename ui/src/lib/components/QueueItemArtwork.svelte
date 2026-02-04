@@ -1,91 +1,28 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { getArtworkBestForTrack, getArtworkBytes } from '../api/artwork';
-  import { queueArtworkCache, setQueueArtworkCache } from '../state/queueArtwork';
-  import { Fixtures } from '../data/fixtures';
-  
+  import ArtworkImage from './ArtworkImage.svelte';
+
   interface Props {
-    trackId: number;
+    trackId?: number;
+    cacheKey?: string | null;
     size?: number;
   }
   
-  let { trackId, size = 40 }: Props = $props();
-  
-  let artworkUrl = $state<string | null>(null);
-  let loading = $state(true);
-  
-  // Check cache first, then fetch if needed
-  $effect(() => {
-    const cached = $queueArtworkCache.get(trackId);
-    if (cached !== undefined) {
-      // Cache hit (could be url or null for "no artwork")
-      artworkUrl = cached;
-      loading = false;
-    } else {
-      // Cache miss - fetch artwork
-      loading = true;
-      fetchArtwork(trackId);
-    }
-  });
-  
-  async function fetchArtwork(id: number) {
-    try {
-      // Mock mode check
-      if (import.meta.env.SERMON_MOCK === '1') {
-        // In mock mode, we don't have track-to-album mapping readily available
-        // Just set null for now (could be enhanced later)
-        setQueueArtworkCache(id, null);
-        artworkUrl = null;
-        loading = false;
-        return;
-      }
-      
-      const best = await getArtworkBestForTrack(id);
-      if (best.source !== 'none' && best.cacheKey && best.mime) {
-        const bytes = await getArtworkBytes(best.cacheKey, best.mime);
-        const url = `data:${bytes.mime};base64,${bytes.bytesBase64}`;
-        setQueueArtworkCache(id, url);
-        artworkUrl = url;
-      } else {
-        // No artwork available
-        setQueueArtworkCache(id, null);
-        artworkUrl = null;
-      }
-    } catch (e) {
-      console.error('Failed to fetch queue item artwork:', e);
-      setQueueArtworkCache(id, null);
-      artworkUrl = null;
-    } finally {
-      loading = false;
-    }
-  }
+  let { trackId, cacheKey, size = 40 }: Props = $props();
 </script>
 
-{#if artworkUrl}
-  <img 
-    src={artworkUrl} 
-    alt="" 
-    class="q-thumb"
-    style="width: {size}px; height: {size}px;"
-  />
-{:else}
-  <div 
-    class="q-thumb-placeholder"
-    style="width: {size}px; height: {size}px;"
-  ></div>
-{/if}
+<div class="q-thumb-wrapper" style="width: {size}px; height: {size}px;">
+  <ArtworkImage {cacheKey} {size} class="q-thumb-inner" />
+</div>
 
 <style>
-  .q-thumb {
-    border-radius: 4px;
-    object-fit: cover;
+  .q-thumb-wrapper {
     flex-shrink: 0;
+    border-radius: 4px;
+    overflow: hidden;
     background: #222;
   }
-  
-  .q-thumb-placeholder {
+
+  :global(.q-thumb-inner) {
     border-radius: 4px;
-    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
-    flex-shrink: 0;
   }
 </style>
