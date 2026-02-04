@@ -6,6 +6,9 @@
   import { invoke } from '@tauri-apps/api/core';
   import type { TrackRow, ArtistCursor } from '../types/library';
   import { ArrowLeft } from '@lucide/svelte';
+  import { openAlbumInline } from '../state/albumInline';
+  import { getArtworkBestForAlbum } from '../api/artwork';
+  import ArtworkImage from '../components/ArtworkImage.svelte';
 
   interface ArtistAlbum {
     albumTitleDisplay: string;
@@ -15,6 +18,7 @@
     year?: number;
     trackCount: number;
     tracks: TrackRow[];
+    artworkCacheKey?: string;
   }
 
   let artistSort = '';
@@ -90,6 +94,9 @@
         }
         
         albumMap = map;
+        
+        // Load artwork keys in background
+        loadArtworkKeys(Array.from(map.values()));
       } else {
         artistDisplay = artistSort;
         albumMap = new Map();
@@ -104,12 +111,33 @@
     }
   }
 
+  async function loadArtworkKeys(albumsToLoad: ArtistAlbum[]) {
+    let updated = false;
+    for (const album of albumsToLoad) {
+      if (album.artworkCacheKey) continue;
+      try {
+        const best = await getArtworkBestForAlbum(album.albumArtistSort, album.albumTitleSort);
+        if (best.cacheKey) {
+          album.artworkCacheKey = best.cacheKey;
+          updated = true;
+        }
+      } catch (e) {
+        // Ignore errors
+      }
+    }
+    
+    if (updated) {
+      // Trigger reactivity
+      albumMap = new Map(albumMap);
+    }
+  }
+
   function handleAlbumClick(album: ArtistAlbum) {
-    navigate({
-      name: 'album-detail',
+    openAlbumInline({
       albumArtistSort: album.albumArtistSort,
       albumTitleSort: album.albumTitleSort
     });
+    navigate({ name: 'albums' });
   }
 
   function handlePlayArtist() {
@@ -172,7 +200,7 @@
     {:else}
       <h2>Discography</h2>
       <div class="albums-grid">
-        {#each albums as album}
+        {#each albums as album (album.albumArtistSort + album.albumTitleSort)}
           <div 
             class="album-card"
             role="button"
@@ -180,11 +208,14 @@
             onclick={() => handleAlbumClick(album)}
             onkeydown={(e) => e.key === 'Enter' && handleAlbumClick(album)}
           >
-            <div class="album-artwork">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <circle cx="12" cy="12" r="10"/>
-                <circle cx="12" cy="12" r="3"/>
-              </svg>
+            <div class="album-artwork-container">
+              <ArtworkImage
+                cacheKey={album.artworkCacheKey}
+                artistSort={album.albumArtistSort}
+                titleSort={album.albumTitleSort}
+                size={256}
+                alt="{album.albumTitleDisplay} artwork"
+              />
             </div>
             <div class="album-info">
               <div class="album-title" title={album.albumTitleDisplay}>{album.albumTitleDisplay}</div>
@@ -209,7 +240,7 @@
     display: flex;
     flex-direction: column;
     gap: 3rem;
-    background: var(--bg-main);
+    background: var(--surface-0);
   }
 
   .top-bar {
@@ -218,7 +249,7 @@
 
   .back-btn {
     background: transparent;
-    border: 1px solid var(--border-dim);
+    border: 1px solid var(--divider-color);
     color: var(--text-secondary);
     cursor: pointer;
     font-size: 0.9rem;
@@ -249,14 +280,14 @@
     gap: 2.5rem;
     align-items: flex-end;
     padding-bottom: 2rem;
-    border-bottom: 1px solid var(--border-dim);
+    border-bottom: 1px solid var(--divider-color);
   }
 
   .artist-icon {
     width: 180px;
     height: 180px;
     background: var(--surface-2);
-    border: 1px solid var(--border-dim);
+    border: 1px solid var(--divider-color);
     border-radius: 0;
     display: flex;
     align-items: center;
@@ -289,7 +320,7 @@
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    border-bottom: 1px solid var(--border-dim);
+    border-bottom: 1px solid var(--divider-color);
     padding-bottom: 0.5rem;
     display: inline-block;
   }
@@ -304,7 +335,7 @@
   }
 
   .bullet {
-    color: var(--border-dim);
+    color: var(--divider-color);
   }
 
   .artist-actions {
@@ -313,7 +344,7 @@
 
   .primary-btn {
     background: var(--text-primary);
-    color: var(--bg-main);
+    color: var(--surface-0);
     border: none;
     padding: 1rem 2.5rem;
     border-radius: 0;
@@ -326,7 +357,7 @@
   }
 
   .primary-btn:hover:not(:disabled) {
-    background: var(--accent-primary);
+    background: var(--theme-accent);
     color: #fff;
     transform: translateY(-2px);
   }
@@ -334,7 +365,7 @@
   .primary-btn:disabled {
     opacity: 0.5;
     cursor: default;
-    background: var(--surface-3);
+    background: var(--surface-2);
     color: var(--text-tertiary);
   }
 
@@ -364,19 +395,15 @@
     transform: translateY(-4px);
   }
 
-  .album-card:hover .album-artwork {
+  .album-card:hover .album-artwork-container {
     border-color: var(--text-primary);
   }
 
-  .album-artwork {
+  .album-artwork-container {
     width: 100%;
     aspect-ratio: 1;
     background: var(--surface-2);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-tertiary);
-    border: 1px solid var(--border-dim);
+    border: 1px solid var(--divider-color);
     transition: border-color 0.2s;
   }
 
@@ -441,6 +468,6 @@
   
   .error-state button:hover {
     background: var(--text-primary);
-    color: var(--bg-main);
+    color: var(--surface-0);
   }
 </style>

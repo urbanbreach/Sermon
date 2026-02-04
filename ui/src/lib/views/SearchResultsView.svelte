@@ -4,6 +4,8 @@
   import { playNow, addToQueue } from '../state/playback';
   import { searchTracksPage, searchAlbumsPage, searchArtistsPage } from '../api/library';
   import type { TrackRow, AlbumListItem, ArtistListItem, OffsetCursor, AlbumCursor, ArtistCursor } from '../types/library';
+  import { openAlbumInlineFromItem } from '../state/albumInline';
+  import ArtworkImage from '../components/ArtworkImage.svelte';
   import { ArrowLeft } from '@lucide/svelte';
   import { VList } from 'virtua/svelte';
 
@@ -154,11 +156,8 @@
   }
 
   function handleAlbumClick(album: AlbumListItem) {
-    navigate({
-      name: 'album-detail',
-      albumArtistSort: album.albumArtistSort,
-      albumTitleSort: album.albumTitleSort
-    });
+    openAlbumInlineFromItem(album);
+    navigate({ name: 'albums' });
   }
 
   function handleTrackClick(track: TrackRow) {
@@ -228,7 +227,15 @@
             onclick={() => handleAlbumClick(album)}
             onkeydown={(e) => e.key === 'Enter' && handleAlbumClick(album)}
           >
-            <div class="album-art"></div>
+            <div class="album-art-container">
+              <ArtworkImage
+                cacheKey={album.artworkCacheKey}
+                artistSort={album.albumArtistSort}
+                titleSort={album.albumTitleSort}
+                size={256}
+                alt="{album.albumTitleDisplay} artwork"
+              />
+            </div>
             <div class="album-info">
               <div class="album-title" title={album.albumTitleDisplay}>{album.albumTitleDisplay}</div>
               <div class="album-artist" title={album.albumArtistDisplay}>{album.albumArtistDisplay}</div>
@@ -418,10 +425,12 @@
     border-color: rgba(255,255,255,0.3);
   }
 
-  .album-art {
+  .album-art-container {
     aspect-ratio: 1;
     background: #222;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    display: block;
+    width: 100%;
   }
 
   .album-info {
