@@ -74,6 +74,14 @@ export async function addToQueue(trackId: number) {
   }
 }
 
+export async function addToQueueNext(trackIds: number[]) {
+  try {
+    await api.queueAddNext(trackIds);
+  } catch (e) {
+    console.error('Add to queue next failed:', e);
+  }
+}
+
 export async function togglePlayPause() {
   const state = get(playbackState);
   console.log('[Playback] togglePlayPause called, current state:', state);
@@ -89,6 +97,10 @@ export async function togglePlayPause() {
   } catch (e) {
     console.error('[Playback] togglePlayPause failed:', e);
   }
+}
+
+export async function restorePlaybackSession(): Promise<void> {
+  await api.restorePlaybackSession();
 }
 
 export async function stop() {

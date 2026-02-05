@@ -2,6 +2,7 @@ use audio_engine::EngineState;
 use crossbeam_channel::Sender;
 use parking_lot::Mutex;
 use parking_lot::Mutex as ParkingMutex;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -129,6 +130,27 @@ pub struct DiagnosticsState {
     pub underrun_count: AtomicU64,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct PlaybackSessionSnapshot {
+    pub version: u8,
+    pub last_state: String,
+    pub track_id: Option<i64>,
+    pub queue_track_ids: Vec<i64>,
+    pub current_index: usize,
+    pub position_ms: u64,
+    pub updated_at_ms: u64,
+}
+
+pub fn persist_session(
+    db_path: &PathBuf,
+    snapshot: &PlaybackSessionSnapshot,
+) -> Result<(), String> {
+    let conn = library::open_db(db_path).map_err(|e| e.to_string())?;
+    let payload = serde_json::to_string(snapshot).map_err(|e| e.to_string())?;
+    library::db::set_setting(&conn, "playback.session", &payload).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 impl Default for DiagnosticsState {
     fn default() -> Self {
         Self {
@@ -201,8 +223,16 @@ pub enum PlaybackCommand {
         track_ids: Vec<i64>,
         start_index: usize,
     },
+    RestoreSession {
+        track_ids: Vec<i64>,
+        start_index: usize,
+        position_ms: u64,
+    },
     AddToQueue {
         track_id: i64,
+    },
+    AddToQueueNext {
+        track_ids: Vec<i64>,
     },
     Pause,
     Resume,
@@ -238,6 +268,9 @@ pub enum PlaybackCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use library::apply_migrations;
+    use library::db::get_setting;
+    use tempfile::tempdir;
 
     #[test]
     fn test_diagnostics_state_default() {
@@ -320,5 +353,48 @@ mod tests {
         }
 
         assert_eq!(state.underruns(), 1000);
+    }
+
+    #[test]
+    fn test_playback_session_snapshot_round_trip() {
+        let snapshot = PlaybackSessionSnapshot {
+            version: 1,
+            last_state: "playing".to_string(),
+            track_id: Some(42),
+            queue_track_ids: vec![42, 7, 9],
+            current_index: 0,
+            position_ms: 123_456,
+            updated_at_ms: 1_700_000_000_000,
+        };
+
+        let payload = serde_json::to_string(&snapshot).unwrap();
+        let decoded: PlaybackSessionSnapshot = serde_json::from_str(&payload).unwrap();
+        assert_eq!(decoded, snapshot);
+    }
+
+    #[test]
+    fn test_persist_session_writes_setting() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("playback_session.db");
+        let conn = library::open_db(&db_path).unwrap();
+        apply_migrations(&conn).unwrap();
+
+        let snapshot = PlaybackSessionSnapshot {
+            version: 1,
+            last_state: "paused".to_string(),
+            track_id: Some(9),
+            queue_track_ids: vec![9, 3],
+            current_index: 1,
+            position_ms: 5_000,
+            updated_at_ms: 1_700_000_000_500,
+        };
+
+        persist_session(&db_path, &snapshot).unwrap();
+
+        let stored = get_setting(&conn, "playback.session")
+            .unwrap()
+            .expect("setting should exist");
+        let decoded: PlaybackSessionSnapshot = serde_json::from_str(&stored).unwrap();
+        assert_eq!(decoded, snapshot);
     }
 }

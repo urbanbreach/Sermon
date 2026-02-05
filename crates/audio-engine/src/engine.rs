@@ -29,6 +29,10 @@ impl EngineState {
         self.queue.add_to_queue(track);
     }
 
+    pub fn add_to_queue_next(&mut self, tracks: Vec<TrackInfo>) {
+        self.queue.insert_next(tracks);
+    }
+
     pub fn set_and_play(&mut self, tracks: Vec<TrackInfo>, start_index: usize) {
         self.queue.set_and_play(tracks, start_index);
         if let Some(item) = self.queue.current() {

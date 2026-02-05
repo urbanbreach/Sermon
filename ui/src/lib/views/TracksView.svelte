@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { VList } from 'virtua/svelte';
-  import { tracks, sortBy, sortDirection, scanStatus, scanProgress, setSortBy, toggleSortDirection, initLibrary, loadTracks } from '../state/library';
-  import { playNow, addToQueue, currentTrack, playNowWithQueue } from '../state/playback';
+  import { tracks, sortBy, scanStatus, scanProgress, setSortBy, toggleSortDirection, initLibrary, loadTracks } from '../state/library';
+  import { addToQueue, addToQueueNext, currentTrack, playNowWithQueue } from '../state/playback';
   import { setViewTitle } from '../state/viewTitle';
   import type { SortBy, TrackRow } from '../types/library';
   import TagEditor from '../components/TagEditor.svelte';
   import SkeletonRow from '../components/SkeletonRow.svelte';
-  import * as DropdownMenu from '../components/primitives/DropdownMenu.svelte';
+  import * as ContextMenu from '../components/primitives/ContextMenu.svelte';
   import { ChevronUp, Play, ListMusic, Check, Square } from '@lucide/svelte';
   import { fadeIn } from '../utils/animations';
 
@@ -16,8 +16,11 @@
   let selectedIds = $state<Set<number>>(new Set());
 
   // Tag editor state
-  let editingTrack = $state<TrackRow | null>(null);
+  let editingTrackIds = $state<number[]>([]);
   let tagEditorOpen = $state(false);
+
+  // Right-click context menu state
+  let rightClickTrackId = $state<number | null>(null);
 
   let initialLoadComplete = $state(false);
 
@@ -49,14 +52,14 @@
     }
   }
 
-  function openTagEditor(track: TrackRow) {
-    editingTrack = track;
+  function openTagEditor(ids: number[]) {
+    editingTrackIds = ids;
     tagEditorOpen = true;
   }
 
   function closeTagEditor() {
     tagEditorOpen = false;
-    editingTrack = null;
+    editingTrackIds = [];
   }
 
   function handleTrackDoubleClick(track: TrackRow, trackIndex: number) {
@@ -115,6 +118,53 @@
     selectedIds = new Set();
     selectionMode = false;
   }
+
+  // Context menu handlers
+  function handleContextMenu(e: MouseEvent, track: TrackRow) {
+    e.preventDefault();
+    
+    // Right-click selection rule:
+    // If right-clicked row is NOT selected → replace selection with that row
+    // If right-clicked row IS selected → keep current selection (multi-select)
+    if (!selectedIds.has(track.id)) {
+      selectedIds = new Set([track.id]);
+    }
+    
+    rightClickTrackId = track.id;
+  }
+
+  function getOrderedSelectedIds(): number[] {
+    // Return selected IDs in the order they appear in $tracks
+    return $tracks.filter(t => selectedIds.has(t.id)).map(t => t.id);
+  }
+
+  async function handlePlayNowSelected() {
+    const orderedIds = getOrderedSelectedIds();
+    if (orderedIds.length > 0) {
+      await playNowWithQueue(orderedIds, 0);
+    }
+  }
+
+  async function handleQueueNextSelected() {
+    const orderedIds = getOrderedSelectedIds();
+    if (orderedIds.length > 0) {
+      await addToQueueNext(orderedIds);
+    }
+  }
+
+  async function handleQueueLastSelected() {
+    const orderedIds = getOrderedSelectedIds();
+    for (const id of orderedIds) {
+      await addToQueue(id);
+    }
+  }
+
+  function handleEditSelected() {
+    const ids = Array.from(selectedIds);
+    if (ids.length > 0) {
+      openTagEditor(ids);
+    }
+  }
 </script>
 
 <div class="view-container" use:fadeIn={{ duration: 300 }}>
@@ -124,12 +174,13 @@
     </div>
   {/if}
 
-  {#if selectedIds.size > 0}
+  {#if selectionMode && selectedIds.size > 0}
     <div class="selection-bar" data-testid="tracks-selection-bar">
       <span class="selection-count">{selectedIds.size} selected</span>
       <div class="selection-actions">
         <button class="selection-btn primary" onclick={playSelected}>Play Now</button>
         <button class="selection-btn" onclick={queueSelected}>Add to Queue</button>
+        <button class="selection-btn" onclick={() => openTagEditor(Array.from(selectedIds))}>Edit Tags</button>
         <button class="selection-btn cancel" onclick={clearSelection}>Cancel</button>
       </div>
     </div>
@@ -175,7 +226,7 @@
 
     {#if !initialLoadComplete && $tracks.length === 0}
       <div class="loading-state">
-        {#each Array(10) as _}
+        {#each Array(10) as _, idx (idx)}
           <SkeletonRow />
         {/each}
       </div>
@@ -189,70 +240,63 @@
       <div class="list-wrapper">
         <VList data={$tracks} getKey={(t) => t.id} itemSize={40} bufferSize={200}>
           {#snippet children(track: TrackRow, i: number)}
-            <div 
-              class="track-row"
-              class:missing={track.isMissing} 
-              class:playing={$currentTrack?.id === track.id}
-              class:selected={selectedIds.has(track.id)}
-              class:selection-mode={selectionMode}
-              ondblclick={() => handleTrackDoubleClick(track, i)}
-              onclick={(e) => handleRowClick(e, track)}
-              role="row"
-              tabindex="0"
-              aria-rowindex={i + 1}
-              aria-selected={selectedIds.has(track.id)}
-            >
-              <div class="col-index cell">
-                {#if selectionMode}
-                  <button 
-                    class="checkbox-btn"
-                    onclick={(e) => { e.stopPropagation(); toggleSelection(track.id); }}
+            <ContextMenu.Root>
+              <ContextMenu.Trigger asChild>
+                {#snippet children({ props })}
+                  <div 
+                    {...props}
+                    class="track-row"
+                    class:missing={track.isMissing} 
+                    class:playing={$currentTrack?.id === track.id}
+                    class:selected={selectedIds.has(track.id)}
+                    class:selection-mode={selectionMode}
+                    ondblclick={() => handleTrackDoubleClick(track, i)}
+                    onclick={(e) => handleRowClick(e, track)}
+                    oncontextmenu={(e) => handleContextMenu(e, track)}
+                    role="row"
+                    tabindex="0"
+                    aria-rowindex={i + 1}
+                    aria-selected={selectedIds.has(track.id)}
                   >
-                    {#if selectedIds.has(track.id)}
-                      <Check size={14} />
-                    {:else}
-                      <Square size={14} />
-                    {/if}
-                  </button>
-                {:else}
-                  <div class="row-index">
-                    <span class="number">{i + 1}</span>
-                    <button class="play-icon" onclick={(e) => handlePlayIconClick(e, track, i)}>
-                      <Play size={12} fill="currentColor" />
-                    </button>
+                    <div class="col-index cell">
+                      {#if selectionMode}
+                        <button 
+                          class="checkbox-btn"
+                          onclick={(e) => { e.stopPropagation(); toggleSelection(track.id); }}
+                        >
+                          {#if selectedIds.has(track.id)}
+                            <Check size={14} />
+                          {:else}
+                            <Square size={14} />
+                          {/if}
+                        </button>
+                      {:else}
+                        <div class="row-index">
+                          <span class="number">{i + 1}</span>
+                          <button class="play-icon" onclick={(e) => handlePlayIconClick(e, track, i)}>
+                            <Play size={12} fill="currentColor" />
+                          </button>
+                        </div>
+                      {/if}
+                    </div>
+                    <div class="col-name cell">{track.title || '—'}</div>
+                    <div class="col-artist cell">{track.artist || '—'}</div>
+                    <div class="col-album cell">{track.album || '—'}</div>
+                    <div class="col-genre cell">{track.genre || '—'}</div>
+                    <div class="col-time cell">{formatDuration(track.durationMs)}</div>
                   </div>
-                {/if}
-              </div>
-              <div class="col-name cell">{track.title || '—'}</div>
-              <div class="col-artist cell">{track.artist || '—'}</div>
-              <div class="col-album cell">{track.album || '—'}</div>
-              <div class="col-genre cell">{track.genre || '—'}</div>
-              <div class="col-time cell">{formatDuration(track.durationMs)}</div>
-              <div class="col-actions cell">
-                <DropdownMenu.Root>
-                  <DropdownMenu.Trigger 
-                    class="ellipsis-btn" 
-                    onclick={(e: MouseEvent) => e.stopPropagation()}
-                  >
-                    ⋯
-                  </DropdownMenu.Trigger>
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.Content class="dropdown-content" align="end" sideOffset={5}>
-                      <DropdownMenu.Item class="dropdown-item" onclick={() => playNow(track.id)}>
-                        Play Now
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item class="dropdown-item" onclick={() => addToQueue(track.id)}>
-                        Add to Queue
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Separator class="dropdown-separator" />
-                      <DropdownMenu.Item class="dropdown-item" onclick={() => openTagEditor(track)}>
-                        Edit Tags...
-                      </DropdownMenu.Item>
-                    </DropdownMenu.Content>
-                  </DropdownMenu.Portal>
-                </DropdownMenu.Root>
-              </div>
-            </div>
+                {/snippet}
+              </ContextMenu.Trigger>
+              <ContextMenu.Portal>
+                <ContextMenu.Content class="dropdown-content" data-testid="tracks-context-menu">
+                  <ContextMenu.Item class="dropdown-item" onclick={handlePlayNowSelected}>Play Now</ContextMenu.Item>
+                  <ContextMenu.Item class="dropdown-item" onclick={handleQueueNextSelected}>Queue Next</ContextMenu.Item>
+                  <ContextMenu.Item class="dropdown-item" onclick={handleQueueLastSelected}>Queue Last</ContextMenu.Item>
+                  <ContextMenu.Separator class="dropdown-separator" />
+                  <ContextMenu.Item class="dropdown-item" onclick={handleEditSelected}>Edit</ContextMenu.Item>
+                </ContextMenu.Content>
+              </ContextMenu.Portal>
+            </ContextMenu.Root>
           {/snippet}
         </VList>
       </div>
@@ -260,7 +304,7 @@
   </div>
 </div>
 
-<TagEditor track={editingTrack} open={tagEditorOpen} onclose={closeTagEditor} />
+<TagEditor trackIds={editingTrackIds} open={tagEditorOpen} onclose={closeTagEditor} />
 
 <style>
   .view-container {
@@ -438,7 +482,7 @@
   /* Row styling */
   .track-row {
     display: grid;
-    grid-template-columns: 40px minmax(200px, 1.4fr) 1fr 1fr 1fr 75px 40px;
+    grid-template-columns: 40px minmax(200px, 1.4fr) 1fr 1fr 1fr 75px;
     height: 44px;
     border-bottom: 1px solid transparent;
     font-size: 14px;
@@ -554,35 +598,6 @@
     font-size: 13px;
     margin: 0;
     color: var(--text-tertiary);
-  }
-  
-  /* Ellipsis button */
-  :global(.ellipsis-btn) {
-    background: transparent;
-    border: none;
-    color: var(--text-tertiary);
-    font-size: 18px;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-    letter-spacing: 2px;
-    opacity: 0;
-    transition: all var(--motion-fast) var(--ease-out);
-  }
-  .track-row:hover :global(.ellipsis-btn) {
-    opacity: 1;
-  }
-  :global(.ellipsis-btn[aria-expanded="true"]),
-  :global(.ellipsis-btn:focus-visible) {
-    opacity: 1;
-  }
-  :global(.ellipsis-btn:hover) {
-    color: var(--text-primary);
-    background: var(--surface-hover);
-  }
-  :global(.ellipsis-btn:focus-visible) {
-    outline: none;
-    box-shadow: 0 0 0 1px var(--text-secondary);
   }
   
   /* Row number / play column */

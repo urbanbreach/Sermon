@@ -1,621 +1,332 @@
 <script lang="ts">
-  import { listen } from '@tauri-apps/api/event';
-  import { onMount, onDestroy } from 'svelte';
   import Modal from './Modal.svelte';
-  import { updateTrackTags } from '../api/library';
+  import { updateTrackTags, getTrackTagsBatch, updateTrackTagsBatch } from '../api/library';
   import { loadTracks } from '../state/library';
-  import type { TrackRow, TagPatch, NumberPatch, TagWriteStatusEvent } from '../types/library';
-  import { X } from '@lucide/svelte';
+  import type { TrackRow, TagPatch, NumberPatch, BatchUpdateRequest } from '../types/library';
+  import MetadataTab from './tag-editor/MetadataTab.svelte';
+  import ArtworkTab from './tag-editor/ArtworkTab.svelte';
+  import InspectorTab from './tag-editor/InspectorTab.svelte';
+  import LyricsTab from './tag-editor/LyricsTab.svelte';
 
   interface Props {
-    track: TrackRow | null;
+    trackIds: number[];
     open: boolean;
     onclose: () => void;
   }
 
-  let { track, open, onclose }: Props = $props();
+  let { trackIds, open, onclose }: Props = $props();
 
-  // Form state - initialized from track
-  let title = $state('');
-  let artist = $state('');
-  let album = $state('');
-  let albumArtist = $state('');
-  let genre = $state('');
-  let trackNo = $state('');
-  let discNo = $state('');
-  let year = $state('');
+  // MusicBee-style tabs
+  const tabs = [
+    { id: 'properties', label: 'Properties' },
+    { id: 'tags', label: 'Tags' },
+    { id: 'tags2', label: 'Tags (2)' },
+    { id: 'sorting', label: 'Sorting' },
+    { id: 'artwork', label: 'Artwork' },
+    { id: 'lyrics', label: 'Lyrics' },
+    { id: 'settings', label: 'Settings' },
+  ];
 
-  // Track which fields have been explicitly cleared
-  let clearedFields = $state<Set<string>>(new Set());
-
-  // Original values for comparison
-  let originalValues = $state<Record<string, string>>({});
-
-  // UI state
-  let createBackup = $state(true);
+  // State
+  let tracks = $state<TrackRow[]>([]);
+  let loading = $state(false);
   let saving = $state(false);
   let error = $state<string | null>(null);
-  let retryStatus = $state<{ attempt: number; maxAttempts: number } | null>(null);
+  let activeTab = $state('properties');
+  let showConfirmModal = $state(false);
 
-  // Event listener cleanup
-  let unlistenStatus: (() => void) | null = null;
+  // Form State
+  let fieldValues = $state<Record<string, string>>({});
+  let fieldChecked = $state<Record<string, boolean>>({});
+  let lyrics = $state('');
 
-  // Initialize form when track changes
+  // Derived
+  let isMulti = $derived(trackIds.length > 1);
+  let canApply = $derived(!loading && !saving && (isMulti ? Object.values(fieldChecked).some(v => v) : true));
+
+  // Load tracks when opening
   $effect(() => {
-    if (track && open) {
-      title = track.title ?? '';
-      artist = track.artist ?? '';
-      album = track.album ?? '';
-      albumArtist = track.albumArtist ?? '';
-      genre = track.genre ?? '';
-      trackNo = track.trackNo?.toString() ?? '';
-      discNo = track.discNo?.toString() ?? '';
-      year = track.year?.toString() ?? '';
-      
-      originalValues = {
-        title: track.title ?? '',
-        artist: track.artist ?? '',
-        album: track.album ?? '',
-        albumArtist: track.albumArtist ?? '',
-        genre: track.genre ?? '',
-        trackNo: track.trackNo?.toString() ?? '',
-        discNo: track.discNo?.toString() ?? '',
-        year: track.year?.toString() ?? '',
-      };
-      
-      clearedFields = new Set();
+    if (open && trackIds.length > 0) {
+      loadData();
+    } else if (!open) {
+      // Reset state on close
+      tracks = [];
+      fieldValues = {};
+      fieldChecked = {};
+      lyrics = '';
       error = null;
-      retryStatus = null;
+      activeTab = 'properties';
+      showConfirmModal = false;
     }
   });
 
-  onMount(async () => {
-    // Listen for tag write status events
-    unlistenStatus = await listen<TagWriteStatusEvent>('evt_tag_write_status', (event) => {
-      if (track && event.payload.trackId === track.id) {
-        if (event.payload.phase === 'retry') {
-          retryStatus = {
-            attempt: event.payload.attempt,
-            maxAttempts: event.payload.maxAttempts,
-          };
-        } else {
-          retryStatus = null;
-        }
+  async function loadData() {
+    loading = true;
+    error = null;
+    try {
+      tracks = await getTrackTagsBatch(trackIds);
+      initializeForm();
+    } catch (e) {
+      error = String(e);
+    } finally {
+      loading = false;
+    }
+  }
+
+  function initializeForm() {
+    if (tracks.length === 0) return;
+
+    const fields = ['title', 'artist', 'album', 'albumArtist', 'genre', 'trackNo', 'discNo', 'year'];
+    const newValues: Record<string, string> = {};
+    const newChecked: Record<string, boolean> = {};
+
+    // Initialize fields
+    for (const field of fields) {
+      const firstVal = getField(tracks[0], field);
+      const allSame = tracks.every(t => getField(t, field) === firstVal);
+      
+      if (allSame) {
+        newValues[field] = firstVal;
+      } else {
+        newValues[field] = ''; // Mixed state
       }
-    });
-  });
-
-  onDestroy(() => {
-    if (unlistenStatus) {
-      unlistenStatus();
+      
+      // In multi-mode, default to unchecked (don't update)
+      // In single-mode, checked doesn't matter but we can set true
+      newChecked[field] = !isMulti; 
     }
-  });
 
-  // Check if a field has been modified
-  function isModified(field: string, value: string): boolean {
-    return value !== originalValues[field] || clearedFields.has(field);
+    fieldValues = newValues;
+    fieldChecked = newChecked;
+    lyrics = ''; // TODO: Load lyrics if available in TrackRow (not yet)
   }
 
-  // Check if form is dirty (any field modified)
-  let isDirty = $derived(
-    isModified('title', title) ||
-    isModified('artist', artist) ||
-    isModified('album', album) ||
-    isModified('albumArtist', albumArtist) ||
-    isModified('genre', genre) ||
-    isModified('trackNo', trackNo) ||
-    isModified('discNo', discNo) ||
-    isModified('year', year)
-  );
-
-  // Validation: check for invalid empty strings (not cleared)
-  function hasInvalidEmpty(field: string, value: string): boolean {
-    // If field was originally non-empty and is now empty (whitespace only), and not explicitly cleared
-    const trimmed = value.trim();
-    const original = originalValues[field]?.trim() ?? '';
-    return original !== '' && trimmed === '' && !clearedFields.has(field);
+  function getField(track: TrackRow, field: string): string {
+    const val = (track as any)[field];
+    return val === undefined || val === null ? '' : String(val);
   }
 
-  // Compute validation errors
-  function getValidationErrors(): string[] {
-    const errors: string[] = [];
-    if (hasInvalidEmpty('title', title)) errors.push('Title: Use Clear to remove, or enter a value');
-    if (hasInvalidEmpty('artist', artist)) errors.push('Artist: Use Clear to remove, or enter a value');
-    if (hasInvalidEmpty('album', album)) errors.push('Album: Use Clear to remove, or enter a value');
-    if (hasInvalidEmpty('albumArtist', albumArtist)) errors.push('Album Artist: Use Clear to remove, or enter a value');
-    if (hasInvalidEmpty('genre', genre)) errors.push('Genre: Use Clear to remove, or enter a value');
-    
-    // Numeric validation
-    if (trackNo.trim() !== '' && !clearedFields.has('trackNo') && (isNaN(Number(trackNo)) || Number(trackNo) < 0)) {
-      errors.push('Track # must be a positive number');
-    }
-    if (discNo.trim() !== '' && !clearedFields.has('discNo') && (isNaN(Number(discNo)) || Number(discNo) < 0)) {
-      errors.push('Disc # must be a positive number');
-    }
-    if (year.trim() !== '' && !clearedFields.has('year') && (isNaN(Number(year)) || Number(year) < 0)) {
-      errors.push('Year must be a positive number');
-    }
-    
-    return errors;
+  function handleFieldChange(field: string, value: string) {
+    fieldValues[field] = value;
   }
 
-  let validationErrors = $derived(getValidationErrors());
-
-  let canApply = $derived(isDirty && validationErrors.length === 0 && !saving);
-
-  // Build patch for a string field
-  function buildTagPatch(field: string, value: string): TagPatch {
-    if (clearedFields.has(field)) {
-      return { op: 'clear' };
-    }
-    if (value.trim() !== originalValues[field]) {
-      return { op: 'set', value: value.trim() };
-    }
-    return { op: 'leave' };
+  function handleFieldCheck(field: string, checked: boolean) {
+    fieldChecked[field] = checked;
   }
 
-  // Build patch for a number field
-  function buildNumberPatch(field: string, value: string): NumberPatch {
-    if (clearedFields.has(field)) {
-      return { op: 'clear' };
-    }
-    const trimmed = value.trim();
-    if (trimmed !== originalValues[field] && trimmed !== '') {
-      return { op: 'set', value: parseInt(trimmed, 10) };
-    }
-    return { op: 'leave' };
+  // Build patches
+  function buildTagPatch(field: string, value: string, checked: boolean): TagPatch {
+    if (isMulti && !checked) return { op: 'leave' };
+    if (value === '') return { op: 'clear' }; // Or should empty string be clear? Yes.
+    return { op: 'set', value: value.trim() };
   }
 
-  // Clear a field
-  function clearField(field: string) {
-    clearedFields = new Set([...clearedFields, field]);
-    switch (field) {
-      case 'title': title = ''; break;
-      case 'artist': artist = ''; break;
-      case 'album': album = ''; break;
-      case 'albumArtist': albumArtist = ''; break;
-      case 'genre': genre = ''; break;
-      case 'trackNo': trackNo = ''; break;
-      case 'discNo': discNo = ''; break;
-      case 'year': year = ''; break;
-    }
-  }
-
-  // Handle input change - remove from cleared set if user types
-  function handleInput(field: string) {
-    if (clearedFields.has(field)) {
-      const newSet = new Set(clearedFields);
-      newSet.delete(field);
-      clearedFields = newSet;
-    }
+  function buildNumberPatch(field: string, value: string, checked: boolean): NumberPatch {
+    if (isMulti && !checked) return { op: 'leave' };
+    if (value === '') return { op: 'clear' };
+    const num = parseInt(value, 10);
+    if (isNaN(num)) return { op: 'leave' }; // Should validate before
+    return { op: 'set', value: num };
   }
 
   async function handleApply() {
-    if (!track || !canApply) return;
+    if (isMulti) {
+      showConfirmModal = true;
+    } else {
+      await performSave();
+    }
+  }
 
+  async function performSave() {
     saving = true;
     error = null;
-    retryStatus = null;
+    showConfirmModal = false;
 
     try {
-      await updateTrackTags({
-        trackId: track.id,
-        createBackup,
-        title: buildTagPatch('title', title),
-        artist: buildTagPatch('artist', artist),
-        album: buildTagPatch('album', album),
-        albumArtist: buildTagPatch('albumArtist', albumArtist),
-        genre: buildTagPatch('genre', genre),
-        trackNo: buildNumberPatch('trackNo', trackNo),
-        discNo: buildNumberPatch('discNo', discNo),
-        year: buildNumberPatch('year', year),
-      });
+      if (isMulti) {
+        const request: BatchUpdateRequest = {
+          trackIds,
+          createBackup: true, // TODO: Make configurable
+          title: buildTagPatch('title', fieldValues.title, fieldChecked.title),
+          artist: buildTagPatch('artist', fieldValues.artist, fieldChecked.artist),
+          album: buildTagPatch('album', fieldValues.album, fieldChecked.album),
+          albumArtist: buildTagPatch('albumArtist', fieldValues.albumArtist, fieldChecked.albumArtist),
+          genre: buildTagPatch('genre', fieldValues.genre, fieldChecked.genre),
+          trackNo: buildNumberPatch('trackNo', fieldValues.trackNo, fieldChecked.trackNo),
+          discNo: buildNumberPatch('discNo', fieldValues.discNo, fieldChecked.discNo),
+          year: buildNumberPatch('year', fieldValues.year, fieldChecked.year),
+        };
+        await updateTrackTagsBatch(request);
+      } else {
+        // Single track update
+        await updateTrackTags({
+          trackId: tracks[0].id,
+          createBackup: true,
+          title: buildTagPatch('title', fieldValues.title, true),
+          artist: buildTagPatch('artist', fieldValues.artist, true),
+          album: buildTagPatch('album', fieldValues.album, true),
+          albumArtist: buildTagPatch('albumArtist', fieldValues.albumArtist, true),
+          genre: buildTagPatch('genre', fieldValues.genre, true),
+          trackNo: buildNumberPatch('trackNo', fieldValues.trackNo, true),
+          discNo: buildNumberPatch('discNo', fieldValues.discNo, true),
+          year: buildNumberPatch('year', fieldValues.year, true),
+        });
+      }
 
-      // Refresh tracks list
-      await loadTracks();
-      
-      // Close modal on success
+      await loadTracks(); // Refresh library view
       onclose();
     } catch (e) {
       error = String(e);
     } finally {
       saving = false;
-      retryStatus = null;
-    }
-  }
-
-  function handleCancel() {
-    if (!saving) {
-      onclose();
     }
   }
 </script>
 
-<Modal {open} title="Edit Tags" onclose={handleCancel} preventClose={saving}>
-  {#if track}
-    <div class="tag-editor">
+<Modal {open} title={isMulti ? `Edit ${tracks.length} Tracks` : 'Edit Tags'} onclose={onclose} preventClose={saving} draggable={true}>
+  <div class="tag-editor">
+    {#if loading}
+      <div class="loading">Loading tags...</div>
+    {:else if showConfirmModal}
+      <div class="confirm-overlay">
+        <h3>Confirm Bulk Update</h3>
+        <p>You are about to update tags for <strong>{tracks.length} tracks</strong>.</p>
+        <p class="warning">This operation cannot be undone easily (backups are created).</p>
+        
+        <div class="changes-list">
+          <h4>Changes to apply:</h4>
+          <ul>
+            {#each Object.entries(fieldChecked) as [field, checked]}
+              {#if checked}
+                <li>
+                  <strong>{field}:</strong> 
+                  {#if fieldValues[field]}
+                    "{fieldValues[field]}"
+                  {:else}
+                    <em>(Clear)</em>
+                  {/if}
+                </li>
+              {/if}
+            {/each}
+          </ul>
+        </div>
+
+        <div class="confirm-actions">
+          <button class="btn btn-secondary" onclick={() => showConfirmModal = false}>Cancel</button>
+          <button class="btn btn-danger" onclick={performSave}>Confirm Update</button>
+        </div>
+      </div>
+    {:else}
+      <div class="tab-bar">
+        {#each tabs as tab}
+          <button
+            class="tab"
+            class:active={activeTab === tab.id}
+            onclick={() => activeTab = tab.id}
+          >
+            {tab.label}
+          </button>
+        {/each}
+      </div>
+
+      <div class="tab-content">
+        {#if activeTab === 'properties'}
+          <InspectorTab {tracks} />
+        {:else if activeTab === 'tags'}
+          <MetadataTab 
+            {tracks} 
+            values={fieldValues} 
+            checked={fieldChecked} 
+            onChange={handleFieldChange}
+            onCheck={handleFieldCheck}
+            disabled={saving}
+          />
+        {:else if activeTab === 'tags2'}
+          <div class="placeholder-tab">Tags (2) - Not implemented yet</div>
+        {:else if activeTab === 'sorting'}
+          <div class="placeholder-tab">Sorting - Not implemented yet</div>
+        {:else if activeTab === 'artwork'}
+          <ArtworkTab {tracks} disabled={saving} />
+        {:else if activeTab === 'lyrics'}
+          <LyricsTab lyrics={lyrics} onChange={(v) => lyrics = v} disabled={saving} />
+        {:else if activeTab === 'settings'}
+          <div class="placeholder-tab">Settings - Not implemented yet</div>
+        {/if}
+      </div>
+
       {#if error}
-        <div class="error-banner">
-          <span class="error-icon">!</span>
-          <span class="error-text">{error}</span>
-        </div>
+        <div class="error-banner">{error}</div>
       {/if}
-
-      {#if retryStatus}
-        <div class="retry-banner">
-          Retrying save... (attempt {retryStatus.attempt}/{retryStatus.maxAttempts})
-        </div>
-      {/if}
-
-      <div class="form-grid">
-        <!-- Title -->
-        <div class="field">
-          <label for="tag-title">Title</label>
-          <div class="input-group">
-            <input
-              id="tag-title"
-              type="text"
-              bind:value={title}
-              oninput={() => handleInput('title')}
-              class:cleared={clearedFields.has('title')}
-              disabled={saving}
-            />
-            <button
-              type="button"
-              class="clear-btn"
-              onclick={() => clearField('title')}
-              disabled={saving || clearedFields.has('title')}
-              title="Clear field"
-            ><X size={14} /></button>
-          </div>
-        </div>
-
-        <!-- Artist -->
-        <div class="field">
-          <label for="tag-artist">Artist</label>
-          <div class="input-group">
-            <input
-              id="tag-artist"
-              type="text"
-              bind:value={artist}
-              oninput={() => handleInput('artist')}
-              class:cleared={clearedFields.has('artist')}
-              disabled={saving}
-            />
-            <button
-              type="button"
-              class="clear-btn"
-              onclick={() => clearField('artist')}
-              disabled={saving || clearedFields.has('artist')}
-              title="Clear field"
-            ><X size={14} /></button>
-          </div>
-        </div>
-
-        <!-- Album -->
-        <div class="field">
-          <label for="tag-album">Album</label>
-          <div class="input-group">
-            <input
-              id="tag-album"
-              type="text"
-              bind:value={album}
-              oninput={() => handleInput('album')}
-              class:cleared={clearedFields.has('album')}
-              disabled={saving}
-            />
-            <button
-              type="button"
-              class="clear-btn"
-              onclick={() => clearField('album')}
-              disabled={saving || clearedFields.has('album')}
-              title="Clear field"
-            ><X size={14} /></button>
-          </div>
-        </div>
-
-        <!-- Album Artist -->
-        <div class="field">
-          <label for="tag-album-artist">Album Artist</label>
-          <div class="input-group">
-            <input
-              id="tag-album-artist"
-              type="text"
-              bind:value={albumArtist}
-              oninput={() => handleInput('albumArtist')}
-              class:cleared={clearedFields.has('albumArtist')}
-              disabled={saving}
-            />
-            <button
-              type="button"
-              class="clear-btn"
-              onclick={() => clearField('albumArtist')}
-              disabled={saving || clearedFields.has('albumArtist')}
-              title="Clear field"
-            ><X size={14} /></button>
-          </div>
-        </div>
-
-        <!-- Genre -->
-        <div class="field">
-          <label for="tag-genre">Genre</label>
-          <div class="input-group">
-            <input
-              id="tag-genre"
-              type="text"
-              bind:value={genre}
-              oninput={() => handleInput('genre')}
-              class:cleared={clearedFields.has('genre')}
-              disabled={saving}
-            />
-            <button
-              type="button"
-              class="clear-btn"
-              onclick={() => clearField('genre')}
-              disabled={saving || clearedFields.has('genre')}
-              title="Clear field"
-            ><X size={14} /></button>
-          </div>
-        </div>
-
-        <!-- Track # -->
-        <div class="field half">
-          <label for="tag-track-no">Track #</label>
-          <div class="input-group">
-            <input
-              id="tag-track-no"
-              type="text"
-              inputmode="numeric"
-              bind:value={trackNo}
-              oninput={() => handleInput('trackNo')}
-              class:cleared={clearedFields.has('trackNo')}
-              disabled={saving}
-            />
-            <button
-              type="button"
-              class="clear-btn"
-              onclick={() => clearField('trackNo')}
-              disabled={saving || clearedFields.has('trackNo')}
-              title="Clear field"
-            ><X size={14} /></button>
-          </div>
-        </div>
-
-        <!-- Disc # -->
-        <div class="field half">
-          <label for="tag-disc-no">Disc #</label>
-          <div class="input-group">
-            <input
-              id="tag-disc-no"
-              type="text"
-              inputmode="numeric"
-              bind:value={discNo}
-              oninput={() => handleInput('discNo')}
-              class:cleared={clearedFields.has('discNo')}
-              disabled={saving}
-            />
-            <button
-              type="button"
-              class="clear-btn"
-              onclick={() => clearField('discNo')}
-              disabled={saving || clearedFields.has('discNo')}
-              title="Clear field"
-            ><X size={14} /></button>
-          </div>
-        </div>
-
-        <!-- Year -->
-        <div class="field half">
-          <label for="tag-year">Year</label>
-          <div class="input-group">
-            <input
-              id="tag-year"
-              type="text"
-              inputmode="numeric"
-              bind:value={year}
-              oninput={() => handleInput('year')}
-              class:cleared={clearedFields.has('year')}
-              disabled={saving}
-            />
-            <button
-              type="button"
-              class="clear-btn"
-              onclick={() => clearField('year')}
-              disabled={saving || clearedFields.has('year')}
-              title="Clear field"
-            ><X size={14} /></button>
-          </div>
-        </div>
-      </div>
-
-      {#if validationErrors.length > 0}
-        <div class="validation-errors">
-          {#each validationErrors as err}
-            <div class="validation-error">{err}</div>
-          {/each}
-        </div>
-      {/if}
-
-      <div class="options">
-        <label class="checkbox-label">
-          <input type="checkbox" bind:checked={createBackup} disabled={saving} />
-          Create backup before writing
-        </label>
-      </div>
 
       <div class="actions">
-        <button class="btn btn-secondary" onclick={handleCancel} disabled={saving}>
-          Cancel
-        </button>
+        <button class="btn btn-secondary" onclick={onclose} disabled={saving}>Cancel</button>
         <button class="btn btn-primary" onclick={handleApply} disabled={!canApply}>
-          {#if saving}
-            Saving...
-          {:else}
-            Apply
-          {/if}
+          {saving ? 'Saving...' : 'Apply'}
         </button>
       </div>
-    </div>
-  {/if}
+    {/if}
+  </div>
 </Modal>
-
 
 <style>
   .tag-editor {
-    min-width: 450px;
-  }
-
-  .error-banner {
+    width: 600px;
+    min-height: 400px;
     display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: rgba(255, 68, 68, 0.15);
-    border: 1px solid rgba(255, 68, 68, 0.3);
-    border-radius: 6px;
-    padding: 0.75rem 1rem;
-    margin-bottom: 1rem;
-    color: #f88;
+    flex-direction: column;
   }
 
-  .error-icon {
+  .loading {
+    flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 20px;
-    height: 20px;
-    background: rgba(255, 68, 68, 0.3);
-    border-radius: 50%;
-    font-weight: bold;
-    font-size: 0.8rem;
+    color: #888;
   }
 
-  .retry-banner {
-    background: rgba(68, 170, 255, 0.15);
-    border: 1px solid rgba(68, 170, 255, 0.3);
-    border-radius: 6px;
-    padding: 0.75rem 1rem;
+  .tab-bar {
+    display: flex;
+    gap: 0;
     margin-bottom: 1rem;
-    color: #4af;
-    text-align: center;
+    border-bottom: 1px solid var(--divider-color, rgba(255, 255, 255, 0.12));
   }
 
-  .form-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-  }
-
-  .field {
-    grid-column: span 2;
-  }
-
-  .field.half {
-    grid-column: span 1;
-  }
-
-  label {
-    display: block;
+  .tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 0.6rem 1rem;
     font-size: 0.85rem;
     color: #888;
-    margin-bottom: 0.25rem;
-  }
-
-  .input-group {
-    display: flex;
-    gap: 0.25rem;
-  }
-
-  input[type="text"] {
-    flex: 1;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid var(--glass-border);
-    border-radius: 6px;
-    color: #fff;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.95rem;
-    outline: none;
-    transition: all 0.2s;
-  }
-
-  input[type="text"]:focus {
-    background: rgba(255, 255, 255, 0.12);
-    border-color: rgba(68, 170, 255, 0.5);
-  }
-
-  input[type="text"]:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  input[type="text"].cleared {
-    background: rgba(255, 170, 68, 0.1);
-    border-color: rgba(255, 170, 68, 0.3);
-    font-style: italic;
-    color: #fa8;
-  }
-
-  input[type="text"].cleared::placeholder {
-    color: #fa8;
-  }
-
-  .clear-btn {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--glass-border);
-    border-radius: 6px;
-    color: #888;
-    width: 32px;
     cursor: pointer;
-    font-size: 1.2rem;
-    transition: all 0.2s;
+    transition: all 0.15s ease;
+    margin-bottom: -1px;
   }
 
-  .clear-btn:hover:not(:disabled) {
-    background: rgba(255, 68, 68, 0.2);
-    border-color: rgba(255, 68, 68, 0.4);
-    color: #f88;
-  }
-
-  .clear-btn:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-  }
-
-  .validation-errors {
-    margin-top: 1rem;
-    padding: 0.75rem;
-    background: rgba(255, 170, 68, 0.1);
-    border: 1px solid rgba(255, 170, 68, 0.3);
-    border-radius: 6px;
-  }
-
-  .validation-error {
-    font-size: 0.85rem;
-    color: #fa8;
-    padding: 0.25rem 0;
-  }
-
-  .options {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-top: 1.5rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--glass-border);
-  }
-
-  .checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    cursor: pointer;
+  .tab:hover {
     color: #ccc;
-    font-size: 0.9rem;
+    background: rgba(255, 255, 255, 0.03);
   }
 
-  input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
-    accent-color: #4af;
+  .tab.active {
+    color: #fff;
+    border-bottom-color: #4af;
+    background: rgba(68, 170, 255, 0.08);
+  }
+
+  .placeholder-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #666;
+    font-style: italic;
+    min-height: 200px;
+  }
+
+  .tab-content {
+    flex: 1;
+    min-height: 300px;
   }
 
   .actions {
@@ -624,7 +335,7 @@
     gap: 0.75rem;
     margin-top: 1.5rem;
     padding-top: 1rem;
-    border-top: 1px solid var(--glass-border);
+    border-top: 1px solid var(--divider-color, rgba(255, 255, 255, 0.07));
   }
 
   .btn {
@@ -633,6 +344,7 @@
     font-size: 0.95rem;
     cursor: pointer;
     transition: all 0.2s;
+    border: 1px solid transparent;
   }
 
   .btn:disabled {
@@ -642,7 +354,7 @@
 
   .btn-secondary {
     background: rgba(255, 255, 255, 0.08);
-    border: 1px solid var(--glass-border);
+    border-color: var(--divider-color, rgba(255, 255, 255, 0.07));
     color: #ccc;
   }
 
@@ -653,12 +365,83 @@
 
   .btn-primary {
     background: rgba(68, 170, 255, 0.2);
-    border: 1px solid rgba(68, 170, 255, 0.4);
+    border-color: rgba(68, 170, 255, 0.4);
     color: #4af;
   }
 
   .btn-primary:hover:not(:disabled) {
     background: rgba(68, 170, 255, 0.3);
     color: #6cf;
+  }
+
+  .btn-danger {
+    background: rgba(255, 68, 68, 0.2);
+    border-color: rgba(255, 68, 68, 0.4);
+    color: #f88;
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background: rgba(255, 68, 68, 0.3);
+    color: #faa;
+  }
+
+  .error-banner {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: rgba(255, 68, 68, 0.15);
+    border: 1px solid rgba(255, 68, 68, 0.3);
+    border-radius: 6px;
+    color: #f88;
+  }
+
+  /* Confirm Overlay */
+  .confirm-overlay {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .confirm-overlay h3 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: #fff;
+  }
+
+  .warning {
+    color: #fa8;
+    font-style: italic;
+  }
+
+  .changes-list {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+    padding: 1rem;
+    overflow-y: auto;
+  }
+
+  .changes-list h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.9rem;
+    color: #ccc;
+  }
+
+  .changes-list ul {
+    margin: 0;
+    padding-left: 1.5rem;
+    color: #ccc;
+  }
+
+  .changes-list li {
+    margin-bottom: 0.25rem;
+  }
+
+  .confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    margin-top: 1rem;
   }
 </style>

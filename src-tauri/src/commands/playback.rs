@@ -1,9 +1,9 @@
-use crate::state::{AudioState, LibraryState, PlaybackCommand};
+use crate::state::{AudioState, LibraryState, PlaybackCommand, PlaybackSessionSnapshot};
 use audio_engine::device::list_devices;
 use library::{
     get_audio_output_asio_driver, get_audio_output_fade, get_audio_output_mode,
-    get_audio_output_policy, get_audio_output_timing, get_track_by_id, open_db, set_missing,
-    set_setting,
+    get_audio_output_policy, get_audio_output_timing, get_setting, get_track_by_id, open_db,
+    set_missing, set_setting,
 };
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -474,6 +474,70 @@ pub fn cmd_playback_stop(audio_state: State<'_, AudioState>) -> Result<(), Strin
 }
 
 #[tauri::command]
+pub fn cmd_playback_restore_session(
+    audio_state: State<'_, AudioState>,
+    library_state: State<'_, LibraryState>,
+) -> Result<(), String> {
+    let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
+    let Some(payload) = get_setting(&conn, "playback.session").map_err(|e| e.to_string())? else {
+        return Ok(());
+    };
+
+    if payload.trim().is_empty() {
+        return Ok(());
+    }
+
+    let snapshot: PlaybackSessionSnapshot =
+        serde_json::from_str(&payload).map_err(|e| e.to_string())?;
+    let resume_on_startup = matches!(
+        get_setting(&conn, "player.resume_on_startup").map_err(|e| e.to_string())?,
+        Some(value) if value == "on"
+    );
+
+    let mut valid_track_ids = Vec::new();
+    for track_id in snapshot.queue_track_ids.iter().copied() {
+        if get_track_by_id(&conn, track_id).is_ok() {
+            valid_track_ids.push(track_id);
+        }
+    }
+
+    let position_ms = if resume_on_startup && snapshot.last_state == "playing" {
+        snapshot.position_ms
+    } else {
+        0
+    };
+
+    if valid_track_ids.is_empty() {
+        audio_state
+            .command_tx
+            .send(PlaybackCommand::RestoreSession {
+                track_ids: Vec::new(),
+                start_index: 0,
+                position_ms: 0,
+            })
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    let mut start_index = snapshot.current_index.min(valid_track_ids.len() - 1);
+    if let Some(track_id) = snapshot.track_id {
+        if let Some(found_index) = valid_track_ids.iter().position(|id| *id == track_id) {
+            start_index = found_index;
+        }
+    }
+
+    audio_state
+        .command_tx
+        .send(PlaybackCommand::RestoreSession {
+            track_ids: valid_track_ids,
+            start_index,
+            position_ms,
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn cmd_playback_seek(
     audio_state: State<'_, AudioState>,
     position_ms: u64,
@@ -577,6 +641,47 @@ pub fn cmd_queue_add(
     audio_state
         .command_tx
         .send(PlaybackCommand::AddToQueue { track_id })
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn cmd_queue_add_next(
+    app: tauri::AppHandle,
+    audio_state: State<'_, AudioState>,
+    library_state: State<'_, LibraryState>,
+    track_ids: Vec<i64>,
+) -> Result<(), String> {
+    if track_ids.is_empty() {
+        return Err("No tracks provided".to_string());
+    }
+
+    let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
+
+    for track_id in &track_ids {
+        let track = get_track_by_id(&conn, *track_id).map_err(|e| e.to_string())?;
+
+        if track.is_missing {
+            return Err(format!("Track {} is missing", track_id));
+        }
+
+        if !Path::new(&track.path).exists() {
+            set_missing(&conn, *track_id, true).map_err(|e| e.to_string())?;
+            let _ = app.emit(
+                "evt_track_marked_missing",
+                TrackMarkedMissingEvent {
+                    track_id: *track_id,
+                    path: track.path.clone(),
+                },
+            );
+            return Err(format!("File not found: {}", track.path));
+        }
+    }
+
+    audio_state
+        .command_tx
+        .send(PlaybackCommand::AddToQueueNext { track_ids })
         .map_err(|e| e.to_string())?;
 
     Ok(())

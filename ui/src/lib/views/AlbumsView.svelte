@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getLibraryStats, listAlbumsPage } from '../api/library';
+  import { getLibraryStats, listAlbumsPage, listAlbumTracksPage } from '../api/library';
   import type { AlbumListItem } from '../types/library';
   import { setViewTitle } from '../state/viewTitle';
   import { setAlphabetSelector, clearAlphabetSelector } from '../state/alphabetSelector';
@@ -11,11 +11,14 @@
     resetAlbumArtworkCache
   } from '../state/albumArtwork';
   import ArtworkPickerModal from '../components/ArtworkPickerModal.svelte';
+  import TagEditor from '../components/TagEditor.svelte';
+  import * as ContextMenu from '../components/primitives/ContextMenu.svelte';
+import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback';
   import AlbumInlineDetail from '../components/AlbumInlineDetail.svelte';
   import ArtworkImage from '../components/ArtworkImage.svelte';
   import { expandedAlbum, toggleAlbumInline, openAlbumInlineFromItem, clearAlbumInline } from '../state/albumInline';
   import SkeletonCard from '../components/SkeletonCard.svelte';
-  import { MoreVertical, Play, Disc3 } from '@lucide/svelte';
+  import { Disc3 } from '@lucide/svelte';
   import { fadeIn } from '../utils/animations';
   import { VList } from 'virtua/svelte';
   import { fade, slide } from 'svelte/transition';
@@ -28,6 +31,10 @@
   // Artwork picker modal state
   let pickerOpen = $state(false);
   let pickerAlbum: AlbumListItem | null = $state(null);
+
+  // Tag editor state
+  let tagEditorOpen = $state(false);
+  let editingTrackIds = $state<number[]>([]);
 
   // Virtualization state
   let containerWidth = $state(0);
@@ -104,7 +111,7 @@
   }
 
   // Prefetching strategy:
-  // We rely on virtua's bufferSize={12} to render rows just outside the viewport.
+  // We rely on virtua's bufferSize (pixels) to render rows just outside the viewport.
   // The <ArtworkImage> component handles loading:
   // 1. Shows LQIP immediately (embedded in album metadata)
   // 2. Fetches high-res thumbnail asynchronously on mount
@@ -182,6 +189,43 @@
     pickerAlbum = null;
   }
 
+  async function openTagEditorForAlbum(album: AlbumListItem) {
+    try {
+      // Fetch all tracks for the album to edit
+      const page = await listAlbumTracksPage(album.albumArtistSort, album.albumTitleSort, 10000);
+      editingTrackIds = page.items.map(t => t.id);
+      tagEditorOpen = true;
+    } catch (e) {
+      console.error('Failed to load album tracks for editing', e);
+    }
+  }
+
+  function closeTagEditor() {
+    tagEditorOpen = false;
+    editingTrackIds = [];
+  }
+
+  async function handlePlayAlbum(album: AlbumListItem) {
+    const page = await listAlbumTracksPage(album.albumArtistSort, album.albumTitleSort, 1000);
+    if (page.items.length > 0) {
+      await playNowWithQueue(page.items.map(t => t.id), 0);
+    }
+  }
+
+  async function handleQueueAlbumNext(album: AlbumListItem) {
+    const page = await listAlbumTracksPage(album.albumArtistSort, album.albumTitleSort, 1000);
+    if (page.items.length > 0) {
+      await addToQueueNext(page.items.map(t => t.id));
+    }
+  }
+
+  async function handleQueueAlbumLast(album: AlbumListItem) {
+    const page = await listAlbumTracksPage(album.albumArtistSort, album.albumTitleSort, 1000);
+    for (const track of page.items) {
+      await addToQueue(track.id);
+    }
+  }
+
   async function handleArtworkSelected(_cacheKey: string) {
     if (!pickerAlbum) return;
     bumpAlbumArtworkVersion(pickerAlbum);
@@ -210,50 +254,56 @@
       <VList
         bind:this={vlistRef}
         data={displayRows}
-        bufferSize={12}
+        bufferSize={800}
         getKey={(item) =>
           item.type === 'row'
             ? `row-${item.rowIndex}`
-            : `detail-${getAlbumKey(item.album)}`
+            : `detail-${item.rowIndex}`
         }
       >
         {#snippet children(item)}
           {#if item.type === 'row'}
             <div class="grid-row" style="grid-template-columns: repeat({columns}, 1fr)">
               {#each item.albums as album (getAlbumKey(album))}
-                <div 
-                  class="card"
-                  role="button"
-                  tabindex="0"
-                  onkeydown={(e) => e.key === 'Enter' && handleAlbumClick(album)}
-                  onclick={(e) => handleAlbumClick(album, e)}
-                  ondblclick={() => handleAlbumDoubleClick(album)}
-                >
-                  <div class="artwork">
-                    <ArtworkImage 
-                      cacheKey={album.artworkCacheKey}
-                      artistSort={album.albumArtistSort}
-                      titleSort={album.albumTitleSort}
-                      size={256}
-                      alt="{album.albumTitleDisplay} artwork"
-                    />
-                    <div class="play-overlay">
-                      <Play fill="white" size={24} />
-                    </div>
-                  </div>
-                  <div class="info">
-                    <div class="title" title={album.albumTitleDisplay}>{album.albumTitleDisplay}</div>
-                    <div class="artist" title={album.albumArtistDisplay}>{album.albumArtistDisplay}</div>
-                    {#if album.year}<div class="year">{album.year}</div>{/if}
-                  </div>
-                  <button 
-                    class="choose-artwork-btn"
-                    onclick={(e) => openArtworkPicker(album, e)}
-                    title="Choose Artwork"
-                  >
-                    <MoreVertical size={16} />
-                  </button>
-                </div>
+                <ContextMenu.Root>
+                  <ContextMenu.Trigger asChild>
+                    {#snippet child({ props })}
+                      <div 
+                        {...props}
+                        class="card"
+                        role="button"
+                        tabindex="0"
+                        onkeydown={(e) => e.key === 'Enter' && handleAlbumClick(album)}
+                        onclick={(e) => handleAlbumClick(album, e)}
+                        ondblclick={() => handleAlbumDoubleClick(album)}
+                      >
+                        <div class="artwork">
+                          <ArtworkImage 
+                            cacheKey={album.artworkCacheKey}
+                            artistSort={album.albumArtistSort}
+                            titleSort={album.albumTitleSort}
+                            size={256}
+                            alt="{album.albumTitleDisplay} artwork"
+                          />
+                        </div>
+                        <div class="info">
+                          <div class="title" title={album.albumTitleDisplay}>{album.albumTitleDisplay}</div>
+                          <div class="artist" title={album.albumArtistDisplay}>{album.albumArtistDisplay}</div>
+                          {#if album.year}<div class="year">{album.year}</div>{/if}
+                        </div>
+                      </div>
+                    {/snippet}
+                  </ContextMenu.Trigger>
+                  <ContextMenu.Portal>
+                    <ContextMenu.Content class="dropdown-content" data-testid="album-context-menu">
+                      <ContextMenu.Item class="dropdown-item" onclick={() => handlePlayAlbum(album)}>Play Album</ContextMenu.Item>
+                      <ContextMenu.Item class="dropdown-item" onclick={() => handleQueueAlbumNext(album)}>Queue Album Next</ContextMenu.Item>
+                      <ContextMenu.Item class="dropdown-item" onclick={() => handleQueueAlbumLast(album)}>Queue Album Last</ContextMenu.Item>
+                      <ContextMenu.Separator class="dropdown-separator" />
+                      <ContextMenu.Item class="dropdown-item" onclick={() => openTagEditorForAlbum(album)}>Edit</ContextMenu.Item>
+                    </ContextMenu.Content>
+                  </ContextMenu.Portal>
+                </ContextMenu.Root>
               {/each}
             </div>
           {:else}
@@ -262,6 +312,10 @@
                 <AlbumInlineDetail
                   album={item.album}
                   onClose={() => clearAlbumInline()}
+                  onedit={(trackIds) => {
+                    editingTrackIds = trackIds;
+                    tagEditorOpen = true;
+                  }}
                 />
               </div>
             </div>
@@ -281,6 +335,8 @@
   onclose={closeArtworkPicker}
   onselect={handleArtworkSelected}
 />
+
+<TagEditor trackIds={editingTrackIds} open={tagEditorOpen} onclose={closeTagEditor} />
 
 <style>
   .view-container {
@@ -356,63 +412,6 @@
   .card:focus-visible {
     outline: none;
     box-shadow: var(--focus-ring);
-  }
-
-  .play-overlay {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: var(--theme-accent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #000;
-    opacity: 0 !important;
-    visibility: hidden;
-    transition: all var(--motion-fast) var(--ease-out);
-    pointer-events: none;
-    z-index: 2;
-    box-shadow: var(--shadow-2);
-    will-change: transform, opacity;
-  }
-
-  .card:hover .play-overlay {
-    opacity: 1 !important;
-    visibility: visible;
-    transform: translate(-50%, -50%) scale(1.1);
-  }
-
-  .card:hover .choose-artwork-btn {
-    opacity: 1;
-  }
-
-  .choose-artwork-btn {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 28px;
-    height: 28px;
-    border-radius: 4px;
-    background: rgba(0, 0, 0, 0.6);
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    opacity: 0;
-    transition: all var(--motion-fast) var(--ease-out);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    backdrop-filter: none;
-  }
-
-  .choose-artwork-btn:hover {
-    background: var(--theme-accent);
-    color: #000;
   }
 
 

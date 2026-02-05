@@ -8,14 +8,66 @@
     onclose: () => void;
     /** Prevent closing via ESC (e.g., during save operation) */
     preventClose?: boolean;
+    /** Enable dragging by header (default: false) */
+    draggable?: boolean;
     children: Snippet;
   }
 
-  let { open, title, onclose, preventClose = false, children }: Props = $props();
+  let { open, title, onclose, preventClose = false, draggable = false, children }: Props = $props();
 
   let dialogElement = $state<HTMLDivElement | null>(null);
   let previouslyFocused: HTMLElement | null = null;
   let titleId = `modal-title-${Math.random().toString(36).slice(2, 9)}`;
+
+  // Drag state
+  let isDragging = $state(false);
+  let dragOffset = $state({ x: 0, y: 0 });
+  let dialogPosition = $state({ x: 0, y: 0 });
+
+  // Drag handlers
+  function handlePointerDown(e: PointerEvent) {
+    if (!draggable || !dialogElement) return;
+    // Don't start drag if clicking the close button
+    if ((e.target as HTMLElement).closest('.close-btn')) return;
+    
+    isDragging = true;
+    const rect = dialogElement.getBoundingClientRect();
+    dragOffset = {
+      x: e.clientX - rect.left - rect.width / 2,
+      y: e.clientY - rect.top - rect.height / 2
+    };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  function handlePointerMove(e: PointerEvent) {
+    if (!isDragging || !dialogElement) return;
+    
+    const rect = dialogElement.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // Calculate new position (centered)
+    let newX = e.clientX - dragOffset.x - viewportWidth / 2;
+    let newY = e.clientY - dragOffset.y - viewportHeight / 2;
+    
+    // Clamp to keep dialog within viewport
+    const halfWidth = rect.width / 2;
+    const halfHeight = rect.height / 2;
+    const maxX = viewportWidth / 2 - halfWidth - 20;
+    const maxY = viewportHeight / 2 - halfHeight - 20;
+    
+    newX = Math.max(-maxX, Math.min(maxX, newX));
+    newY = Math.max(-maxY, Math.min(maxY, newY));
+    
+    dialogPosition = { x: newX, y: newY };
+  }
+
+  function handlePointerUp(e: PointerEvent) {
+    if (isDragging) {
+      isDragging = false;
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    }
+  }
 
   // Focus trap: get all focusable elements within dialog
   function getFocusableElements(): HTMLElement[] {
@@ -86,6 +138,9 @@
       // Restore body scroll
       document.body.style.overflow = '';
       
+      // Reset drag position when closing
+      dialogPosition = { x: 0, y: 0 };
+      
       // Restore focus to previously focused element
       if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
         previouslyFocused.focus();
@@ -107,12 +162,20 @@
     <div
       bind:this={dialogElement}
       class="modal-dialog"
+      class:draggable
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
       tabindex="-1"
+      style:transform={draggable ? `translate(${dialogPosition.x}px, ${dialogPosition.y}px)` : undefined}
     >
-      <div class="modal-header">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="modal-header"
+        onpointerdown={handlePointerDown}
+        onpointermove={handlePointerMove}
+        onpointerup={handlePointerUp}
+      >
         <h2 id={titleId}>{title}</h2>
         {#if !preventClose}
           <button class="close-btn" onclick={onclose} aria-label="Close"><X size={18} /></button>
@@ -138,11 +201,10 @@
   }
 
   .modal-dialog {
-    background: var(--glass-bg);
-    backdrop-filter: blur(var(--glass-blur));
-    border: 1px solid var(--glass-border);
-    border-radius: var(--glass-radius);
-    box-shadow: var(--glass-shadow);
+    background: var(--surface-2, rgba(30, 30, 34, 0.95));
+    border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.07));
+    border-radius: var(--radius-md, 12px);
+    box-shadow: var(--shadow-3, 0 12px 32px rgba(0, 0, 0, 0.6));
     min-width: 400px;
     max-width: 90vw;
     max-height: 90vh;
@@ -157,6 +219,15 @@
     justify-content: space-between;
     padding: 1rem 1.5rem;
     border-bottom: 1px solid var(--glass-border);
+    user-select: none;
+  }
+
+  .draggable .modal-header {
+    cursor: move;
+  }
+
+  .draggable .modal-header .close-btn {
+    cursor: pointer;
   }
 
   .modal-header h2 {

@@ -14,17 +14,19 @@ use commands::{
     cmd_artwork_find_folder, cmd_artwork_get_best_for_album, cmd_artwork_get_best_for_track,
     cmd_artwork_get_bytes, cmd_artwork_get_thumb_bytes, cmd_artwork_search_candidates, cmd_artwork_select_candidate_for_album,
     cmd_library_add_folder, cmd_library_get_folder_track_count, cmd_library_get_raw_tags,
-    cmd_library_get_stats, cmd_library_get_track_by_id, cmd_library_list_album_tracks_page,
+    cmd_library_get_stats, cmd_library_get_track_by_id, cmd_library_get_track_tags,
+    cmd_library_get_track_tags_batch, cmd_library_list_album_tracks_page,
     cmd_library_list_albums_page, cmd_library_list_artist_tracks_page,
     cmd_library_list_artists_page, cmd_library_list_folders, cmd_library_list_tracks,
     cmd_library_list_tracks_page, cmd_library_remove_folder, cmd_library_search_albums_page,
     cmd_library_search_artists_page, cmd_library_search_suggest, cmd_library_search_tracks_page,
     cmd_library_update_folder_enabled, cmd_library_update_folder_options,
-    cmd_library_update_track_tags, cmd_list_asio_drivers, cmd_open_asio_control_panel,
+    cmd_library_update_track_tags, cmd_library_update_track_tags_batch, cmd_list_asio_drivers,
+    cmd_open_asio_control_panel,
     cmd_output_get_settings, cmd_output_list_devices, cmd_output_probe_capabilities,
     cmd_output_set_device, cmd_output_set_settings, cmd_playback_next, cmd_playback_pause,
     cmd_playback_previous, cmd_playback_resume, cmd_playback_seek, cmd_playback_start,
-    cmd_playback_stop, cmd_queue_add, cmd_queue_play_now, cmd_queue_set_and_play,
+    cmd_playback_stop, cmd_playback_restore_session, cmd_queue_add, cmd_queue_add_next, cmd_queue_play_now, cmd_queue_set_and_play,
     cmd_scan_start, cmd_settings_export_diagnostics, cmd_settings_get, cmd_settings_get_category,
     cmd_settings_reset_category, cmd_settings_set, cmd_settings_set_category, cmd_volume_get,
     cmd_volume_set, cmd_waveform_get_peaks, generate_thumbnail, try_local_artwork,
@@ -35,11 +37,12 @@ use commands::{
 use crossbeam_channel::{select, tick, unbounded, Receiver, Sender};
 use parking_lot::Mutex;
 use rusqlite::OptionalExtension;
-use state::{ArtworkCacheState, AudioState, DiagnosticsState, LibraryState, PlaybackCommand, ThumbnailCacheState, WaveformCacheState};
+use state::{persist_session, ArtworkCacheState, AudioState, DiagnosticsState, LibraryState, PlaybackCommand, PlaybackSessionSnapshot, ThumbnailCacheState, WaveformCacheState};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{Emitter, Listener, Manager};
 use tracing::{debug, error, info, warn, Level};
 use tracing_subscriber::{
@@ -880,17 +883,22 @@ pub fn run() {
             cmd_library_search_artists_page,
             cmd_library_get_stats,
             cmd_library_update_track_tags,
+            cmd_library_update_track_tags_batch,
+            cmd_library_get_track_tags,
+            cmd_library_get_track_tags_batch,
             cmd_library_get_raw_tags,
             cmd_scan_start,
             cmd_playback_start,
             cmd_playback_pause,
             cmd_playback_resume,
             cmd_playback_stop,
+            cmd_playback_restore_session,
             cmd_playback_seek,
             cmd_playback_next,
             cmd_playback_previous,
             cmd_queue_play_now,
             cmd_queue_add,
+            cmd_queue_add_next,
             cmd_queue_set_and_play,
             cmd_output_list_devices,
             cmd_output_probe_capabilities,
@@ -2248,6 +2256,21 @@ fn handle_playback_command(
 
             emit_queue_changed(app, engine);
         }
+        PlaybackCommand::AddToQueueNext { track_ids } => {
+            let mut tracks = Vec::new();
+            for track_id in &track_ids {
+                if let Ok(track) = resolve_track(db_path, *track_id) {
+                    tracks.push(track);
+                }
+            }
+
+            if !tracks.is_empty() {
+                let mut engine = engine.lock();
+                engine.add_to_queue_next(tracks);
+            }
+
+            emit_queue_changed(app, engine);
+        }
         PlaybackCommand::PlayNowWithQueue {
             track_ids,
             start_index,
@@ -2305,6 +2328,52 @@ fn handle_playback_command(
             emit_playback_state(app, engine);
             emit_queue_changed(app, engine);
             emit_audio_debug(app, engine, playback, current_device_info.as_ref());
+        }
+        PlaybackCommand::RestoreSession {
+            track_ids,
+            start_index,
+            position_ms,
+        } => {
+            playback.cancel_preload();
+            playback.stop_playback();
+
+            let mut tracks = Vec::new();
+            for track_id in &track_ids {
+                if let Ok(track) = resolve_track(db_path, *track_id) {
+                    tracks.push(track);
+                }
+            }
+
+            if tracks.is_empty() {
+                {
+                    let mut engine = engine.lock();
+                    engine.queue.clear();
+                    engine.stop();
+                }
+
+                emit_playback_state(app, engine);
+                emit_now_playing(app, engine);
+                emit_queue_changed(app, engine);
+                emit_position_now(app, engine);
+                return;
+            }
+
+            let actual_start = start_index.min(tracks.len() - 1);
+            {
+                let mut engine = engine.lock();
+                engine.set_and_play(tracks, actual_start);
+                engine.state = PlaybackState::Paused;
+                if let Some(session) = engine.session.as_mut() {
+                    session.position_ms = position_ms;
+                    session.played_ms = position_ms;
+                    session.last_play_start = None;
+                }
+            }
+
+            emit_playback_state(app, engine);
+            emit_now_playing(app, engine);
+            emit_queue_changed(app, engine);
+            emit_position_now(app, engine);
         }
         PlaybackCommand::Pause => {
             engine.lock().pause();
@@ -2660,6 +2729,9 @@ fn emit_playback_state(app: &tauri::AppHandle, engine: &Arc<Mutex<audio_engine::
         ("stopped".to_string(), None, None)
     };
 
+    let snapshot = build_playback_session_snapshot(&engine, now_ms());
+    drop(engine);
+
     let _ = app.emit(
         "evt_playback_state",
         PlaybackStateEvent {
@@ -2668,6 +2740,8 @@ fn emit_playback_state(app: &tauri::AppHandle, engine: &Arc<Mutex<audio_engine::
             track_id,
         },
     );
+
+    persist_playback_session(app, snapshot);
 }
 
 fn emit_now_playing(app: &tauri::AppHandle, engine: &Arc<Mutex<audio_engine::EngineState>>) {
@@ -2719,6 +2793,9 @@ fn emit_queue_changed(app: &tauri::AppHandle, engine: &Arc<Mutex<audio_engine::E
         })
         .collect();
 
+    let snapshot = build_playback_session_snapshot(&engine, now_ms());
+    drop(engine);
+
     let _ = app.emit(
         "evt_queue_changed",
         QueueChangedEvent {
@@ -2727,6 +2804,8 @@ fn emit_queue_changed(app: &tauri::AppHandle, engine: &Arc<Mutex<audio_engine::E
             queue,
         },
     );
+
+    persist_playback_session(app, snapshot);
 }
 
 fn emit_position_now(app: &tauri::AppHandle, engine: &Arc<Mutex<audio_engine::EngineState>>) {
@@ -2749,11 +2828,22 @@ fn emit_position_now(app: &tauri::AppHandle, engine: &Arc<Mutex<audio_engine::En
 }
 
 fn emit_position_tick(app: &tauri::AppHandle, engine: &Arc<Mutex<audio_engine::EngineState>>) {
-    {
+    let now = now_ms();
+    let should_persist = should_persist_playback_session(now);
+    let snapshot = {
         let mut engine = engine.lock();
         engine.update_time();
-    }
+        if should_persist {
+            Some(build_playback_session_snapshot(&engine, now))
+        } else {
+            None
+        }
+    };
     emit_position_now(app, engine);
+
+    if let Some(snapshot) = snapshot {
+        persist_playback_session(app, snapshot);
+    }
 }
 
 const REASON_NO_OUTPUT_ACTIVE: &str = "no_output_active";
@@ -2773,6 +2863,69 @@ const REASON_ASIO_RESAMPLER_ACTIVE: &str = "asio_resampler_active";
 const REASON_DOP_DISABLED: &str = "dop_disabled";
 const REASON_DOP_DEGRADED_DROPS: &str = "dop_degraded_drops";
 const REASON_DOP_DEGRADED_CB_UNDERRUN: &str = "dop_degraded_cb_underrun";
+
+const PLAYBACK_SESSION_PERSIST_INTERVAL_MS: u64 = 5_000;
+static LAST_PLAYBACK_SESSION_PERSIST_MS: AtomicU64 = AtomicU64::new(0);
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u64::MAX as u128) as u64)
+        .unwrap_or(0)
+}
+
+fn should_persist_playback_session(now_ms: u64) -> bool {
+    let last_ms = LAST_PLAYBACK_SESSION_PERSIST_MS.load(Ordering::Relaxed);
+    if now_ms.saturating_sub(last_ms) < PLAYBACK_SESSION_PERSIST_INTERVAL_MS {
+        return false;
+    }
+
+    LAST_PLAYBACK_SESSION_PERSIST_MS.store(now_ms, Ordering::Relaxed);
+    true
+}
+
+fn build_playback_session_snapshot(
+    engine: &audio_engine::EngineState,
+    updated_at_ms: u64,
+) -> PlaybackSessionSnapshot {
+    let last_state = match engine.state {
+        audio_engine::PlaybackState::Playing => "playing",
+        audio_engine::PlaybackState::Paused => "paused",
+        audio_engine::PlaybackState::Stopped => "stopped",
+    }
+    .to_string();
+
+    let track_id = engine.session.as_ref().map(|session| session.track_id);
+    let queue_track_ids = engine
+        .queue
+        .items()
+        .iter()
+        .map(|item| item.track.id)
+        .collect();
+    let current_index = engine.queue.current_index().unwrap_or(0);
+    let position_ms = engine
+        .session
+        .as_ref()
+        .map(|session| session.position_ms)
+        .unwrap_or(0);
+
+    PlaybackSessionSnapshot {
+        version: 1,
+        last_state,
+        track_id,
+        queue_track_ids,
+        current_index,
+        position_ms,
+        updated_at_ms,
+    }
+}
+
+fn persist_playback_session(app: &tauri::AppHandle, snapshot: PlaybackSessionSnapshot) {
+    let library_state = app.state::<LibraryState>();
+    if let Err(e) = persist_session(&library_state.db_path, &snapshot) {
+        warn!("Failed to persist playback session snapshot: {}", e);
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SignalPathStage {

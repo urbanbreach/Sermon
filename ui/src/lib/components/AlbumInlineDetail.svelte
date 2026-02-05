@@ -1,118 +1,183 @@
 <script lang="ts">
   import { X } from '@lucide/svelte';
+  import { getArtworkBestForAlbum } from '../api/artwork';
   import { listAlbumTracksPage } from '../api/library';
   import { getDevArtworkUrl, retainDevArtworkUrl, releaseDevArtworkUrl } from '../utils/artworkDevUrls';
   import type { AlbumListItem, TrackRow } from '../types/library';
-  import { getAlbumKey } from '../state/albumArtwork';
+  import { getAlbumKey, getAlbumArtworkUrl } from '../state/albumArtwork';
+  import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback';
+  import * as ContextMenu from './primitives/ContextMenu.svelte';
   import ArtworkImage from './ArtworkImage.svelte';
 
   interface Props {
     album: AlbumListItem;
     onClose?: () => void;
+    onedit?: (trackIds: number[]) => void;
   }
 
-  let { album, onClose }: Props = $props();
+  let { album, onClose, onedit }: Props = $props();
 
   let tracks = $state<TrackRow[]>([]);
   let loading = $state(false);
   let loadError = $state<string | null>(null);
   let activeAlbumKey = $state('');
+  let selectedTrackId = $state<number | null>(null);
 
   let backgroundArtUrl = $state('');
+  let previewArtUrl = $state<string | null>(null);
+
+  const PREVIEW_ART_SIZE = 256;
+  const DETAIL_ART_SIZE = 256;
+  const LQIP_ART_SIZE = 32;
+
+  async function resolveArtworkCacheKey(targetAlbum: AlbumListItem): Promise<string | null> {
+    if (targetAlbum.artworkCacheKey) return targetAlbum.artworkCacheKey;
+    if (!targetAlbum.albumArtistSort || !targetAlbum.albumTitleSort) return null;
+
+    try {
+      const best = await getArtworkBestForAlbum(
+        targetAlbum.albumArtistSort,
+        targetAlbum.albumTitleSort
+      );
+      return best.cacheKey ?? null;
+    } catch (err) {
+      console.warn('Artwork lookup failed:', err);
+      return null;
+    }
+  }
 
   $effect(() => {
-    const cacheKey = album.artworkCacheKey;
-    if (!cacheKey) {
-      backgroundArtUrl = '';
-      return;
-    }
+    const fallbackUrl = getAlbumArtworkUrl(album, PREVIEW_ART_SIZE);
+    previewArtUrl = fallbackUrl;
+    backgroundArtUrl = fallbackUrl || '';
+
+    let active = true;
+    let devPreviewUrl: string | null = null;
+    let devBackgroundUrl: string | null = null;
 
     const useDevFallback = import.meta.env.DEV;
 
-    if (useDevFallback) {
-      let active = true;
-      let currentUrl: string | null = null;
+    const applyResolvedArtwork = async () => {
+      const cacheKey = await resolveArtworkCacheKey(album);
+      if (!active || !cacheKey) return;
 
-      getDevArtworkUrl(cacheKey, 512)
-        .then((url) => {
+      const encodedKey = encodeURIComponent(cacheKey);
+
+      if (useDevFallback) {
+        try {
+          const [previewUrl, backgroundUrl] = await Promise.all([
+            getDevArtworkUrl(cacheKey, PREVIEW_ART_SIZE),
+            getDevArtworkUrl(cacheKey, LQIP_ART_SIZE)
+          ]);
+
           if (!active) {
-            releaseDevArtworkUrl(url);
+            releaseDevArtworkUrl(previewUrl);
+            releaseDevArtworkUrl(backgroundUrl);
             return;
           }
-          currentUrl = url;
-          retainDevArtworkUrl(url);
-          backgroundArtUrl = url;
-        })
-        .catch((err) => {
+
+          devPreviewUrl = previewUrl;
+          devBackgroundUrl = backgroundUrl;
+          retainDevArtworkUrl(previewUrl);
+          retainDevArtworkUrl(backgroundUrl);
+
+          previewArtUrl = previewUrl;
+          backgroundArtUrl = backgroundUrl;
+        } catch (err) {
           console.warn('Failed to load background artwork:', err);
-          if (active) backgroundArtUrl = '';
-        });
+          if (active) {
+            previewArtUrl = fallbackUrl;
+            backgroundArtUrl = fallbackUrl || '';
+          }
+        }
+        return;
+      }
 
-      return () => {
-        active = false;
-        if (currentUrl) releaseDevArtworkUrl(currentUrl);
-      };
-    }
+      previewArtUrl = `sermon-artwork://localhost/thumb/${encodedKey}?s=${PREVIEW_ART_SIZE}`;
+      backgroundArtUrl = `sermon-artwork://localhost/lqip/${encodedKey}`;
+    };
 
-    const key = encodeURIComponent(cacheKey);
-    backgroundArtUrl = `sermon-artwork://localhost/thumb/${key}?s=512`;
+    void applyResolvedArtwork();
+
+    return () => {
+      active = false;
+      if (devPreviewUrl) releaseDevArtworkUrl(devPreviewUrl);
+      if (devBackgroundUrl) releaseDevArtworkUrl(devBackgroundUrl);
+    };
   });
 
-  let detailEl = $state<HTMLDivElement | null>(null);
-  let headerRowEl = $state<HTMLDivElement | null>(null);
   let trackColumnsEl = $state<HTMLDivElement | null>(null);
   let trackColumnsWidth = $state(0);
   let trackRowHeight = $state(0);
-  let artworkSize = $state(0);
-  let headerRowHeight = $state(0);
 
   const COLUMN_GAP = 24;
   const MIN_COLUMN_WIDTH = 240;
-  const MAX_COLUMNS = 3;
+  const MAX_COLUMNS = 4;
   const DEFAULT_ROW_HEIGHT = 22;
-  const DEFAULT_ARTWORK_SIZE = 200;
-  const DEFAULT_HEADER_HEIGHT = 48;
-  const HEADER_GAP = 10;
-  const DEFAULT_MAX_ROWS = 6;
+  const TARGET_MAX_ROWS = 6;
 
   type TrackLayout = {
     columns: number;
     height: string;
+    columnCounts: number[];
   };
 
   let trackLayout = $derived.by<TrackLayout>(() => {
     const trackCount = tracks.length;
     if (trackCount === 0) {
-      return { columns: 1, height: 'auto' };
+      return { columns: 1, height: 'auto', columnCounts: [] };
     }
 
     const availableWidth = trackColumnsWidth;
-    const effectiveArtworkSize = artworkSize || DEFAULT_ARTWORK_SIZE;
     const effectiveRowHeight = trackRowHeight || DEFAULT_ROW_HEIGHT;
-    const effectiveHeaderHeight = headerRowHeight || DEFAULT_HEADER_HEIGHT;
-    const targetTrackHeight = Math.max(
-      0,
-      effectiveArtworkSize - effectiveHeaderHeight - HEADER_GAP
-    );
     const maxColumnsByWidth = Math.max(
       1,
       Math.floor((availableWidth + COLUMN_GAP) / (MIN_COLUMN_WIDTH + COLUMN_GAP))
     );
     const maxColumns = Math.min(MAX_COLUMNS, maxColumnsByWidth);
-    const maxRowsByHeight = Math.floor(targetTrackHeight / effectiveRowHeight);
-    const maxRowsPerColumn = maxRowsByHeight > 0 ? maxRowsByHeight : DEFAULT_MAX_ROWS;
-    const columnsNeeded = Math.ceil(trackCount / maxRowsPerColumn);
-    const columns = Math.max(1, Math.min(columnsNeeded, maxColumns));
-    const rowsPerColumn = Math.ceil(trackCount / columns);
-    const neededHeight = rowsPerColumn * effectiveRowHeight;
-    const height = Math.max(targetTrackHeight, neededHeight);
+    const columnsTarget = Math.ceil(trackCount / TARGET_MAX_ROWS);
+    const columns = Math.max(1, Math.min(columnsTarget, maxColumns));
+    const baseRows = Math.floor(trackCount / columns);
+    const remainder = trackCount % columns;
+    const columnCounts = Array.from({ length: columns }, (_, index) =>
+      baseRows + (index < remainder ? 1 : 0)
+    );
+    const rowsPerColumn = baseRows + (remainder > 0 ? 1 : 0);
+    const height = rowsPerColumn * effectiveRowHeight;
 
-    return { columns, height: `${Math.round(height)}px` };
+    return { columns, height: `${Math.round(height)}px`, columnCounts };
+  });
+
+  let trackColumns = $derived.by<TrackRow[][]>(() => {
+    if (tracks.length === 0) {
+      return [];
+    }
+
+    const { columns, columnCounts } = trackLayout;
+    if (columns <= 1) {
+      return [tracks];
+    }
+
+    const groups: TrackRow[][] = [];
+    let startIndex = 0;
+    for (const count of columnCounts) {
+      groups.push(tracks.slice(startIndex, startIndex + count));
+      startIndex += count;
+    }
+    return groups;
   });
 
   let albumTitle = $derived(album.albumTitleDisplay || 'Unknown Album');
   let albumArtist = $derived(album.albumArtistDisplay || 'Unknown Artist');
   let totalDuration = $derived(tracks.reduce((acc, t) => acc + (t.durationMs || 0), 0));
+
+  $effect(() => {
+    if (!selectedTrackId) return;
+    const stillExists = tracks.some(track => track.id === selectedTrackId);
+    if (!stillExists) {
+      selectedTrackId = null;
+    }
+  });
 
   $effect(() => {
     const key = getAlbumKey(album);
@@ -122,40 +187,6 @@
     loadTracks(key);
   });
 
-  $effect(() => {
-    const el = detailEl;
-    if (!el) return;
-
-    const updateArtworkSize = () => {
-      const style = getComputedStyle(el);
-      const size = Number.parseFloat(style.getPropertyValue('--artwork-size'));
-      if (!Number.isNaN(size) && size > 0) {
-        artworkSize = size;
-      }
-    };
-
-    updateArtworkSize();
-    const observer = new ResizeObserver(updateArtworkSize);
-    observer.observe(el);
-    return () => observer.disconnect();
-  });
-
-  $effect(() => {
-    const el = headerRowEl;
-    if (!el) return;
-
-    const updateHeaderHeight = () => {
-      const height = el.getBoundingClientRect().height;
-      if (height > 0) {
-        headerRowHeight = height;
-      }
-    };
-
-    updateHeaderHeight();
-    const observer = new ResizeObserver(updateHeaderHeight);
-    observer.observe(el);
-    return () => observer.disconnect();
-  });
 
   $effect(() => {
     if (!trackColumnsEl) return;
@@ -236,11 +267,46 @@
   function handleClose() {
     onClose?.();
   }
+
+  function handleTrackActivate(track: TrackRow) {
+    if (track.isMissing || !track.id) return;
+    const validTracks = tracks.filter(t => t.id && !t.isMissing);
+    const trackIds = validTracks.map(t => t.id);
+    const startIndex = validTracks.findIndex(t => t.id === track.id);
+    if (startIndex >= 0) {
+      playNowWithQueue(trackIds, startIndex);
+    }
+  }
+
+  function handleTrackSelect(track: TrackRow) {
+    if (track.isMissing || !track.id) return;
+    selectedTrackId = track.id;
+  }
+
+  function handleTrackKeydown(event: KeyboardEvent, track: TrackRow) {
+    if (event.key === 'Enter') {
+      handleTrackActivate(track);
+    }
+  }
+
+  function handleQueueNext(track: TrackRow) {
+    if (track.isMissing || !track.id) return;
+    addToQueueNext([track.id]);
+  }
+
+  function handleQueueLast(track: TrackRow) {
+    if (track.isMissing || !track.id) return;
+    addToQueue(track.id);
+  }
+
+  function handleEditTrack(track: TrackRow) {
+    if (track.isMissing || !track.id) return;
+    onedit?.([track.id]);
+  }
 </script>
 
 <div
   class="inline-detail"
-  bind:this={detailEl}
   style={backgroundArtUrl ? `--album-art: url('${backgroundArtUrl}')` : ''}
 >
   <button class="close-btn" onclick={handleClose} aria-label="Close album details">
@@ -249,13 +315,14 @@
 
   <div class="detail-grid">
     <div class="artwork-column">
-      {#if album.artworkCacheKey}
+      {#if album.artworkCacheKey || (album.albumArtistSort && album.albumTitleSort)}
         <div class="artwork">
           <ArtworkImage 
             cacheKey={album.artworkCacheKey}
             artistSort={album.albumArtistSort}
             titleSort={album.albumTitleSort}
-            size={512}
+            size={DETAIL_ART_SIZE}
+            previewUrl={previewArtUrl || undefined}
             alt="{albumTitle} artwork"
           />
         </div>
@@ -267,7 +334,7 @@
     </div>
 
     <div class="info-column">
-      <div class="header-row" bind:this={headerRowEl}>
+      <div class="header-row">
         <div class="title-block">
           <div class="album-title">{albumTitle}</div>
           <div class="meta-line">
@@ -293,11 +360,42 @@
             bind:this={trackColumnsEl}
             style={`--track-columns: ${trackLayout.columns}; --track-columns-height: ${trackLayout.height}`}
           >
-            {#each tracks as track (track.id)}
-              <div class="track-row">
-                <div class="track-number">{track.trackNo || '-'}</div>
-                <div class="track-title">{track.title || '—'}</div>
-                <div class="track-duration">{formatDuration(track.durationMs)}</div>
+            {#each trackColumns as column, columnIndex (columnIndex)}
+              <div class="track-column">
+                {#each column as track (track.id)}
+                  <ContextMenu.Root>
+                    <ContextMenu.Trigger asChild>
+                      {#snippet child({ props })}
+                        <div
+                          {...props}
+                          class="track-row"
+                          class:missing={track.isMissing}
+                          class:selected={track.id === selectedTrackId}
+                          role="button"
+                          tabindex={track.isMissing ? -1 : 0}
+                          aria-disabled={track.isMissing}
+                          onclick={() => handleTrackSelect(track)}
+                          ondblclick={() => handleTrackActivate(track)}
+                          onfocus={() => handleTrackSelect(track)}
+                          onkeydown={(event) => handleTrackKeydown(event, track)}
+                        >
+                          <div class="track-number">{track.trackNo || '-'}</div>
+                          <div class="track-title">{track.title || '—'}</div>
+                          <div class="track-duration">{formatDuration(track.durationMs)}</div>
+                        </div>
+                      {/snippet}
+                    </ContextMenu.Trigger>
+                    <ContextMenu.Portal>
+                      <ContextMenu.Content class="dropdown-content" data-testid="track-context-menu">
+                        <ContextMenu.Item class="dropdown-item" onclick={() => handleTrackActivate(track)}>Play Now</ContextMenu.Item>
+                        <ContextMenu.Item class="dropdown-item" onclick={() => handleQueueNext(track)}>Queue Next</ContextMenu.Item>
+                        <ContextMenu.Item class="dropdown-item" onclick={() => handleQueueLast(track)}>Queue Last</ContextMenu.Item>
+                        <ContextMenu.Separator class="dropdown-separator" />
+                        <ContextMenu.Item class="dropdown-item" onclick={() => handleEditTrack(track)}>Edit</ContextMenu.Item>
+                      </ContextMenu.Content>
+                    </ContextMenu.Portal>
+                  </ContextMenu.Root>
+                {/each}
               </div>
             {/each}
           </div>
@@ -395,7 +493,7 @@
     flex-direction: column;
     gap: 10px;
     min-width: 0;
-    min-height: var(--artwork-size);
+    min-height: 0;
   }
 
   .header-row {
@@ -443,12 +541,18 @@
   }
 
   .track-columns {
-    column-count: var(--track-columns, 2);
+    display: grid;
+    grid-template-columns: repeat(var(--track-columns, 2), minmax(0, 1fr));
     column-gap: 24px;
-    column-fill: auto;
     height: var(--track-columns-height, auto);
-    min-height: var(--artwork-size);
+    min-height: 0;
     width: 100%;
+  }
+
+  .track-column {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
   }
 
   .track-row {
@@ -456,9 +560,48 @@
     grid-template-columns: 22px 1fr auto;
     gap: 10px;
     padding: 4px 0;
-    break-inside: avoid;
     color: var(--text-secondary);
     font-size: 12.5px;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+  }
+
+  .track-row:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
+
+  .track-row:focus-visible {
+    background: var(--surface-2);
+    color: var(--text-primary);
+    outline: none;
+    box-shadow: inset 0 0 0 1px var(--divider-color);
+  }
+
+  .track-row.selected {
+    background: var(--surface-2);
+    color: var(--text-primary);
+    box-shadow: inset 0 0 0 1px var(--divider-color);
+  }
+
+  .track-row.missing {
+    cursor: default;
+    color: var(--text-disabled);
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .track-row.missing:hover,
+  .track-row.missing:focus-visible,
+  .track-row.missing.selected {
+    background: transparent;
+    color: var(--text-disabled);
+    box-shadow: none;
+  }
+
+  .track-row.missing .track-title {
+    color: var(--text-disabled);
   }
 
   .track-number {

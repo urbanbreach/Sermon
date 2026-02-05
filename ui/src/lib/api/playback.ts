@@ -50,12 +50,20 @@ export async function playbackPrevious(): Promise<void> {
   return invoke('cmd_playback_previous');
 }
 
+export async function restorePlaybackSession(): Promise<void> {
+  await invoke('cmd_playback_restore_session');
+}
+
 export async function queuePlayNow(trackId: number): Promise<void> {
   return invoke('cmd_queue_play_now', { trackId });
 }
 
 export async function queueAdd(trackId: number): Promise<void> {
   return invoke('cmd_queue_add', { trackId });
+}
+
+export async function queueAddNext(trackIds: number[]): Promise<void> {
+  return invoke('cmd_queue_add_next', { trackIds });
 }
 
 export async function queueSetAndPlay(trackIds: number[], startIndex: number): Promise<void> {
