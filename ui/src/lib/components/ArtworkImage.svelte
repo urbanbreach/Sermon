@@ -5,22 +5,27 @@
     retainDevArtworkUrl,
     releaseDevArtworkUrl
   } from '../utils/artworkDevUrls';
+  import { enqueueArtworkDecode, hasReadyThumb, markThumbReady } from '../utils/artworkDecodeQueue';
   import { recordLqipLoaded, recordThumbLoaded, recordArtworkError } from '../utils/artworkMetrics';
 
   interface Props {
-    cacheKey: string | null | undefined;
+    cacheKey?: string | null;
     artistSort?: string;
     titleSort?: string;
     size?: number;
+    previewUrl?: string | null;
+    deferHighRes?: boolean;
     alt?: string;
     class?: string;
   }
 
   let {
-    cacheKey,
+    cacheKey = null,
     artistSort = '',
     titleSort = '',
     size = 256,
+    previewUrl = null,
+    deferHighRes = false,
     alt = 'Album artwork',
     class: className = ''
   }: Props = $props();
@@ -42,19 +47,19 @@
     targetSize: number,
     isLqip: boolean
   ): string | null {
-    // Prefer /album/ route - it can discover and cache artwork on-demand
-    if (artist && title) {
-      const artistSegment = encodeURIComponent(artist);
-      const titleSegment = encodeURIComponent(title);
-      return `sermon-artwork://localhost/album/${artistSegment}/${titleSegment}?s=${targetSize}`;
-    }
-
-    // Fallback to direct cache key route (requires file to exist)
+    // Prefer direct cache key route when available (fast path)
     if (key) {
       const encodedKey = encodeURIComponent(key);
       return isLqip
         ? `sermon-artwork://localhost/lqip/${encodedKey}`
         : `sermon-artwork://localhost/thumb/${encodedKey}?s=${targetSize}`;
+    }
+
+    // Fallback to /album/ route - it can discover and cache artwork on-demand
+    if (artist && title) {
+      const artistSegment = encodeURIComponent(artist);
+      const titleSegment = encodeURIComponent(title);
+      return `sermon-artwork://localhost/album/${artistSegment}/${titleSegment}?s=${targetSize}`;
     }
 
     return null;
@@ -112,6 +117,8 @@
     const normalizedArtist = artistSort.trim();
     const normalizedTitle = titleSort.trim();
     const canUseAlbumRoute = normalizedArtist.length > 0 && normalizedTitle.length > 0;
+    const normalizedPreview = previewUrl?.trim() || '';
+    const hasPreview = normalizedPreview.length > 0;
 
     // Need either artist/title or cacheKey to load artwork
     if (!cacheKey && !canUseAlbumRoute) {
@@ -122,40 +129,67 @@
 
     let active = true;
     let devUrls: { lqipUrl: string; thumbUrl: string } | null = null;
+    let cancelDecode: (() => void) | null = null;
     const metricsKey = cacheKey || `album:${normalizedArtist}||${normalizedTitle}`;
 
     const loadWithUrls = (lqipUrl: string, thumbUrl: string) => {
-      // Start with LQIP (blurred placeholder)
-      stage = 'lqip';
-      recordLqipLoaded(metricsKey);
-      currentSrc = lqipUrl;
+      if (hasReadyThumb(thumbUrl)) {
+        stage = 'full';
+        currentSrc = thumbUrl;
+        recordThumbLoaded(metricsKey);
+        return;
+      }
+
+      if (hasPreview) {
+        stage = 'full';
+        currentSrc = normalizedPreview;
+      } else {
+        // Start with LQIP (blurred placeholder)
+        stage = 'lqip';
+        recordLqipLoaded(metricsKey);
+        currentSrc = lqipUrl;
+      }
+
+      if (deferHighRes) {
+        return;
+      }
 
       // Preload and decode thumbnail before swapping (prevents jank)
       const img = new Image();
+      img.decoding = 'async';
       img.src = thumbUrl;
 
-      img.decode()
-        .then(() => {
-          if (!active) return;
-
-          // Swap to high-res but keep blur momentarily (stage 'thumb')
-          currentSrc = thumbUrl;
-          stage = 'thumb';
-          recordThumbLoaded(metricsKey);
-
-          // Remove blur in next frame (stage 'full')
-          requestAnimationFrame(() => {
+      cancelDecode = enqueueArtworkDecode(() =>
+        img.decode()
+          .then(() => {
             if (!active) return;
+
+            markThumbReady(thumbUrl);
+            currentSrc = thumbUrl;
+            recordThumbLoaded(metricsKey);
+
+            if (!hasPreview) {
+              // Swap to high-res but keep blur momentarily (stage 'thumb')
+              stage = 'thumb';
+
+              // Remove blur in next frame (stage 'full')
+              requestAnimationFrame(() => {
+                if (!active) return;
+                stage = 'full';
+              });
+              return;
+            }
+
             stage = 'full';
-          });
-        })
-        .catch((err) => {
-          if (!active) return;
-          console.warn('Artwork decode failed:', err);
-          // On failure, show placeholder
-          recordArtworkError(metricsKey);
-          stage = 'none';
-        });
+          })
+          .catch((err) => {
+            if (!active) return;
+            console.warn('Artwork decode failed:', err);
+            // On failure, show placeholder
+            recordArtworkError(metricsKey);
+            stage = 'none';
+          })
+      );
     };
 
     if (useDevThumbFallback) {
@@ -197,6 +231,7 @@
 
     return () => {
       active = false;
+      cancelDecode?.();
       if (devUrls) {
         releaseDevArtworkUrl(devUrls.lqipUrl);
         releaseDevArtworkUrl(devUrls.thumbUrl);
@@ -214,7 +249,7 @@
     <img 
       src={currentSrc} 
       {alt}
-      class:blur={stage === 'lqip' || stage === 'thumb'}
+      class:soft-loading={stage === 'lqip' || stage === 'thumb'}
       draggable="false"
     />
   {:else}
@@ -236,13 +271,15 @@
     height: 100%;
     object-fit: cover;
     display: block;
-    transition: filter 0.3s ease-out;
-    will-change: filter;
+    transition: opacity 0.18s ease-out;
   }
 
-  img.blur {
-    filter: blur(10px);
-    transform: scale(1.05); /* Prevent blurred edges from showing background */
+  img.soft-loading {
+    opacity: 0.86;
+  }
+
+  .artwork-container[data-artwork-stage='thumb'] img.soft-loading {
+    opacity: 0.94;
   }
 
   .placeholder {
