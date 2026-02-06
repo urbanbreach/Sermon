@@ -15,7 +15,7 @@
   import * as ContextMenu from '../components/primitives/ContextMenu.svelte';
 import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback';
   import AlbumInlineDetail from '../components/AlbumInlineDetail.svelte';
-  import ArtworkImage from '../components/ArtworkImage.svelte';
+  import ArtworkCanvas from '../components/ArtworkCanvas.svelte';
   import { expandedAlbum, toggleAlbumInline, openAlbumInlineFromItem, clearAlbumInline } from '../state/albumInline';
   import SkeletonCard from '../components/SkeletonCard.svelte';
   import { Disc3 } from '@lucide/svelte';
@@ -57,6 +57,7 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
   const SCROLL_IDLE_MS = 140;
   const HIGH_VELOCITY_ENTER_PX_PER_S = 14000;
   const HIGH_VELOCITY_CONFIRM_MS = 120;
+  let activeBufferSize = $derived(deferHighRes ? 80 : 220);
   
   // Compute columns based on container width (min 160px + 20px gap)
   // containerWidth - 32 accounts for 1rem (16px) padding on each side
@@ -372,7 +373,7 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
         <VList
           bind:this={vlistRef}
           data={displayRows}
-          bufferSize={220}
+          bufferSize={activeBufferSize}
           getKey={(item) =>
             item.type === 'row'
               ? `row-${item.rowIndex}`
@@ -393,7 +394,7 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
                       ondblclick={() => handleAlbumDoubleClick(album)}
                     >
                       <div class="artwork">
-                        <ArtworkImage
+                        <ArtworkCanvas
                           cacheKey={album.artworkCacheKey}
                           artistSort={album.albumArtistSort}
                           titleSort={album.albumTitleSort}
@@ -409,7 +410,7 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
                       </div>
                     </div>
                   {:else}
-                    <ContextMenu.Trigger asChild>
+                    <ContextMenu.Trigger>
                       {#snippet child({ props })}
                         <div
                           {...props}
@@ -422,7 +423,7 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
                           ondblclick={() => handleAlbumDoubleClick(album)}
                         >
                           <div class="artwork">
-                            <ArtworkImage
+                            <ArtworkCanvas
                               cacheKey={album.artworkCacheKey}
                               artistSort={album.albumArtistSort}
                               titleSort={album.albumTitleSort}
