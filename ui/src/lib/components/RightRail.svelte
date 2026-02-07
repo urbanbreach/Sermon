@@ -1,21 +1,41 @@
 <script lang="ts">
   import { railMode, isRailOpen, setRailMode, toggleRail, albumTracks, albumTracksLoading } from '../state/rightRail';
-  import { currentTrack, currentTrackFull, playNow } from '../state/playback';
+  import { currentTrack, currentTrackFull, playNow, queue, playNowWithQueue } from '../state/playback';
   import ArtworkImage from './ArtworkImage.svelte';
-  import { currentLyrics, lyricsContext } from '../state/lyrics';
+  import { currentLyrics, currentLineIndex, lyricsStatus, fetchLyricsForTrack } from '../state/lyrics';
   import { railSplitRatio } from '../state/effects';
   import { navigate } from '../state/route';
-  import { Disc3, MicVocal, Maximize2, Volume2 } from '@lucide/svelte';
+  import { Disc3, MicVocal, Maximize2, Volume2, ListMusic } from '@lucide/svelte';
   import { derived } from 'svelte/store';
   import { fade, slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { fadeIn, pressScale } from '../utils/animations';
-  import { VList } from 'virtua/svelte';
   import type { TrackRow } from '../types/library';
   import VerticalResizeHandle from './VerticalResizeHandle.svelte';
   
   let railContentHeight = $state(0);
-  
+  let lyricsScrollEl: HTMLDivElement | undefined = $state(undefined);
+
+  // Auto-fetch lyrics when lyrics tab is opened and status is idle
+  $effect(() => {
+    const mode = $railMode;
+    const track = $currentTrack;
+    const status = $lyricsStatus;
+    if (mode === 'lyrics' && track && status === 'idle') {
+      fetchLyricsForTrack(track.id);
+    }
+  });
+
+  // Auto-scroll to active lyric line
+  $effect(() => {
+    const idx = $currentLineIndex;
+    if (!lyricsScrollEl || idx < 0) return;
+    const activeLine = lyricsScrollEl.querySelector('.lyric-line.active');
+    if (activeLine) {
+      activeLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  });
+
   function goFullscreenLyrics() {
     navigate({ name: 'lyrics-fullscreen' });
   }
@@ -92,6 +112,21 @@
     return parts.join(', ');
   }
 
+  function normalizeAlbumContext(
+    albumArtist?: string | null,
+    artist?: string | null,
+    album?: string | null
+  ) {
+    const normalizedAlbumArtist = (albumArtist ?? '').trim().toLowerCase();
+    const normalizedArtist = (artist ?? '').trim().toLowerCase();
+    const normalizedAlbum = (album ?? '').trim().toLowerCase();
+
+    return {
+      artistSort: normalizedAlbumArtist || normalizedArtist || 'unknown artist',
+      titleSort: normalizedAlbum || 'unknown album'
+    };
+  }
+
   // Helper: Check if album has multiple discs
   function hasMultipleDiscs(tracks: TrackRow[]): boolean {
     const discs = new Set(tracks.map(t => t.discNo ?? 1));
@@ -123,15 +158,47 @@
     }));
   }
 
+  // Heuristic: Check if queue matches album exactly
+  const isAlbumQueue = derived([queue, albumTracks, currentTrackFull], ([$queue, $albumTracks, $currentTrackFull]) => {
+    if (!$currentTrackFull || $queue.length === 0 || $albumTracks.length === 0) return false;
+    if ($queue.length !== $albumTracks.length) return false;
+
+    // Check if all queue items match the current album context
+    // We check if IDs match exactly in order
+    for (let i = 0; i < $queue.length; i++) {
+      if ($queue[i].track_id !== $albumTracks[i].id) {
+        return false;
+      }
+    }
+    return true;
+  });
+
   // Derived: Grouped tracks
   const discGroups = derived(albumTracks, ($tracks) => groupTracksByDisc($tracks));
   const showDiscDividers = derived(albumTracks, ($tracks) => hasMultipleDiscs($tracks));
   
   // Track count for header
-  const trackCount = derived(albumTracks, ($tracks) => $tracks.length);
+  const trackCount = derived([albumTracks, queue, isAlbumQueue], ([$albumTracks, $queue, $isAlbumQueue]) => {
+    return $isAlbumQueue ? $albumTracks.length : $queue.length;
+  });
 
   function handleKeydown(e: KeyboardEvent, trackId: number | undefined) {
     if (e.key === 'Enter' && trackId) {
+      playNow(trackId);
+    }
+  }
+  
+  function handleQueueKeydown(e: KeyboardEvent, trackId: number, index: number) {
+    if (e.key === 'Enter') {
+      // For queue items, we might want to play from that index?
+      // But playNow(trackId) plays the track. 
+      // If we want to jump to that position in queue, we need a different API or just playNow if it handles it.
+      // playNow(trackId) usually replaces the queue or plays from library.
+      // playNowWithQueue is for playing a list.
+      // If we are in the queue view, clicking an item should probably just skip to that item in the queue?
+      // But the current API doesn't seem to expose "skip to index".
+      // `playNow` in `playback.ts` calls `api.queuePlayNow(trackId)`.
+      // Let's stick to playNow for now as it's safe.
       playNow(trackId);
     }
   }
@@ -161,10 +228,14 @@
             class="pill-icon"
             class:active={$railMode === 'now-playing'}
             onclick={() => setRailMode('now-playing')}
-            title="Playing Tracks"
+            title="Queue"
             use:pressScale={{ scale: 0.95 }}
           >
-            <Disc3 size={16} />
+            {#if $isAlbumQueue}
+              <Disc3 size={16} />
+            {:else}
+              <ListMusic size={16} />
+            {/if}
           </button>
 
           <button 
@@ -190,39 +261,45 @@
       {#if $railMode === 'now-playing'}
         <!-- Playing Tracks Section -->
         <div class="section playing-tracks-section" style="height: {Math.floor(railContentHeight * $railSplitRatio)}px;">
-          {#if $currentTrackFull}
-            <!-- Album Info Card -->
-            <div class="album-info-card">
-              {#if ($currentTrackFull as any)?.artworkCacheKey || ($currentTrack as any)?.artworkCacheKey}
-                <ArtworkImage 
-                  cacheKey={($currentTrackFull as any)?.artworkCacheKey || ($currentTrack as any)?.artworkCacheKey} 
-                  size={128} 
-                  class="album-thumb" 
-                />
-              {:else}
-                <div class="album-thumb-placeholder"></div>
-              {/if}
-              <div class="album-info">
-                <div class="album-artist">{$currentTrackFull.albumArtist || $currentTrackFull.artist || '—'}</div>
-                <div class="album-title">{$currentTrackFull.album || 'Unknown Album'}</div>
-                <div class="album-meta">
-                  {#if $currentTrackFull.year}
-                    <span>{$currentTrackFull.year}</span>
-                  {/if}
-                  {#if $currentTrackFull.year && $currentTrackFull.genre}
-                    <span class="meta-dot">•</span>
-                  {/if}
-                  {#if $currentTrackFull.genre}
-                    <span>{$currentTrackFull.genre}</span>
-                  {/if}
+          {#if $currentTrackFull || $queue.length > 0}
+            <!-- Album Info Card (Only show if we have current track info) -->
+            {#if $currentTrackFull}
+              {@const albumContext = normalizeAlbumContext(
+                $currentTrackFull.albumArtist,
+                $currentTrackFull.artist || $currentTrack?.artist,
+                $currentTrackFull.album || $currentTrack?.album
+              )}
+              <div class="album-info-card">
+                <div class="album-thumb-wrapper">
+                  <ArtworkImage
+                    artistSort={albumContext.artistSort}
+                    titleSort={albumContext.titleSort}
+                    size={128}
+                    class="album-thumb"
+                  />
+                </div>
+                <div class="album-info">
+                  <div class="album-artist">{$currentTrackFull.albumArtist || $currentTrackFull.artist || '—'}</div>
+                  <div class="album-title">{$currentTrackFull.album || 'Unknown Album'}</div>
+                  <div class="album-meta">
+                    {#if $currentTrackFull.year}
+                      <span>{$currentTrackFull.year}</span>
+                    {/if}
+                    {#if $currentTrackFull.year && $currentTrackFull.genre}
+                      <span class="meta-dot">•</span>
+                    {/if}
+                    {#if $currentTrackFull.genre}
+                      <span>{$currentTrackFull.genre}</span>
+                    {/if}
+                  </div>
                 </div>
               </div>
-            </div>
+            {/if}
 
             <!-- Track List -->
             {#if $albumTracksLoading}
               <div class="loading-state">Loading tracks...</div>
-            {:else if $albumTracks.length > 0}
+            {:else if $isAlbumQueue}
               <div class="track-list">
                 {#each $discGroups as group}
                   {#if $showDiscDividers}
@@ -230,6 +307,7 @@
                   {/if}
                   {#each group.tracks as track (track.id)}
                     {@const isPlaying = track.id === $currentTrack?.id}
+                    {@const albumContext = normalizeAlbumContext(track.albumArtist, track.artist, track.album)}
                     <div 
                       class="track-row"
                       class:playing={isPlaying}
@@ -251,10 +329,35 @@
                   {/each}
                 {/each}
               </div>
+            {:else if $queue.length > 0}
+              <div class="track-list">
+                {#each $queue as item, i (item.track_id + '-' + i)}
+                  {@const isPlaying = item.track_id === $currentTrack?.id}
+                  {@const queueContext = normalizeAlbumContext(undefined, item.artist, item.album)}
+                  <div 
+                    class="track-row"
+                    class:playing={isPlaying}
+                    role="button"
+                    tabindex="0"
+                    ondblclick={() => playNow(item.track_id)}
+                    onkeydown={(e) => handleQueueKeydown(e, item.track_id, i)}
+                  >
+                    <span class="track-no">
+                      {#if isPlaying}
+                        <Volume2 size={14} class="playing-icon" />
+                      {:else}
+                        {i + 1}
+                      {/if}
+                    </span>
+                    <span class="track-title">{item.title || '—'}</span>
+                    <span class="track-artist">{item.artist || '—'}</span>
+                  </div>
+                {/each}
+              </div>
             {:else}
               <div class="empty-state" use:fadeIn={{ duration: 300 }}>
                 <Disc3 size={24} strokeWidth={1.5} />
-                <span>No tracks</span>
+                <span>Nothing playing</span>
               </div>
             {/if}
           {:else}
@@ -270,6 +373,11 @@
         <!-- Track Information Section -->
         <div class="section track-info-section">
           {#if $currentTrackFull}
+            {@const albumContext = normalizeAlbumContext(
+              $currentTrackFull.albumArtist,
+              $currentTrackFull.artist || $currentTrack?.artist,
+              $currentTrackFull.album || $currentTrack?.album
+            )}
             <div class="track-info-list">
               <div class="info-row">
                 <span class="info-value title">{$currentTrackFull.title || '—'}</span>
@@ -297,15 +405,12 @@
 
             <!-- Large Artwork -->
             <div class="large-artwork-container">
-              {#if ($currentTrackFull as any)?.artworkCacheKey || ($currentTrack as any)?.artworkCacheKey}
-                <ArtworkImage 
-                  cacheKey={($currentTrackFull as any)?.artworkCacheKey || ($currentTrack as any)?.artworkCacheKey} 
-                  size={512} 
-                  class="large-artwork" 
-                />
-              {:else}
-                <div class="large-artwork-placeholder"></div>
-              {/if}
+              <ArtworkImage 
+                artistSort={albumContext.artistSort}
+                titleSort={albumContext.titleSort}
+                size={512} 
+                class="large-artwork" 
+              />
             </div>
           {:else}
             <div class="empty-state" use:fadeIn={{ duration: 300 }}>
@@ -323,23 +428,36 @@
               <Maximize2 size={16} />
             </button>
           </div>
-          {#if $currentLyrics && $currentLyrics.length > 0}
-            <div class="lyrics-rail-content">
-              <VList data={$lyricsContext.lines}>
-                {#snippet children(line: string, i: number)}
-                  <p 
+
+          {#if $lyricsStatus === 'loading'}
+            <div class="empty-state" data-testid="lyrics-loading" use:fadeIn={{ duration: 300 }}>
+              <MicVocal size={24} strokeWidth={1.5} />
+              <span>Loading lyrics…</span>
+            </div>
+          {:else if $lyricsStatus === 'error'}
+            <div class="empty-state" data-testid="lyrics-error" use:fadeIn={{ duration: 300 }}>
+              <MicVocal size={24} strokeWidth={1.5} />
+              <span>Failed to load lyrics</span>
+            </div>
+          {:else if $currentLyrics && $currentLyrics.length > 0}
+            <div class="lyrics-rail-content" data-testid="lyrics-lines">
+              <div class="lyrics-mask-top"></div>
+              <div class="lyrics-scroll-container" bind:this={lyricsScrollEl}>
+                {#each $currentLyrics as line, i}
+                  <p
                     class="lyric-line"
-                    class:active={i === $lyricsContext.activeIndex}
-                    class:before={i < $lyricsContext.activeIndex}
-                    class:after={i > $lyricsContext.activeIndex}
+                    class:active={i === $currentLineIndex}
+                    class:before={i < $currentLineIndex}
+                    class:after={i > $currentLineIndex}
                   >
                     {line || '\u00A0'}
                   </p>
-                {/snippet}
-              </VList>
+                {/each}
+              </div>
+              <div class="lyrics-mask-bottom"></div>
             </div>
           {:else}
-            <div class="empty-state" use:fadeIn={{ duration: 300 }}>
+            <div class="empty-state" data-testid="lyrics-empty" use:fadeIn={{ duration: 300 }}>
               <MicVocal size={24} strokeWidth={1.5} />
               <span>Lyrics not available</span>
             </div>
@@ -489,7 +607,7 @@
   .track-info-section {
     flex: 1;
     min-height: 80px;
-    overflow-y: auto;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -517,22 +635,20 @@
     border: 1px solid var(--divider-color);
   }
 
-  :global(.album-thumb) {
+  .album-thumb-wrapper {
     width: 48px;
     height: 48px;
     border-radius: 3px;
-    object-fit: cover;
+    overflow: hidden;
     background: #222;
     flex-shrink: 0;
   }
 
-  .album-thumb-placeholder {
-    width: 48px;
-    height: 48px;
-    border-radius: 3px;
-    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
-    flex-shrink: 0;
+  .album-info-card :global(.album-thumb) {
+    width: 100%;
+    height: 100%;
   }
+
 
   .album-info {
     flex: 1;
@@ -594,7 +710,7 @@
   .track-row {
     display: grid;
     grid-template-columns: 20px 1fr auto;
-    gap: 4px;
+    gap: 6px;
     align-items: center;
     padding: 2px 2px;
     border-radius: 3px;
@@ -659,6 +775,7 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
+    flex-shrink: 0;
   }
 
   .info-row {
@@ -687,25 +804,24 @@
     flex: 1;
     min-height: 0;
     display: flex;
-    align-items: flex-start;
     justify-content: center;
+    overflow: hidden;
   }
 
-  :global(.large-artwork) {
-    width: 100%;
-    height: auto;
+  .large-artwork-container :global(.artwork-container.large-artwork) {
+    width: auto;
+    height: 100%;
+    aspect-ratio: 1 / 1;
+    max-width: 100%;
+    min-height: 0;
     max-height: 100%;
     border-radius: var(--artwork-radius-sidebar, 6px);
+    background: transparent;
+    flex: 0 0 auto;
+  }
+
+  .large-artwork-container :global(.artwork-container.large-artwork img) {
     object-fit: contain;
-  }
-
-  .large-artwork-placeholder {
-    width: 100%;
-    height: auto;
-    max-height: 100%;
-    aspect-ratio: 1;
-    border-radius: var(--artwork-radius-sidebar, 6px);
-    background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
   }
 
   /* ============================================
@@ -714,20 +830,21 @@
   .empty-state {
     color: var(--text-tertiary);
     font-size: 13px;
-    padding: 32px 16px;
+    padding: 48px 24px;
     text-align: center;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 12px;
     background: var(--surface-1);
     border-radius: var(--radius-md);
+    border: 1px dashed rgba(255, 255, 255, 0.1);
   }
 
   .empty-state :global(svg) {
-    opacity: 0.5;
     color: var(--text-disabled);
+    opacity: 1;
   }
 
   .loading-state {
@@ -738,7 +855,7 @@
   }
 
   /* ============================================
-     LYRICS SECTION
+     LYRICS SECTION - APPLE-LIKE FLUID MOTION
      ============================================ */
   .lyrics-section {
     flex: 1;
@@ -778,32 +895,73 @@
 
   .lyrics-rail-content {
     flex: 1;
+    position: relative;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .lyrics-scroll-container {
+    height: 100%;
     overflow-y: auto;
-    padding: 8px 0;
-    scrollbar-width: thin;
+    padding: 48px 0;
+    scrollbar-width: none;
+    scroll-behavior: smooth;
+  }
+
+  .lyrics-scroll-container::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Gradient masks for edge softening */
+  .lyrics-mask-top,
+  .lyrics-mask-bottom {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 48px;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .lyrics-mask-top {
+    top: 0;
+    background: linear-gradient(to bottom, var(--surface-1), transparent);
+  }
+
+  .lyrics-mask-bottom {
+    bottom: 0;
+    background: linear-gradient(to top, var(--surface-1), transparent);
   }
 
   .lyric-line {
     margin: 0;
-    padding: 6px 0;
+    padding: 8px 0;
     font-size: 20px;
-    font-weight: 500;
-    line-height: 1.4;
-    transition: all 0.3s ease;
-    color: rgba(255, 255, 255, 0.3);
+    font-weight: 600;
+    line-height: 1.35;
+    color: rgba(255, 255, 255, 0.25);
+    transition: color 0.4s cubic-bezier(0.25, 0.1, 0.25, 1),
+                transform 0.4s cubic-bezier(0.25, 0.1, 0.25, 1),
+                opacity 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+    transform-origin: left center;
+    opacity: 0.5;
   }
 
   .lyric-line.active {
     color: #fff;
     font-weight: 700;
+    transform: scale(1.03);
+    opacity: 1;
   }
 
   .lyric-line.before {
-    color: rgba(255, 255, 255, 0.25);
+    color: rgba(255, 255, 255, 0.2);
+    opacity: 0.4;
   }
 
   .lyric-line.after {
     color: rgba(255, 255, 255, 0.35);
+    opacity: 0.6;
   }
 
   /* ============================================
@@ -833,6 +991,13 @@
     }
     .pill-icon {
       animation: none;
+    }
+    .lyric-line {
+      transition: none;
+      transform: none !important;
+    }
+    .lyrics-scroll-container {
+      scroll-behavior: auto;
     }
   }
 </style>
