@@ -42,7 +42,7 @@ fn test_in_memory_migration() {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 8);
+    assert_eq!(version, 9);
 }
 
 #[test]
@@ -64,6 +64,22 @@ fn test_artwork_cache_tables_exist() {
     let count: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='artwork_cache_map_track'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[test]
+fn test_lyrics_cache_table_exists() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    apply_migrations(&conn).unwrap();
+
+    // Verify lyrics_cache table exists
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='lyrics_cache'",
             [],
             |row| row.get(0),
         )

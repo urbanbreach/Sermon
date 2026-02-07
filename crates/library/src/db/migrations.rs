@@ -53,6 +53,12 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), LibraryError> {
         version = 8;
     }
 
+    if version < 9 {
+        info!("Applying migration 0009_lyrics_cache");
+        conn.execute_batch(include_str!("../../migrations/0009_lyrics_cache.sql"))?;
+        version = 9;
+    }
+
     let _ = version;
 
     Ok(())
