@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { currentLyrics, currentLineIndex } from '../state/lyrics';
+  import { currentLyrics, currentLineIndex, lyricsStatus } from '../state/lyrics';
   import { currentTrack, progress, positionMs, durationMs } from '../state/playback';
   import { currentArtworkUrl } from '../state/artwork';
   import { goBack, navigate } from '../state/route';
   import { ArrowLeft, Maximize2 } from '@lucide/svelte';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
+
+  let lyricsScrollEl: HTMLDivElement | undefined;
 
   function formatTime(ms: number): string {
     const minutes = Math.floor(ms / 60000);
@@ -16,6 +18,13 @@
     if (e.key === 'Escape') {
       goBack();
     }
+  }
+
+  $: if (lyricsScrollEl && $currentLineIndex >= 0) {
+    tick().then(() => {
+      const activeLine = lyricsScrollEl?.querySelector('.lyric-line.active');
+      activeLine?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
   }
 
   onMount(() => {
@@ -50,8 +59,16 @@
 
   <!-- Lyrics content -->
   <main class="lyrics-main">
-    {#if $currentLyrics && $currentLyrics.length > 0}
-      <div class="lyrics-scroll">
+    {#if $lyricsStatus === 'loading'}
+      <div class="no-lyrics" data-testid="lyrics-loading">
+        <p>Loading lyrics…</p>
+      </div>
+    {:else if $lyricsStatus === 'error'}
+      <div class="no-lyrics" data-testid="lyrics-error">
+        <p>Failed to load lyrics.</p>
+      </div>
+    {:else if $currentLyrics && $currentLyrics.length > 0}
+      <div class="lyrics-scroll" bind:this={lyricsScrollEl}>
         {#each $currentLyrics as line, i}
           <p 
             class="lyric-line"
@@ -64,7 +81,7 @@
         {/each}
       </div>
     {:else}
-      <div class="no-lyrics">
+      <div class="no-lyrics" data-testid="lyrics-empty">
         <p>Lyrics not available for this track.</p>
       </div>
     {/if}
@@ -192,6 +209,7 @@
     text-align: center;
     padding: 48px 0;
     scrollbar-width: none;
+    scroll-behavior: smooth;
   }
 
   .lyrics-scroll::-webkit-scrollbar {
@@ -256,5 +274,15 @@
     font-size: 12px;
     color: rgba(255, 255, 255, 0.6);
     font-variant-numeric: tabular-nums;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lyric-line {
+      transition: none;
+      transform: none !important;
+    }
+    .lyrics-scroll {
+      scroll-behavior: auto;
+    }
   }
 </style>

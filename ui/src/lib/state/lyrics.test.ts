@@ -156,12 +156,13 @@ describe('lyrics fetch lifecycle', () => {
       source: string;
     }>();
 
-    invokeMock.mockImplementation((_command, payload: { request: { trackId: number } }) => {
-      if (payload.request.trackId === 1) {
+    invokeMock.mockImplementation(((_command: string, payload?: unknown) => {
+      const req = payload as { request: { trackId: number } } | undefined;
+      if (req?.request.trackId === 1) {
         return first.promise;
       }
       return second.promise;
-    });
+    }) as typeof invokeMock);
 
     const firstRequest = fetchLyricsForTrack(1);
     const secondRequest = fetchLyricsForTrack(2);
