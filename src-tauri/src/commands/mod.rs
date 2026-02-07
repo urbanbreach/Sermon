@@ -1,5 +1,6 @@
 pub mod artwork;
 pub mod library;
+pub mod lyrics;
 pub mod playback;
 pub mod settings;
 pub mod waveform;
@@ -11,6 +12,7 @@ pub use artwork::{
     generate_thumbnail, try_local_artwork,
 };
 pub use library::*;
+pub use lyrics::cmd_lyrics_get_for_track;
 pub use playback::*;
 pub use settings::*;
 pub use waveform::cmd_waveform_get_peaks;
