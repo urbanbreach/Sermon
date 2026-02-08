@@ -2,7 +2,7 @@
 import { onMount } from 'svelte';
   import { emit } from '@tauri-apps/api/event';
   import { currentRouteName } from './lib/state/route';
-  import { initPlaybackListeners } from './lib/state/playback';
+  import { initPlaybackListeners, restorePlaybackSession } from './lib/state/playback';
   import { initArtworkStore } from './lib/state/artwork';
   import { initRailResponsive, isRailOpen } from './lib/state/rightRail';
   import { loadEffectsSettings, sidebarVisible } from './lib/state/effects';
@@ -57,6 +57,13 @@ onMount(async () => {
       console.warn('Failed to emit first-interactive:', e);
       // Still log for browser dev
       console.log('first_interactive');
+    }
+
+    // Restore last playback session (always paused, never autoplay)
+    try {
+      await restorePlaybackSession();
+    } catch (e) {
+      console.warn('Failed to restore playback session:', e);
     }
   });
 
