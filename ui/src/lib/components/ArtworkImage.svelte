@@ -2,7 +2,6 @@
   import { getArtworkBestForAlbum } from '../api/artwork';
   import {
     getDevArtworkUrl,
-    retainDevArtworkUrl,
     releaseDevArtworkUrl
   } from '../utils/artworkDevUrls';
   import { enqueueArtworkDecode, hasReadyThumb, markThumbReady } from '../utils/artworkDecodeQueue';
@@ -86,8 +85,9 @@
     key: string | null | undefined,
     artist: string,
     title: string,
-    targetSize: number
-  ): Promise<{ lqipUrl: string; thumbUrl: string } | null> {
+    targetSize: number,
+    includeThumb: boolean
+  ): Promise<{ lqipUrl: string; thumbUrl: string | null } | null> {
     const resolvedKey = await resolveCacheKey(key, artist, title);
     if (!resolvedKey) return null;
 
@@ -96,9 +96,9 @@
 
     try {
       lqipUrl = await getDevArtworkUrl(resolvedKey, LQIP_SIZE);
-      retainDevArtworkUrl(lqipUrl);
-      thumbUrl = await getDevArtworkUrl(resolvedKey, targetSize);
-      retainDevArtworkUrl(thumbUrl);
+      if (includeThumb) {
+        thumbUrl = await getDevArtworkUrl(resolvedKey, targetSize);
+      }
 
       return { lqipUrl, thumbUrl };
     } catch (err) {
@@ -128,12 +128,18 @@
     }
 
     let active = true;
-    let devUrls: { lqipUrl: string; thumbUrl: string } | null = null;
+    let devUrls: { lqipUrl: string; thumbUrl: string | null } | null = null;
     let cancelDecode: (() => void) | null = null;
+    let pendingDecodeImage: HTMLImageElement | null = null;
     const metricsKey = cacheKey || `album:${normalizedArtist}||${normalizedTitle}`;
 
-    const loadWithUrls = (lqipUrl: string, thumbUrl: string) => {
-      if (hasReadyThumb(thumbUrl)) {
+    const loadWithUrls = (lqipUrl: string, thumbUrl: string | null) => {
+      // Skip redundant work if we're already showing this thumb at full quality
+      if (thumbUrl && stage === 'full' && currentSrc === thumbUrl) {
+        return;
+      }
+
+      if (thumbUrl && hasReadyThumb(thumbUrl)) {
         stage = 'full';
         currentSrc = thumbUrl;
         recordThumbLoaded(metricsKey);
@@ -150,50 +156,57 @@
         currentSrc = lqipUrl;
       }
 
-      if (deferHighRes) {
+      if (deferHighRes || !thumbUrl) {
         return;
       }
 
       // Preload and decode thumbnail before swapping (prevents jank)
-      const img = new Image();
-      img.decoding = 'async';
-      img.src = thumbUrl;
+      // Create the Image inside queued work so cancelled tasks do not allocate/download eagerly.
+      cancelDecode = enqueueArtworkDecode(async () => {
+        const img = new Image();
+        pendingDecodeImage = img;
+        img.decoding = 'async';
+        img.src = thumbUrl;
 
-      cancelDecode = enqueueArtworkDecode(() =>
-        img.decode()
-          .then(() => {
-            if (!active) return;
+        try {
+          await img.decode();
 
-            markThumbReady(thumbUrl);
-            currentSrc = thumbUrl;
-            recordThumbLoaded(metricsKey);
+          if (!active) return;
 
-            if (!hasPreview) {
-              // Swap to high-res but keep blur momentarily (stage 'thumb')
-              stage = 'thumb';
+          markThumbReady(thumbUrl);
+          currentSrc = thumbUrl;
+          recordThumbLoaded(metricsKey);
 
-              // Remove blur in next frame (stage 'full')
-              requestAnimationFrame(() => {
-                if (!active) return;
-                stage = 'full';
-              });
-              return;
-            }
+          if (!hasPreview) {
+            // Swap to high-res but keep blur momentarily (stage 'thumb')
+            stage = 'thumb';
 
-            stage = 'full';
-          })
-          .catch((err) => {
-            if (!active) return;
-            console.warn('Artwork decode failed:', err);
-            // On failure, show placeholder
-            recordArtworkError(metricsKey);
-            stage = 'none';
-          })
-      );
+            // Remove blur in next frame (stage 'full')
+            requestAnimationFrame(() => {
+              if (!active) return;
+              stage = 'full';
+            });
+            return;
+          }
+
+          stage = 'full';
+        } catch (err) {
+          if (!active) return;
+          console.warn('Artwork decode failed:', err);
+          // On failure, show placeholder
+          recordArtworkError(metricsKey);
+          stage = 'none';
+        } finally {
+          if (pendingDecodeImage === img) {
+            pendingDecodeImage = null;
+          }
+          img.src = '';
+        }
+      });
     };
 
     if (useDevThumbFallback) {
-      loadDevThumbUrls(cacheKey, normalizedArtist, normalizedTitle, size)
+      loadDevThumbUrls(cacheKey, normalizedArtist, normalizedTitle, size, !deferHighRes)
         .then((urls) => {
           if (!urls) {
             recordArtworkError(metricsKey);
@@ -203,7 +216,9 @@
           }
           if (!active) {
             releaseDevArtworkUrl(urls.lqipUrl);
-            releaseDevArtworkUrl(urls.thumbUrl);
+            if (urls.thumbUrl) {
+              releaseDevArtworkUrl(urls.thumbUrl);
+            }
             return;
           }
           devUrls = urls;
@@ -218,9 +233,11 @@
     } else {
       // Build URLs using custom protocol
       const lqipUrl = buildUrl(cacheKey, normalizedArtist, normalizedTitle, LQIP_SIZE, true);
-      const thumbUrl = buildUrl(cacheKey, normalizedArtist, normalizedTitle, size, false);
+      const thumbUrl = deferHighRes
+        ? null
+        : buildUrl(cacheKey, normalizedArtist, normalizedTitle, size, false);
 
-      if (!lqipUrl || !thumbUrl) {
+      if (!lqipUrl) {
         stage = 'none';
         currentSrc = '';
         return;
@@ -231,10 +248,20 @@
 
     return () => {
       active = false;
-      cancelDecode?.();
+      if (cancelDecode) {
+        cancelDecode();
+        cancelDecode = null;
+      }
+      if (pendingDecodeImage) {
+        pendingDecodeImage.src = '';
+        pendingDecodeImage = null;
+      }
       if (devUrls) {
         releaseDevArtworkUrl(devUrls.lqipUrl);
-        releaseDevArtworkUrl(devUrls.thumbUrl);
+        if (devUrls.thumbUrl) {
+          releaseDevArtworkUrl(devUrls.thumbUrl);
+        }
+        devUrls = null;
       }
     };
   });
