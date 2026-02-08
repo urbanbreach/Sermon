@@ -1,0 +1,116 @@
+- button Go Back [ref=e7] [cursor=pointer]:
+  - graphics-document [ref=e8] [cursor=pointer]
+- button Go Forward [disabled] [ref=e10]:
+  - graphics-document [ref=e11]
+- button Signal path [ref=e15]:
+  - text: NO SIGNAL
+- button Toggle Queue [ref=e16] [cursor=pointer]:
+  - graphics-document [ref=e17] [cursor=pointer]
+- button Minimize [ref=e21] [cursor=pointer]:
+  - graphics-document [ref=e22] [cursor=pointer]
+- button Maximize [ref=e24] [cursor=pointer]:
+  - graphics-document [ref=e25] [cursor=pointer]
+- button Close [ref=e27] [cursor=pointer]:
+  - graphics-document [ref=e28] [cursor=pointer]
+- main [ref=e32]:
+  - complementary [ref=e36]:
+    - generic [ref=e37]:
+      - heading Preferences [level=2] [ref=e38]:
+        - text: Preferences
+    - navigation [ref=e39]:
+      - button Player [ref=e40] [cursor=pointer]:
+        - graphics-document [ref=e41] [cursor=pointer]
+        - text: Player
+      - button Devices [ref=e46] [cursor=pointer]:
+        - graphics-document [ref=e47] [cursor=pointer]
+        - text: Devices
+      - button Library [ref=e51] [cursor=pointer]:
+        - graphics-document [ref=e52] [cursor=pointer]
+        - text: Library
+      - button Internet [ref=e58] [cursor=pointer]:
+        - graphics-document [ref=e59] [cursor=pointer]
+        - text: Internet
+      - button Appearance [ref=e64] [cursor=pointer]:
+        - graphics-document [ref=e65] [cursor=pointer]
+        - text: Appearance
+  - main [ref=e72]:
+    - generic [ref=e73]:
+      - heading Appearance [level=1] [ref=e74]:
+        - text: Appearance
+      - button Reset to Defaults [ref=e75] [cursor=pointer]:
+        - graphics-document [ref=e76] [cursor=pointer]
+        - text: Reset to Defaults
+    - heading Accent Color [level=3] [ref=e83]:
+      - text: Accent Color
+    - button "Select color #3b82f6" [ref=e87] [cursor=pointer]
+    - button "Select color #ef4444" [ref=e88] [cursor=pointer]
+    - button "Select color #10b981" [ref=e89] [cursor=pointer]
+    - button "Select color #f59e0b" [ref=e90] [cursor=pointer]
+    - button "Select color #8b5cf6" [ref=e91] [cursor=pointer]
+    - button "Select color #ec4899" [ref=e92] [cursor=pointer]
+    - button "Select color #06b6d4" [ref=e93] [cursor=pointer]
+    - button "Select color #f97316" [ref=e94] [cursor=pointer]
+    - button "Select color #ffffff" [ref=e95] [cursor=pointer]
+    - text: "#"
+    - textbox [valuenow=undefined] [value=ffffff] [ref=e98]
+    - heading Waveform [level=3] [ref=e102]:
+      - text: Waveform
+    - text: Waveform Seekbar
+    - text: Show waveform visualization in the bottom player bar
+    - checkbox [checked] [ref=e109] [cursor=pointer]
+    - text: Waveform Style
+    - text: Choose the visual style of the waveform
+    - button Pills [ref=e116] [cursor=pointer]:
+      - text: Pills
+    - button Raw [ref=e117] [cursor=pointer]:
+      - text: Raw
+    - heading Cover Art [level=3] [ref=e120]:
+      - text: Cover Art
+    - text: Rounded corners in sidebar
+    - text: Apply rounded corners to artwork in the sidebar
+    - checkbox [ref=e127] [cursor=pointer]
+    - text: Rounded corners on album grid
+    - text: Apply rounded corners to album artwork in grid views
+    - checkbox [ref=e133] [cursor=pointer]
+    - text: Rounded corners on album detail
+    - text: Apply rounded corners to artwork on album detail pages
+    - checkbox [ref=e139] [cursor=pointer]
+    - heading Layout [level=3] [ref=e142]:
+      - text: Layout
+    - text: Show Sidebar
+    - text: Toggle the visibility of the left sidebar navigation
+    - checkbox [ref=e149] [cursor=pointer]
+  - separator Resize panel [orientation=vertical] [ref=e150]
+  - complementary [ref=e151]:
+    - button Playing Tracks [ref=e155] [cursor=pointer]:
+      - graphics-document [ref=e156] [cursor=pointer]
+    - button Lyrics [ref=e161] [cursor=pointer]:
+      - graphics-document [ref=e162] [cursor=pointer]
+    - text: "0 tracks"
+    - graphics-document [ref=e170]
+    - text: Nothing playing
+    - separator Resize panels [orientation=horizontal] [ref=e176]
+    - graphics-document [ref=e179]
+    - text: No track information
+- text: "0:00"
+- text: "-0:00"
+- button Shuffle [ref=e196] [cursor=pointer]:
+  - graphics-document [ref=e197] [cursor=pointer]
+- button Previous [ref=e203] [cursor=pointer]:
+  - graphics-document [ref=e204] [cursor=pointer]
+- button Play [ref=e207] [cursor=pointer]:
+  - graphics-document [ref=e208] [cursor=pointer]
+- button Next [ref=e210] [cursor=pointer]:
+  - graphics-document [ref=e211] [cursor=pointer]
+- button Repeat [ref=e214] [cursor=pointer]:
+  - graphics-document [ref=e215] [cursor=pointer]
+- button Nothing Playing Select a track [ref=e220] [cursor=pointer]:
+  - text: Nothing Playing
+  - text: Select a track
+- graphics-document [ref=e227]
+- slider Volume [valuenow=1] [ref=e231] [cursor=pointer]
+
+# ───────────────────────────────────────
+# Generated: 2026-02-01T16:54:25.819Z
+# Elements indexed: 232
+# Use [ref=eN] with other webview tools

@@ -1,0 +1,102 @@
+{
+  "ok": true,
+  "completedAt": "2026-02-08T03:39:44.997Z",
+  "scroller": {
+    "selector": "div.list-wrapper > :first-child",
+    "stepPx": 1180,
+    "waitMs": 70,
+    "cycles": 3,
+    "idleWaitMs": 10000
+  },
+  "cycles": [
+    {
+      "cycle": 1,
+      "blob": {
+        "created": 984,
+        "revoked": 563,
+        "live": 532
+      },
+      "metrics": {
+        "count": 283,
+        "errorCount": 4,
+        "p95ThumbMs": 0
+      },
+      "cacheStats": {
+        "size": 550,
+        "liveRefCount": 25,
+        "zeroRefCount": 525
+      },
+      "decodeStats": {
+        "queueLength": 27,
+        "inFlight": 6,
+        "readyThumbCount": 2,
+        "scrolling": false
+      }
+    },
+    {
+      "cycle": 2,
+      "blob": {
+        "created": 1030,
+        "revoked": 595,
+        "live": 547
+      },
+      "metrics": {
+        "count": 284,
+        "errorCount": 4,
+        "p95ThumbMs": 0
+      },
+      "cacheStats": {
+        "size": 550,
+        "liveRefCount": 43,
+        "zeroRefCount": 507
+      },
+      "decodeStats": {
+        "queueLength": 27,
+        "inFlight": 6,
+        "readyThumbCount": 2,
+        "scrolling": false
+      }
+    },
+    {
+      "cycle": 3,
+      "blob": {
+        "created": 1030,
+        "revoked": 611,
+        "live": 531
+      },
+      "metrics": {
+        "count": 284,
+        "errorCount": 4,
+        "p95ThumbMs": 0
+      },
+      "cacheStats": {
+        "size": 534,
+        "liveRefCount": 43,
+        "zeroRefCount": 491
+      },
+      "decodeStats": {
+        "queueLength": 27,
+        "inFlight": 6,
+        "readyThumbCount": 2,
+        "scrolling": false
+      }
+    }
+  ],
+  "idleBlob": {
+    "created": 1080,
+    "revoked": 1080,
+    "live": 112
+  },
+  "idleCacheStats": {
+    "size": 115,
+    "liveRefCount": 115,
+    "zeroRefCount": 0
+  },
+  "idleDecodeStats": {
+    "queueLength": 83,
+    "inFlight": 6,
+    "readyThumbCount": 2,
+    "scrolling": false
+  },
+  "visibleImages": 58
+}

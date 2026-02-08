@@ -1,0 +1,33 @@
+# DB Query Baseline Timings
+
+## Test Environment
+- Date: 2026-01-29
+- Database: SQLite with FTS5
+- Migrations: 0001-0008 applied (once at startup)
+- Indexes: Added in 0007_browse_indexes.sql
+
+## Query Performance
+
+| Query Type | Elapsed (ms) | Results |
+|------------|--------------|---------|
+| Search tracks (FTS) | 6.60 | 50 |
+| List albums | 4.00 | 13 |
+
+## Notes
+
+- All queries complete in <10ms
+- No migration spam during API calls (migrations run once at startup)
+- Indexes active for browse queries:
+  - idx_tracks_is_missing
+  - idx_tracks_album_browse  
+  - idx_tracks_artist_browse
+  - idx_tracks_title_sort
+  - idx_tracks_artist_sort
+  - idx_tracks_album_sort
+
+## Migration Optimization
+
+Before: `apply_migrations()` called in every command handler (39 call sites)
+After: Migrations run once in `setup()` hook, flag prevents re-runs
+
+This eliminates per-request migration overhead.
