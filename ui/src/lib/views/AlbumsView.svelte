@@ -15,14 +15,17 @@
   import * as ContextMenu from '../components/primitives/ContextMenu.svelte';
 import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback';
   import AlbumInlineDetail from '../components/AlbumInlineDetail.svelte';
-  import ArtworkCanvas from '../components/ArtworkCanvas.svelte';
+  import ArtworkImage from '../components/ArtworkImage.svelte';
+  import AlbumsArtworkSurface from '../components/AlbumsArtworkSurface.svelte';
   import { expandedAlbum, toggleAlbumInline, openAlbumInlineFromItem, clearAlbumInline } from '../state/albumInline';
   import SkeletonCard from '../components/SkeletonCard.svelte';
   import { Disc3 } from '@lucide/svelte';
   import { fadeIn } from '../utils/animations';
-  import { setAlbumGridScrolling } from '../utils/artworkDecodeQueue';
+  import { setAlbumGridScrolling, flushArtworkDecodeQueue } from '../utils/artworkDecodeQueue';
+  import { notifyScrollPressure } from '../utils/artworkDevUrls';
+  import { registerArtworkSlot } from '../utils/albumsArtworkSlots';
+  import { artworkRoundedAlbums } from '../state/effects';
   import { VList } from 'virtua/svelte';
-  import { fade, slide } from 'svelte/transition';
 
   let albums: AlbumListItem[] = $state([]);
   let loading = $state(false);
@@ -36,7 +39,7 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
   // Tag editor state
   let tagEditorOpen = $state(false);
   let editingTrackIds = $state<number[]>([]);
-  let contextMenuAlbum: AlbumListItem | null = $state(null);
+  let useArtworkSurface = $state(false);
 
   // Virtualization state
   let containerWidth = $state(0);
@@ -48,6 +51,8 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
   let listWrapperEl = $state<HTMLDivElement | null>(null);
   let isScrolling = $state(false);
   let deferHighRes = $state(false);
+  let ultraFastScroll = $state(false);
+  let artworkRadiusPx = $derived($artworkRoundedAlbums ? 10 : 0);
   let smoothedScrollVelocity = 0;
   let highVelocityStartedAt = 0;
   let lastScrollTop = 0;
@@ -56,8 +61,10 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
   let lastScrollAt = 0;
   const SCROLL_IDLE_MS = 140;
   const HIGH_VELOCITY_ENTER_PX_PER_S = 14000;
+  const ULTRA_FAST_SCROLL_ENTER_PX_PER_S = 26000;
+  const ULTRA_FAST_SCROLL_EXIT_PX_PER_S = 18000;
   const HIGH_VELOCITY_CONFIRM_MS = 120;
-  let activeBufferSize = $derived(deferHighRes ? 80 : 220);
+  let activeBufferSize = $derived(ultraFastScroll ? 220 : deferHighRes ? 300 : 700);
   
   // Compute columns based on container width (min 160px + 20px gap)
   // containerWidth - 32 accounts for 1rem (16px) padding on each side
@@ -151,7 +158,6 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
           if (highVelocityStartedAt === 0) {
             highVelocityStartedAt = now;
           } else if (now - highVelocityStartedAt >= HIGH_VELOCITY_CONFIRM_MS) {
-            contextMenuAlbum = null;
             deferHighRes = true;
           }
         } else {
@@ -159,9 +165,16 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
         }
       }
 
+      if (smoothedScrollVelocity >= ULTRA_FAST_SCROLL_ENTER_PX_PER_S) {
+        ultraFastScroll = true;
+      } else if (ultraFastScroll && smoothedScrollVelocity <= ULTRA_FAST_SCROLL_EXIT_PX_PER_S) {
+        ultraFastScroll = false;
+      }
+
       if (isScrolling) return;
       isScrolling = true;
       setAlbumGridScrolling(true);
+      notifyScrollPressure(true);
 
       const settle = () => {
         if (performance.now() - lastScrollAt >= SCROLL_IDLE_MS) {
@@ -169,9 +182,11 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
           smoothedScrollVelocity = 0;
           highVelocityStartedAt = 0;
           deferHighRes = false;
-          contextMenuAlbum = null;
+          ultraFastScroll = false;
           lastScrollTs = 0;
           setAlbumGridScrolling(false);
+          notifyScrollPressure(false);
+          flushArtworkDecodeQueue();
           scrollSettlerRaf = 0;
           return;
         }
@@ -193,9 +208,11 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
       smoothedScrollVelocity = 0;
       highVelocityStartedAt = 0;
       deferHighRes = false;
-      contextMenuAlbum = null;
+      ultraFastScroll = false;
       lastScrollTs = 0;
       setAlbumGridScrolling(false);
+      notifyScrollPressure(false);
+      flushArtworkDecodeQueue();
     };
   });
 
@@ -294,8 +311,8 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
     editingTrackIds = [];
   }
 
-  function handleAlbumContextMenu(album: AlbumListItem) {
-    contextMenuAlbum = album;
+  function handleArtworkSurfaceUnsupported() {
+    useArtworkSurface = false;
   }
 
   async function handlePlayAlbum(album: AlbumListItem) {
@@ -324,36 +341,13 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
     bumpAlbumArtworkVersion(pickerAlbum);
   }
 
-  async function handleContextMenuPlayAlbum() {
-    const album = contextMenuAlbum;
-    if (!album) return;
-    await handlePlayAlbum(album);
-  }
-
-  async function handleContextMenuQueueAlbumNext() {
-    const album = contextMenuAlbum;
-    if (!album) return;
-    await handleQueueAlbumNext(album);
-  }
-
-  async function handleContextMenuQueueAlbumLast() {
-    const album = contextMenuAlbum;
-    if (!album) return;
-    await handleQueueAlbumLast(album);
-  }
-
-  async function handleContextMenuEditAlbum() {
-    const album = contextMenuAlbum;
-    if (!album) return;
-    await openTagEditorForAlbum(album);
-  }
-
 </script>
 
 <div 
   class="view-container" 
   class:scrolling={isScrolling}
   bind:clientWidth={containerWidth}
+  use:fadeIn={{ duration: 300 }}
 >
   {#if !initialLoadComplete && albums.length === 0}
     <div class="albums-grid">
@@ -369,61 +363,50 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
     </div>
   {:else}
     <div class="list-wrapper" bind:this={listWrapperEl}>
-      <ContextMenu.Root>
-        <VList
-          bind:this={vlistRef}
-          data={displayRows}
-          bufferSize={activeBufferSize}
-          getKey={(item) =>
-            item.type === 'row'
-              ? `row-${item.rowIndex}`
-              : `detail-${item.rowIndex}`
-          }
-        >
-          {#snippet children(item)}
-            {#if item.type === 'row'}
-              <div class="grid-row" style="grid-template-columns: repeat({columns}, 1fr)">
-                {#each item.albums as album (getAlbumKey(album))}
-                  {#if deferHighRes}
-                    <div
-                      class="card"
-                      role="button"
-                      tabindex="0"
-                      onkeydown={(e) => e.key === 'Enter' && handleAlbumClick(album)}
-                      onclick={(e) => handleAlbumClick(album, e)}
-                      ondblclick={() => handleAlbumDoubleClick(album)}
-                    >
-                      <div class="artwork">
-                        <ArtworkCanvas
-                          cacheKey={album.artworkCacheKey}
-                          artistSort={album.albumArtistSort}
-                          titleSort={album.albumTitleSort}
-                          size={256}
-                          deferHighRes={deferHighRes}
-                          alt="{album.albumTitleDisplay} artwork"
-                        />
-                      </div>
-                      <div class="info">
-                        <div class="title" title={album.albumTitleDisplay}>{album.albumTitleDisplay}</div>
-                        <div class="artist" title={album.albumArtistDisplay}>{album.albumArtistDisplay}</div>
-                        {#if album.year}<div class="year">{album.year}</div>{/if}
-                      </div>
-                    </div>
-                  {:else}
-                    <ContextMenu.Trigger>
-                      {#snippet child({ props })}
-                        <div
-                          {...props}
-                          class="card"
-                          role="button"
-                          tabindex="0"
-                          onmousedown={(e) => e.button === 2 && handleAlbumContextMenu(album)}
-                          onkeydown={(e) => e.key === 'Enter' && handleAlbumClick(album)}
-                          onclick={(e) => handleAlbumClick(album, e)}
-                          ondblclick={() => handleAlbumDoubleClick(album)}
-                        >
-                          <div class="artwork">
-                            <ArtworkCanvas
+      <VList
+        bind:this={vlistRef}
+        data={displayRows}
+        bufferSize={activeBufferSize}
+        getKey={(item) =>
+          item.type === 'row'
+            ? `row-${item.rowIndex}`
+            : `detail-${item.rowIndex}`
+        }
+      >
+        {#snippet children(item)}
+          {#if item.type === 'row'}
+            <div class="grid-row" style="grid-template-columns: repeat({columns}, 1fr)">
+              {#each item.albums as album (getAlbumKey(album))}
+                <ContextMenu.Root>
+                  <ContextMenu.Trigger>
+                    {#snippet child({ props })}
+                      <div
+                        {...props}
+                        class="card"
+                        role="button"
+                        tabindex="0"
+                        onkeydown={(e) => e.key === 'Enter' && handleAlbumClick(album)}
+                        onclick={(e) => handleAlbumClick(album, e)}
+                        ondblclick={() => handleAlbumDoubleClick(album)}
+                      >
+                        <div class="artwork">
+                          {#if useArtworkSurface}
+                            <div
+                              class="artwork-slot"
+                              use:registerArtworkSlot={{
+                                id: `${getAlbumKey(album)}||${artworkCacheSeed}`,
+                                cacheKey: album.artworkCacheKey ?? '',
+                                artistSort: album.albumArtistSort,
+                                titleSort: album.albumTitleSort
+                              }}
+                              data-artwork-id={`${getAlbumKey(album)}||${artworkCacheSeed}`}
+                              data-cache-key={album.artworkCacheKey ?? ''}
+                              data-artist-sort={album.albumArtistSort}
+                              data-title-sort={album.albumTitleSort}
+                              aria-label="{album.albumTitleDisplay} artwork"
+                            ></div>
+                          {:else}
+                            <ArtworkImage
                               cacheKey={album.artworkCacheKey}
                               artistSort={album.albumArtistSort}
                               titleSort={album.albumTitleSort}
@@ -431,45 +414,54 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
                               deferHighRes={deferHighRes}
                               alt="{album.albumTitleDisplay} artwork"
                             />
-                          </div>
-                          <div class="info">
-                            <div class="title" title={album.albumTitleDisplay}>{album.albumTitleDisplay}</div>
-                            <div class="artist" title={album.albumArtistDisplay}>{album.albumArtistDisplay}</div>
-                            {#if album.year}<div class="year">{album.year}</div>{/if}
-                          </div>
+                          {/if}
                         </div>
-                      {/snippet}
-                    </ContextMenu.Trigger>
-                  {/if}
-                {/each}
-              </div>
-            {:else}
-              <div class="detail-row" transition:slide={{ duration: 220 }}>
-                <div class="detail-fade" in:fade={{ duration: 220 }} out:fade={{ duration: 150 }}>
-                  <AlbumInlineDetail
-                    album={item.album}
-                    onClose={() => clearAlbumInline()}
-                    onedit={(trackIds) => {
-                      editingTrackIds = trackIds;
-                      tagEditorOpen = true;
-                    }}
-                  />
-                </div>
-              </div>
-            {/if}
-          {/snippet}
-        </VList>
+                        <div class="info">
+                          <div class="title" title={album.albumTitleDisplay}>{album.albumTitleDisplay}</div>
+                          <div class="artist" title={album.albumArtistDisplay}>{album.albumArtistDisplay}</div>
+                          {#if album.year}<div class="year">{album.year}</div>{/if}
+                        </div>
+                      </div>
+                    {/snippet}
+                  </ContextMenu.Trigger>
 
-        <ContextMenu.Portal>
-          <ContextMenu.Content class="dropdown-content" data-testid="album-context-menu">
-            <ContextMenu.Item class="dropdown-item" disabled={!contextMenuAlbum} onclick={handleContextMenuPlayAlbum}>Play Album</ContextMenu.Item>
-            <ContextMenu.Item class="dropdown-item" disabled={!contextMenuAlbum} onclick={handleContextMenuQueueAlbumNext}>Queue Album Next</ContextMenu.Item>
-            <ContextMenu.Item class="dropdown-item" disabled={!contextMenuAlbum} onclick={handleContextMenuQueueAlbumLast}>Queue Album Last</ContextMenu.Item>
-            <ContextMenu.Separator class="dropdown-separator" />
-            <ContextMenu.Item class="dropdown-item" disabled={!contextMenuAlbum} onclick={handleContextMenuEditAlbum}>Edit</ContextMenu.Item>
-          </ContextMenu.Content>
-        </ContextMenu.Portal>
-      </ContextMenu.Root>
+                  <ContextMenu.Portal>
+                    <ContextMenu.Content class="dropdown-content" data-testid="album-context-menu">
+                      <ContextMenu.Item class="dropdown-item" onclick={() => handlePlayAlbum(album)}>Play Album</ContextMenu.Item>
+                      <ContextMenu.Item class="dropdown-item" onclick={() => handleQueueAlbumNext(album)}>Queue Album Next</ContextMenu.Item>
+                      <ContextMenu.Item class="dropdown-item" onclick={() => handleQueueAlbumLast(album)}>Queue Album Last</ContextMenu.Item>
+                      <ContextMenu.Separator class="dropdown-separator" />
+                      <ContextMenu.Item class="dropdown-item" onclick={() => openTagEditorForAlbum(album)}>Edit</ContextMenu.Item>
+                    </ContextMenu.Content>
+                  </ContextMenu.Portal>
+                </ContextMenu.Root>
+              {/each}
+            </div>
+          {:else}
+            <div class="detail-row">
+              <AlbumInlineDetail
+                album={item.album}
+                onClose={() => clearAlbumInline()}
+                onedit={(trackIds) => {
+                  editingTrackIds = trackIds;
+                  tagEditorOpen = true;
+                }}
+              />
+            </div>
+          {/if}
+        {/snippet}
+      </VList>
+
+      {#if useArtworkSurface}
+        <AlbumsArtworkSurface
+          wrapperEl={listWrapperEl}
+          enabled={useArtworkSurface}
+          deferHighRes={deferHighRes}
+          ultraFastMode={ultraFastScroll}
+          artworkRadiusPx={artworkRadiusPx}
+          on:unsupported={handleArtworkSurfaceUnsupported}
+        />
+      {/if}
     </div>
   {/if}
 </div>
@@ -489,7 +481,7 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
 <style>
   .view-container {
     padding: 1rem;
-    padding-top: 12px;
+    padding-top: 0;
     padding-right: 0;
     padding-bottom: 0;
     color: var(--text-primary);
@@ -511,6 +503,7 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
   
   .list-wrapper {
     flex: 1;
+    position: relative;
     padding-top: 0; /* Padding moved inside virtua scroll container */
   }
   
@@ -530,10 +523,6 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
   .detail-row {
     padding-right: 1rem;
     margin-bottom: 24px;
-  }
-
-  .detail-fade {
-    will-change: opacity, transform;
   }
 
   .card {
@@ -559,7 +548,6 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
 
   .view-container.scrolling .card {
     transition: background var(--motion-fast) var(--ease-out);
-    pointer-events: none;
   }
 
   .view-container.scrolling .card:hover {
@@ -578,6 +566,13 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
     overflow: hidden;
     border-radius: var(--artwork-radius-albums, 10px);
     position: relative;
+    background: var(--surface-2);
+  }
+
+  .artwork-slot {
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
     background: var(--surface-2);
   }
 
