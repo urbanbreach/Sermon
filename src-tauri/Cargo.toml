@@ -41,6 +41,7 @@ chrono = { version = "0.4", features = ["serde"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 tokio = { version = "1", features = ["sync"] }
 tauri-plugin-mcp-bridge = "0.8"
+tauri-plugin-window-state = "2"
 sysinfo = "0.32"
 
 [target.'cfg(windows)'.dependencies]

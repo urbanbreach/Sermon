@@ -28,6 +28,9 @@ pub struct AudioMetadata {
     // DSD-specific
     pub dsd_rate_hz: Option<u32>,
     pub dsd_channels: Option<u8>,
+    // Lyrics
+    pub lyrics: Option<String>,
+    pub synced_lyrics: Option<String>,
 }
 
 /// A single raw tag item for display
@@ -138,6 +141,18 @@ fn read_metadata_inner(path: &Path) -> Result<AudioMetadata, lofty::error::Lofty
         (None, None, None, None, None, None, None, None)
     };
 
+    let (lyrics, synced_lyrics) = if let Some(t) = tag {
+        (
+            t.get_string(&lofty::tag::ItemKey::Lyrics)
+                .map(|s| s.to_string()),
+            // Synced lyrics (LRC format) are not standardized in most tag formats;
+            // if present they'd typically be in a custom field. Return None for now.
+            None,
+        )
+    } else {
+        (None, None)
+    };
+
     Ok(AudioMetadata {
         title,
         artist,
@@ -147,6 +162,8 @@ fn read_metadata_inner(path: &Path) -> Result<AudioMetadata, lofty::error::Lofty
         disc_no,
         year,
         genre,
+        lyrics,
+        synced_lyrics,
         codec,
         container,
         sample_rate,
