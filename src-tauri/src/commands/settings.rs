@@ -27,6 +27,7 @@ fn get_category_keys(category: &str) -> Vec<&'static str> {
             "player.buffer_size_ms",
             "player.preload_next",
             "player.load_to_memory",
+            "player.resume_on_startup",
         ],
         "nowplaying" => vec![
             "nowplaying.double_click",
@@ -52,6 +53,7 @@ fn get_category_defaults(category: &str) -> HashMap<&'static str, &'static str> 
             ("player.buffer_size_ms", "500"),
             ("player.preload_next", "on"),
             ("player.load_to_memory", "on"),
+            ("player.resume_on_startup", "off"),
         ]),
         "nowplaying" => HashMap::from([
             ("nowplaying.double_click", "play_now"),

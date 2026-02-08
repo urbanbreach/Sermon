@@ -14,6 +14,7 @@ export interface PlayerSettings {
   'player.buffer_size_ms': string;
   'player.preload_next': string;
   'player.load_to_memory': string;
+  'player.resume_on_startup': string;
 }
 
 export interface LibrarySettings {
@@ -21,6 +22,7 @@ export interface LibrarySettings {
 }
 
 export interface InternetSettings {
+  'internet.acoustid_key': string;
 }
 
 export interface AppearanceSettings {
@@ -46,6 +48,12 @@ export interface DevicesSettings {
   'devices.dsd_dop_strict': string;
 }
 
+export interface TagsSettings {
+  'tags.create_backup': string;
+  'tags.sync_db_after_write': string;
+  [key: string]: string;
+}
+
 const APPEARANCE_DEFAULTS: Record<string, string> = {
   'ui.sidebar.visible': 'on',
   'ui.reduce_effects': 'off',
@@ -66,14 +74,15 @@ async function resetAppearanceDefaults(): Promise<void> {
   await loadEffectsSettings();
 }
 
-export type PreferenceCategory = 'player' | 'library' | 'internet' | 'appearance' | 'devices';
+export type PreferenceCategory = 'player' | 'library' | 'internet' | 'appearance' | 'devices' | 'tags';
 
 export type CategorySettings = 
   | PlayerSettings 
   | LibrarySettings 
   | InternetSettings 
   | AppearanceSettings
-  | DevicesSettings;
+  | DevicesSettings
+  | TagsSettings;
 
 // Stores for each category
 export const playerSettings = writable<PlayerSettings | null>(null);
@@ -81,6 +90,7 @@ export const librarySettings = writable<LibrarySettings | null>(null);
 export const internetSettings = writable<InternetSettings | null>(null);
 export const appearanceSettings = writable<AppearanceSettings | null>(null);
 export const devicesSettings = writable<DevicesSettings | null>(null);
+export const tagsSettings = writable<TagsSettings | null>(null);
 
 // Loading state
 export const preferencesLoading = writable<boolean>(false);
@@ -115,6 +125,9 @@ export async function loadCategorySettings(category: PreferenceCategory): Promis
         break;
       case 'devices':
         devicesSettings.set(settings as unknown as DevicesSettings);
+        break;
+      case 'tags':
+        tagsSettings.set(settings as unknown as TagsSettings);
         break;
     }
   } catch (e) {
@@ -162,7 +175,7 @@ export async function resetCategoryToDefaults(category: PreferenceCategory): Pro
 // Load all categories at once (for initial load)
 export async function loadAllPreferences(): Promise<void> {
   const categories: PreferenceCategory[] = [
-    'player', 'library', 'internet', 'appearance', 'devices'
+    'player', 'library', 'internet', 'appearance', 'devices', 'tags'
   ];
   
   await Promise.all(categories.map(cat => loadCategorySettings(cat)));

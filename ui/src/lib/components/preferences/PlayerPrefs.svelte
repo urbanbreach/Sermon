@@ -147,6 +147,14 @@
       </label>
       <span class="setting-hint">Load entire file to RAM before playback (reduces disk I/O jitter)</span>
     </div>
+
+    <div class="setting">
+      <label>
+        <input type="checkbox" checked={parseBool($playerSettings['player.resume_on_startup'])} onchange={(e) => saveCategorySetting('player', 'player.resume_on_startup', e.currentTarget.checked ? 'on' : 'off')} disabled={isMock} />
+        Resume position on startup
+      </label>
+      <span class="setting-hint">Resume playback position when app restarts (stays paused)</span>
+    </div>
   {/if}
 </div>
 
