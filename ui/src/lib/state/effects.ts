@@ -6,6 +6,7 @@
 
 import { writable, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
+import { isRailOpen, railMode } from './rightRail';
 
 // Settings keys
 const KEYS = {
@@ -33,6 +34,10 @@ const KEYS = {
   ARTWORK_ROUNDED_SIDEBAR: 'ui.artwork.rounded_sidebar',
   ARTWORK_ROUNDED_ALBUMS: 'ui.artwork.rounded_albums',
   ARTWORK_ROUNDED_ALBUM_DETAIL: 'ui.artwork.rounded_album_detail',
+  RAIL_WIDTH: 'ui.rail.width',
+  RAIL_SPLIT_RATIO: 'ui.rail.split_ratio',
+  RAIL_OPEN: 'ui.rail.open',
+  RAIL_MODE: 'ui.rail.mode',
   
   // Liquid Glass keys
   GLASS_MAIN_BLUR: 'ui.theme.glass.main_blur',
@@ -138,7 +143,8 @@ export async function loadEffectsSettings(): Promise<void> {
     accentColorVal, waveformSeekbarVal, waveformColorVal, waveformStyleVal,
     sidebarVisibleVal, roundedSidebarVal, roundedAlbumsVal, roundedAlbumDetailVal,
     glassMainBlurVal, glassEdgeBlurVal, glassEdgeWidthVal, glassMainBgVal, glassEdgeBgVal,
-    glassSheenBlurVal, glassSheenBgVal, glassSheenWidthVal, glassEdgeGradientWidthVal
+    glassSheenBlurVal, glassSheenBgVal, glassSheenWidthVal, glassEdgeGradientWidthVal,
+    railWidthVal, railSplitRatioVal, railOpenVal, railModeVal
   ] = await Promise.all([
     getSetting(KEYS.REDUCE_EFFECTS),
     getSetting(KEYS.THEME_BLUR),
@@ -173,6 +179,10 @@ export async function loadEffectsSettings(): Promise<void> {
     getSetting(KEYS.GLASS_SHEEN_BG),
     getSetting(KEYS.GLASS_SHEEN_WIDTH),
     getSetting(KEYS.GLASS_EDGE_GRADIENT_WIDTH),
+    getSetting(KEYS.RAIL_WIDTH),
+    getSetting(KEYS.RAIL_SPLIT_RATIO),
+    getSetting(KEYS.RAIL_OPEN),
+    getSetting(KEYS.RAIL_MODE),
   ]);
 
   reduceEffects.set(parseBool(reduce, false));
@@ -218,6 +228,16 @@ export async function loadEffectsSettings(): Promise<void> {
   glassSheenBg.set(glassSheenBgVal || 'rgba(255, 255, 255, 0.22)');
   glassSheenWidth.set(parseNum(glassSheenWidthVal, 30));
   glassEdgeGradientWidth.set(parseNum(glassEdgeGradientWidthVal, 28));
+
+  // Right rail layout
+  railWidth.set(parseNum(railWidthVal, 300));
+  railSplitRatio.set(parseNum(railSplitRatioVal, 0.5));
+  if (railOpenVal !== null) {
+    isRailOpen.set(railOpenVal === 'on');
+  }
+  if (railModeVal !== null) {
+    railMode.set(railModeVal as 'now-playing' | 'lyrics');
+  }
 
   // Apply effects immediately
   applyEffects();
@@ -328,12 +348,22 @@ export function setSidebarWidth(value: number): void {
   sidebarWidth.set(value);
 }
 
-export function setRailWidth(value: number): void {
+export async function setRailWidth(value: number): Promise<void> {
   railWidth.set(value);
+  await setSetting(KEYS.RAIL_WIDTH, String(value));
 }
 
-export function setRailSplitRatio(value: number): void {
+export async function setRailSplitRatio(value: number): Promise<void> {
   railSplitRatio.set(value);
+  await setSetting(KEYS.RAIL_SPLIT_RATIO, String(value));
+}
+
+export async function persistRailOpen(value: boolean): Promise<void> {
+  await setSetting(KEYS.RAIL_OPEN, value ? 'on' : 'off');
+}
+
+export async function persistRailMode(value: string): Promise<void> {
+  await setSetting(KEYS.RAIL_MODE, value);
 }
 
 // Liquid Glass Setters
@@ -460,5 +490,4 @@ export function syncAppearanceToEffects(settings: Record<string, string>): void 
 
   applyEffects();
 }
-
 
