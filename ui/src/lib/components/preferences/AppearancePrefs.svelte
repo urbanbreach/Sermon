@@ -11,7 +11,7 @@
   } from '../../state/effects';
   import SettingGroup from '../primitives/SettingGroup.svelte';
   import SettingRow from '../primitives/SettingRow.svelte';
-  import { Check } from 'lucide-svelte';
+  import { Check } from '@lucide/svelte';
   
   const isMock = import.meta.env.SERMON_MOCK === '1';
 

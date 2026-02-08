@@ -5,7 +5,7 @@
     positionMs, durationMs, seek, audioDebug
   } from '../state/playback';
   import ArtworkImage from '../components/ArtworkImage.svelte';
-  import { ArrowLeft, Disc, Activity, Cpu, Speaker } from 'lucide-svelte';
+  import { ArrowLeft, Disc, Activity, Cpu, Speaker } from '@lucide/svelte';
   
   function handleGoBack() {
     goBack();

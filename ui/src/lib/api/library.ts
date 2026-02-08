@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { TrackRow, LibraryFolder, SortBy, SortDirection, SearchSuggestResponse, AlbumListItem, AlbumCursor, Page, ArtistListItem, ArtistCursor, AlbumTrackCursor, OffsetCursor, LibraryStats, UpdateTrackTagsRequest, RawTagsResult, FolderOptions } from '../types/library';
+import type { TrackRow, LibraryFolder, SortBy, SortDirection, SearchSuggestResponse, AlbumListItem, AlbumCursor, Page, ArtistListItem, ArtistCursor, AlbumTrackCursor, OffsetCursor, LibraryStats, UpdateTrackTagsRequest, BatchUpdateRequest, RawTagsResult, FolderOptions } from '../types/library';
 import { Fixtures } from '../data/fixtures';
 
 export async function addFolder(path: string): Promise<LibraryFolder> {
@@ -143,6 +143,28 @@ export async function getLibraryStats(): Promise<LibraryStats> {
  */
 export async function updateTrackTags(request: UpdateTrackTagsRequest): Promise<TrackRow> {
   return invoke('cmd_library_update_track_tags', { request });
+}
+
+export async function getTrackTagsBatch(trackIds: number[]): Promise<TrackRow[]> {
+  const results = await Promise.all(trackIds.map(id => getTrackById(id)));
+  return results;
+}
+
+export async function updateTrackTagsBatch(request: BatchUpdateRequest): Promise<void> {
+  for (const trackId of request.trackIds) {
+    await updateTrackTags({
+      trackId,
+      createBackup: request.createBackup,
+      title: request.title,
+      artist: request.artist,
+      album: request.album,
+      albumArtist: request.albumArtist,
+      genre: request.genre,
+      trackNo: request.trackNo,
+      discNo: request.discNo,
+      year: request.year,
+    });
+  }
 }
 
 /**

@@ -153,7 +153,22 @@ export interface UpdateTrackTagsRequest {
   year: NumberPatch;
 }
 
+/** Request to update tags for multiple tracks at once */
+export interface BatchUpdateRequest {
+  trackIds: number[];
+  createBackup: boolean;
+  title: TagPatch;
+  artist: TagPatch;
+  album: TagPatch;
+  albumArtist: TagPatch;
+  genre: TagPatch;
+  trackNo: NumberPatch;
+  discNo: NumberPatch;
+  year: NumberPatch;
+}
+
 /** Status event for tag write progress */
+
 export interface TagWriteStatusEvent {
   trackId: number;
   phase: 'retry' | 'success' | 'error';
