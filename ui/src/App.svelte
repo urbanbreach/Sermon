@@ -5,7 +5,7 @@ import { onMount } from 'svelte';
   import { initPlaybackListeners, restorePlaybackSession } from './lib/state/playback';
   import { initArtworkStore } from './lib/state/artwork';
   import { initRailResponsive, isRailOpen } from './lib/state/rightRail';
-  import { loadEffectsSettings, sidebarVisible } from './lib/state/effects';
+  import { loadEffectsSettings, sidebarVisible, railWidth } from './lib/state/effects';
 
   // Suppress benign ResizeObserver loop errors (common with virtualized lists)
   if (typeof window !== 'undefined') {
@@ -69,6 +69,10 @@ onMount(async () => {
 
   $effect(() => {
     document.documentElement.style.setProperty('--layout-rail-open', $isRailOpen ? '1' : '0');
+  });
+
+  $effect(() => {
+    document.documentElement.style.setProperty('--layout-rail-width', `${$railWidth}px`);
   });
 </script>
 

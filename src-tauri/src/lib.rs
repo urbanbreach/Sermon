@@ -14,14 +14,13 @@ use commands::{
     cmd_artwork_find_folder, cmd_artwork_get_best_for_album, cmd_artwork_get_best_for_track,
     cmd_artwork_get_bytes, cmd_artwork_get_thumb_bytes, cmd_artwork_search_candidates, cmd_artwork_select_candidate_for_album,
     cmd_library_add_folder, cmd_library_get_folder_track_count, cmd_library_get_raw_tags,
-    cmd_library_get_stats, cmd_library_get_track_by_id, cmd_library_get_track_tags,
-    cmd_library_get_track_tags_batch, cmd_library_list_album_tracks_page,
+    cmd_library_get_stats, cmd_library_get_track_by_id, cmd_library_list_album_tracks_page,
     cmd_library_list_albums_page, cmd_library_list_artist_tracks_page,
     cmd_library_list_artists_page, cmd_library_list_folders, cmd_library_list_tracks,
     cmd_library_list_tracks_page, cmd_library_remove_folder, cmd_library_search_albums_page,
     cmd_library_search_artists_page, cmd_library_search_suggest, cmd_library_search_tracks_page,
     cmd_library_update_folder_enabled, cmd_library_update_folder_options,
-    cmd_library_update_track_tags, cmd_library_update_track_tags_batch, cmd_list_asio_drivers,
+    cmd_library_update_track_tags, cmd_list_asio_drivers,
     cmd_lyrics_get_for_track,
     cmd_open_asio_control_panel,
     cmd_output_get_settings, cmd_output_list_devices, cmd_output_probe_capabilities,
@@ -261,6 +260,19 @@ pub fn run() {
     #[cfg(debug_assertions)]
     {
         builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+    }
+
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .build(),
+        );
     }
 
     let diagnostics_for_listener = diagnostics.clone();
@@ -884,9 +896,6 @@ pub fn run() {
             cmd_library_search_artists_page,
             cmd_library_get_stats,
             cmd_library_update_track_tags,
-            cmd_library_update_track_tags_batch,
-            cmd_library_get_track_tags,
-            cmd_library_get_track_tags_batch,
             cmd_library_get_raw_tags,
             cmd_lyrics_get_for_track,
             cmd_scan_start,
@@ -2923,6 +2932,10 @@ fn build_playback_session_snapshot(
 }
 
 fn persist_playback_session(app: &tauri::AppHandle, snapshot: PlaybackSessionSnapshot) {
+    // Don't overwrite a good session with empty data (e.g., after Stop clears session)
+    if snapshot.track_id.is_none() && snapshot.queue_track_ids.is_empty() {
+        return;
+    }
     let library_state = app.state::<LibraryState>();
     if let Err(e) = persist_session(&library_state.db_path, &snapshot) {
         warn!("Failed to persist playback session snapshot: {}", e);
