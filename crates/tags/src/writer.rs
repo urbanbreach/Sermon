@@ -74,6 +74,14 @@ pub struct TagPatches {
     pub album: TagPatch,
     pub album_artist: TagPatch,
     pub genre: TagPatch,
+    pub publisher: TagPatch,
+    pub composer: TagPatch,
+    pub conductor: TagPatch,
+    pub comments: TagPatch,
+    pub grouping: TagPatch,
+    pub lyricist: TagPatch,
+    pub plain_lyrics: TagPatch,
+    pub synced_lyrics: TagPatch,
     pub track_no: NumberPatch,
     pub disc_no: NumberPatch,
     pub year: NumberPatch,
@@ -172,6 +180,77 @@ pub fn write_tags(
             }
         }
 
+        match &patches.publisher {
+            TagPatch::Leave => {}
+            TagPatch::Set(value) => {
+                tag.insert_text(ItemKey::Publisher, value.clone());
+            }
+            TagPatch::Clear => {
+                tag.remove_key(&ItemKey::Publisher);
+            }
+        }
+
+        match &patches.composer {
+            TagPatch::Leave => {}
+            TagPatch::Set(value) => {
+                tag.insert_text(ItemKey::Composer, value.clone());
+            }
+            TagPatch::Clear => {
+                tag.remove_key(&ItemKey::Composer);
+            }
+        }
+
+        match &patches.conductor {
+            TagPatch::Leave => {}
+            TagPatch::Set(value) => {
+                tag.insert_text(ItemKey::Conductor, value.clone());
+            }
+            TagPatch::Clear => {
+                tag.remove_key(&ItemKey::Conductor);
+            }
+        }
+
+        match &patches.comments {
+            TagPatch::Leave => {}
+            TagPatch::Set(value) => {
+                tag.insert_text(ItemKey::Comment, value.clone());
+            }
+            TagPatch::Clear => {
+                tag.remove_key(&ItemKey::Comment);
+            }
+        }
+
+        match &patches.grouping {
+            TagPatch::Leave => {}
+            TagPatch::Set(value) => {
+                tag.insert_text(ItemKey::ContentGroup, value.clone());
+            }
+            TagPatch::Clear => {
+                tag.remove_key(&ItemKey::ContentGroup);
+            }
+        }
+
+        // Lyricist and lyrics use ItemKey API
+        match &patches.lyricist {
+            TagPatch::Leave => {}
+            TagPatch::Set(value) => {
+                tag.insert_text(ItemKey::Lyricist, value.clone());
+            }
+            TagPatch::Clear => {
+                tag.remove_key(&ItemKey::Lyricist);
+            }
+        }
+
+        match merge_lyrics_patches(&patches.plain_lyrics, &patches.synced_lyrics) {
+            TagPatch::Leave => {}
+            TagPatch::Set(value) => {
+                tag.insert_text(ItemKey::Lyrics, value);
+            }
+            TagPatch::Clear => {
+                tag.remove_key(&ItemKey::Lyrics);
+            }
+        }
+
         // Apply numeric field patches
         apply_number_patch(
             tag,
@@ -265,6 +344,15 @@ where
     }
 }
 
+fn merge_lyrics_patches(plain: &TagPatch, synced: &TagPatch) -> TagPatch {
+    match (plain, synced) {
+        (_, TagPatch::Set(value)) => TagPatch::Set(value.clone()),
+        (TagPatch::Set(value), _) => TagPatch::Set(value.clone()),
+        (TagPatch::Clear, _) | (_, TagPatch::Clear) => TagPatch::Clear,
+        _ => TagPatch::Leave,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,8 +375,47 @@ mod tests {
         assert_eq!(patches.album, TagPatch::Leave);
         assert_eq!(patches.album_artist, TagPatch::Leave);
         assert_eq!(patches.genre, TagPatch::Leave);
+        assert_eq!(patches.publisher, TagPatch::Leave);
+        assert_eq!(patches.composer, TagPatch::Leave);
+        assert_eq!(patches.conductor, TagPatch::Leave);
+        assert_eq!(patches.comments, TagPatch::Leave);
+        assert_eq!(patches.grouping, TagPatch::Leave);
+        assert_eq!(patches.lyricist, TagPatch::Leave);
+        assert_eq!(patches.plain_lyrics, TagPatch::Leave);
+        assert_eq!(patches.synced_lyrics, TagPatch::Leave);
         assert_eq!(patches.track_no, NumberPatch::Leave);
         assert_eq!(patches.disc_no, NumberPatch::Leave);
         assert_eq!(patches.year, NumberPatch::Leave);
+    }
+
+    #[test]
+    fn test_merge_lyrics_patches_prefers_synced_set() {
+        let plain = TagPatch::Set("plain".to_string());
+        let synced = TagPatch::Set("[00:01.00]synced".to_string());
+        assert_eq!(
+            merge_lyrics_patches(&plain, &synced),
+            TagPatch::Set("[00:01.00]synced".to_string())
+        );
+    }
+
+    #[test]
+    fn test_merge_lyrics_patches_uses_plain_when_synced_not_set() {
+        let plain = TagPatch::Set("plain".to_string());
+        assert_eq!(
+            merge_lyrics_patches(&plain, &TagPatch::Leave),
+            TagPatch::Set("plain".to_string())
+        );
+    }
+
+    #[test]
+    fn test_merge_lyrics_patches_clear_when_no_set() {
+        assert_eq!(
+            merge_lyrics_patches(&TagPatch::Clear, &TagPatch::Leave),
+            TagPatch::Clear
+        );
+        assert_eq!(
+            merge_lyrics_patches(&TagPatch::Leave, &TagPatch::Clear),
+            TagPatch::Clear
+        );
     }
 }
