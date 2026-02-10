@@ -18,4 +18,4 @@ pub use db::{
     set_setting, update_folder_enabled, update_folder_options,
 };
 pub use models::{FolderOptions, LibraryFolder, QuickScanSummary, TrackRow};
-pub use scanner::{quick_scan, scan_folder};
+pub use scanner::{backfill_loudness_metadata_once, quick_scan, scan_folder};

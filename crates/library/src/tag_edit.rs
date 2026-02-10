@@ -6,11 +6,11 @@
 //! - DB identity and metadata refresh
 
 use crate::error::LibraryError;
-use crate::identity::{FileIdentity, get_file_identity};
-use crate::safe_write::{SafeWriteError, SafeWriteOptions, WriteStatus, safe_write_with_callback};
-use rusqlite::{Connection, params};
+use crate::identity::{get_file_identity, FileIdentity};
+use crate::safe_write::{safe_write_with_callback, SafeWriteError, SafeWriteOptions, WriteStatus};
+use rusqlite::{params, Connection};
 use std::path::Path;
-use tags::{NumberPatch, TagPatch, TagPatches, TagWriteOptions, read_metadata_result, write_tags};
+use tags::{read_metadata_result, write_tags, NumberPatch, TagPatch, TagPatches, TagWriteOptions};
 use tracing::{debug, info};
 
 /// Error type for tag update operations
@@ -63,6 +63,14 @@ pub struct UpdateTagsRequest {
     pub album: TagPatch,
     pub album_artist: TagPatch,
     pub genre: TagPatch,
+    pub publisher: TagPatch,
+    pub composer: TagPatch,
+    pub conductor: TagPatch,
+    pub comments: TagPatch,
+    pub grouping: TagPatch,
+    pub lyricist: TagPatch,
+    pub plain_lyrics: TagPatch,
+    pub synced_lyrics: TagPatch,
     pub track_no: NumberPatch,
     pub disc_no: NumberPatch,
     pub year: NumberPatch,
@@ -77,11 +85,25 @@ impl UpdateTagsRequest {
             album: self.album.clone(),
             album_artist: self.album_artist.clone(),
             genre: self.genre.clone(),
+            publisher: self.publisher.clone(),
+            composer: self.composer.clone(),
+            conductor: self.conductor.clone(),
+            comments: self.comments.clone(),
+            grouping: self.grouping.clone(),
+            lyricist: self.lyricist.clone(),
+            plain_lyrics: self.plain_lyrics.clone(),
+            synced_lyrics: self.synced_lyrics.clone(),
             track_no: self.track_no.clone(),
             disc_no: self.disc_no.clone(),
             year: self.year.clone(),
             picture: Default::default(),
         }
+    }
+
+    pub fn has_lyrics_changes(&self) -> bool {
+        !matches!(&self.lyricist, TagPatch::Leave)
+            || !matches!(&self.plain_lyrics, TagPatch::Leave)
+            || !matches!(&self.synced_lyrics, TagPatch::Leave)
     }
 }
 
@@ -151,6 +173,10 @@ where
     // Step 6: Update DB row with new identity and metadata
     update_track_identity_and_metadata(conn, request.track_id, &new_identity, &new_metadata)?;
 
+    if request.has_lyrics_changes() {
+        sync_lyrics_cache(conn, request.track_id, &new_metadata)?;
+    }
+
     info!(
         "Identity updated after atomic commit for track {}",
         request.track_id
@@ -213,7 +239,8 @@ fn update_track_identity_and_metadata(
             sample_rate = ?,
             bit_depth = ?,
             channels = ?,
-            duration_ms = ?
+            duration_ms = ?,
+            loudness_db = ?
          WHERE id = ?",
         params![
             identity.source.as_str(),
@@ -236,8 +263,31 @@ fn update_track_identity_and_metadata(
             metadata.bit_depth,
             metadata.channels,
             metadata.duration_ms,
+            metadata.loudness_db,
             track_id
         ],
+    )
+    .map_err(|e| TagUpdateError::DbUpdateFailed(e.to_string()))?;
+
+    Ok(())
+}
+
+fn sync_lyrics_cache(
+    conn: &Connection,
+    track_id: i64,
+    metadata: &tags::AudioMetadata,
+) -> Result<(), TagUpdateError> {
+    let synced = metadata.synced_lyrics.as_deref();
+    let plain = metadata.lyrics.as_deref();
+    let source = if synced.is_some() || plain.is_some() {
+        "manual"
+    } else {
+        "manual-none"
+    };
+
+    conn.execute(
+        "INSERT OR REPLACE INTO lyrics_cache (track_id, synced_lyrics, plain_lyrics, source, fetched_at) VALUES (?1, ?2, ?3, ?4, (strftime('%s','now') * 1000))",
+        params![track_id, synced, plain, source],
     )
     .map_err(|e| TagUpdateError::DbUpdateFailed(e.to_string()))?;
 

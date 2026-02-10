@@ -414,12 +414,12 @@ where
 #[cfg(windows)]
 fn try_atomic_commit(dst: &Path, tmp: &Path) -> Result<(), (bool, u32)> {
     use crate::identity::to_wide_path;
+    use windows::core::PCWSTR;
     use windows::Win32::Foundation::GetLastError;
     use windows::Win32::Storage::FileSystem::{
-        MOVE_FILE_FLAGS, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
-        REPLACE_FILE_FLAGS, ReplaceFileW,
+        MoveFileExW, ReplaceFileW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+        MOVE_FILE_FLAGS, REPLACE_FILE_FLAGS,
     };
-    use windows::core::PCWSTR;
 
     let dst_wide = to_wide_path(dst);
     let tmp_wide = to_wide_path(tmp);

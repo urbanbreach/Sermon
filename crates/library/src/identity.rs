@@ -68,13 +68,13 @@ pub fn get_file_identity(path: &Path) -> Result<FileIdentity, LibraryError> {
 /// Windows-specific: Get Volume Serial Number + File ID using Win32 API
 #[cfg(windows)]
 fn get_ntfs_identity(path: &Path) -> Option<(u64, u64)> {
+    use windows::core::PCWSTR;
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::Storage::FileSystem::{
-        BY_HANDLE_FILE_INFORMATION, CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_FLAG_BACKUP_SEMANTICS,
-        FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, GetFileInformationByHandle,
+        CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_NORMAL,
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
         OPEN_EXISTING,
     };
-    use windows::core::PCWSTR;
 
     // Convert path to wide string with \\?\ prefix for long path support
     let wide_path = to_wide_path(path);
