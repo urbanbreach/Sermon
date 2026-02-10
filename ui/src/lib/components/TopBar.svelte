@@ -2,10 +2,10 @@
   import { canGoBack, canGoForward, goBack, goForward, navigate, currentRouteName } from '../state/route';
   import { toggleRail, isRailOpen } from '../state/rightRail';
   import { viewTitle } from '../state/viewTitle';
-  import { sidebarVisible } from '../state/effects';
+  import { sidebarVisible, reduceEffects } from '../state/effects';
   import { alphabetSelector } from '../state/alphabetSelector';
   import { pressScale } from '../utils/animations';
-  import { ChevronLeft, ChevronRight, PanelRight, Disc3, Users, ListMusic, Settings } from '@lucide/svelte';
+  import { ChevronLeft, ChevronRight, PanelRight, Disc3, Users, ListMusic, Settings, Music2 } from '@lucide/svelte';
   import AlphabetSelector from './AlphabetSelector.svelte';
   import { SegmentedControl } from './primitives';
   import WindowControls from './WindowControls.svelte';
@@ -31,6 +31,7 @@
     { label: 'Albums', routeName: 'albums' as SimpleRouteName, icon: Disc3 },
     { label: 'Artists', routeName: 'artists' as SimpleRouteName, icon: Users },
     { label: 'Tracks', routeName: 'tracks' as SimpleRouteName, icon: ListMusic },
+    { label: 'Now Playing', routeName: 'now-playing' as SimpleRouteName, icon: Music2 },
   ];
 
   const systemItems = [
@@ -49,7 +50,7 @@
   }));
 </script>
 
-<div class="top-bar" role="button" tabindex="0" aria-label="Application top bar" ondblclick={handleDoubleClick} onkeydown={handleTopBarKeydown}>
+<div class="top-bar" class:np-transparent={$currentRouteName === 'now-playing' && !$reduceEffects} class:np-matte={$currentRouteName === 'now-playing' && $reduceEffects} role="button" tabindex="0" aria-label="Application top bar" ondblclick={handleDoubleClick} onkeydown={handleTopBarKeydown}>
   <!-- Left Region: Navigation & Tabs -->
   <div class="region-left">
     <div class="nav-buttons">
@@ -86,7 +87,7 @@
 
   <!-- Center Region: Title OR Alphabet (Mutually Exclusive) -->
   <div class="region-center">
-    {#if $alphabetSelector.items.length > 0 && $alphabetSelector.onSelect}
+    {#if $currentRouteName !== 'now-playing' && $alphabetSelector.items.length > 0 && $alphabetSelector.onSelect}
       <div class="alphabet-wrapper" data-testid="topbar-alphabet">
         <AlphabetSelector items={$alphabetSelector.items} onSelect={$alphabetSelector.onSelect} />
       </div>
@@ -248,5 +249,19 @@
     width: 1px;
     height: 16px;
     background: var(--divider-color, rgba(255, 255, 255, 0.07));
+  }
+
+  /* Now Playing transparent blur mode */
+  .top-bar.np-transparent {
+    background: rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
+    border-bottom-color: rgba(255, 255, 255, 0.05);
+  }
+
+  /* Now Playing matte fallback (reduce effects) */
+  .top-bar.np-matte {
+    background: rgba(18, 18, 18, 0.85);
+    border-bottom-color: rgba(255, 255, 255, 0.05);
   }
 </style>
