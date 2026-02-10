@@ -12,6 +12,7 @@ export interface LyricsResponse {
   trackId: number;
   syncedLyrics: string | null; // LRC format
   plainLyrics: string | null; // plain text
+  lyricist: string | null;
   source: string; // "embedded" | "cache" | "lrclib" | "none"
 }
 

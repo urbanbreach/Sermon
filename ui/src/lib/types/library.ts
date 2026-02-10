@@ -16,10 +16,21 @@ export interface TrackRow {
   sampleRate?: number;
   bitDepth?: number;
   channels?: number;
+  sizeBytes?: number;
+  mtimeMs?: number;
   durationMs?: number;
+  loudnessDb?: number;
   dsdRateHz?: number;
   dsdChannels?: number;
   isMissing: boolean;
+}
+
+/**
+ * Snapshot used by Tag Editor components.
+ * `trackId` mirrors `TrackRow.id` for command payload compatibility.
+ */
+export interface TrackTagSnapshot extends TrackRow {
+  trackId: number;
 }
 
 export interface LibraryFolder {
@@ -79,6 +90,7 @@ export interface AlbumListItem {
   albumArtistDisplay: string;
   albumTitleSort: string;
   albumArtistSort: string;
+  artworkCacheKey?: string;
   year?: number;
   trackCount: number;
 }
@@ -148,6 +160,14 @@ export interface UpdateTrackTagsRequest {
   album: TagPatch;
   albumArtist: TagPatch;
   genre: TagPatch;
+  publisher: TagPatch;
+  composer: TagPatch;
+  conductor: TagPatch;
+  comments: TagPatch;
+  grouping: TagPatch;
+  lyricist: TagPatch;
+  plainLyrics: TagPatch;
+  syncedLyrics: TagPatch;
   trackNo: NumberPatch;
   discNo: NumberPatch;
   year: NumberPatch;
@@ -162,6 +182,14 @@ export interface BatchUpdateRequest {
   album: TagPatch;
   albumArtist: TagPatch;
   genre: TagPatch;
+  publisher: TagPatch;
+  composer: TagPatch;
+  conductor: TagPatch;
+  comments: TagPatch;
+  grouping: TagPatch;
+  lyricist: TagPatch;
+  plainLyrics: TagPatch;
+  syncedLyrics: TagPatch;
   trackNo: NumberPatch;
   discNo: NumberPatch;
   year: NumberPatch;

@@ -73,7 +73,7 @@ export const bgDynamicAlbumDetail = writable<boolean>(true);
 
 // Accent/highlight color
 export const accentColor = writable<string>('#4aafff');
-export const bottomBarWaveformSeekbar = writable<boolean>(false);
+export const bottomBarWaveformSeekbar = writable<boolean>(true);
 export const waveformColor = writable<string>('#4aafff');
 export const bottomBarWaveformStyle = writable<'pills' | 'raw'>('pills');
 
@@ -208,7 +208,10 @@ export async function loadEffectsSettings(): Promise<void> {
 
   // Accent color
   accentColor.set(accentColorVal || '#4aafff');
-  bottomBarWaveformSeekbar.set(parseBool(waveformSeekbarVal, false));
+  bottomBarWaveformSeekbar.set(true);
+  if (waveformSeekbarVal !== 'on') {
+    await setSetting(KEYS.WAVEFORM_SEEKBAR, 'on');
+  }
   waveformColor.set(waveformColorVal || get(accentColor));
   bottomBarWaveformStyle.set((waveformStyleVal as 'pills' | 'raw') || 'pills');
 
@@ -305,9 +308,9 @@ export async function setAccentColor(value: string): Promise<void> {
   applyAppearanceToCSS();
 }
 
-export async function setBottomBarWaveformSeekbar(value: boolean): Promise<void> {
-  bottomBarWaveformSeekbar.set(value);
-  await setSetting(KEYS.WAVEFORM_SEEKBAR, value ? 'on' : 'off');
+export async function setBottomBarWaveformSeekbar(_value: boolean): Promise<void> {
+  bottomBarWaveformSeekbar.set(true);
+  await setSetting(KEYS.WAVEFORM_SEEKBAR, 'on');
 }
 
 export async function setWaveformColor(value: string): Promise<void> {
@@ -469,7 +472,7 @@ export function syncAppearanceToEffects(settings: Record<string, string>): void 
   bgDynamicNowPlaying.set(settings['ui.background.dynamic_now_playing'] !== 'off');
   bgDynamicAlbumDetail.set(settings['ui.background.dynamic_album_detail'] !== 'off');
   accentColor.set(settings['ui.theme.accent_color'] || '#4aafff');
-  bottomBarWaveformSeekbar.set(settings['ui.bottombar.waveform_seekbar'] === 'on');
+  bottomBarWaveformSeekbar.set(true);
   waveformColor.set(settings['ui.bottombar.waveform_color'] || get(accentColor));
   bottomBarWaveformStyle.set((settings['ui.bottombar.waveform_style'] as 'pills' | 'raw') || 'pills');
   sidebarVisible.set(settings['ui.sidebar.visible'] !== 'off');

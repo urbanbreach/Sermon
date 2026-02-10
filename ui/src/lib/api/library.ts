@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { TrackRow, LibraryFolder, SortBy, SortDirection, SearchSuggestResponse, AlbumListItem, AlbumCursor, Page, ArtistListItem, ArtistCursor, AlbumTrackCursor, OffsetCursor, LibraryStats, UpdateTrackTagsRequest, BatchUpdateRequest, RawTagsResult, FolderOptions } from '../types/library';
+import type { TrackRow, TrackTagSnapshot, LibraryFolder, SortBy, SortDirection, SearchSuggestResponse, AlbumListItem, AlbumCursor, Page, ArtistListItem, ArtistCursor, AlbumTrackCursor, OffsetCursor, LibraryStats, UpdateTrackTagsRequest, BatchUpdateRequest, RawTagsResult, FolderOptions } from '../types/library';
 import { Fixtures } from '../data/fixtures';
 
 export async function addFolder(path: string): Promise<LibraryFolder> {
@@ -145,9 +145,12 @@ export async function updateTrackTags(request: UpdateTrackTagsRequest): Promise<
   return invoke('cmd_library_update_track_tags', { request });
 }
 
-export async function getTrackTagsBatch(trackIds: number[]): Promise<TrackRow[]> {
+export async function getTrackTagsBatch(trackIds: number[]): Promise<TrackTagSnapshot[]> {
   const results = await Promise.all(trackIds.map(id => getTrackById(id)));
-  return results;
+  return results.map((track) => ({
+    ...track,
+    trackId: track.id,
+  }));
 }
 
 export async function updateTrackTagsBatch(request: BatchUpdateRequest): Promise<void> {
@@ -160,6 +163,14 @@ export async function updateTrackTagsBatch(request: BatchUpdateRequest): Promise
       album: request.album,
       albumArtist: request.albumArtist,
       genre: request.genre,
+      publisher: request.publisher,
+      composer: request.composer,
+      conductor: request.conductor,
+      comments: request.comments,
+      grouping: request.grouping,
+      lyricist: request.lyricist,
+      plainLyrics: request.plainLyrics,
+      syncedLyrics: request.syncedLyrics,
       trackNo: request.trackNo,
       discNo: request.discNo,
       year: request.year,

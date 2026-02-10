@@ -59,7 +59,7 @@ const APPEARANCE_DEFAULTS: Record<string, string> = {
   'ui.reduce_effects': 'off',
   'ui.theme.accent_color': '#4aafff',
   'ui.background.dynamic_now_playing': 'on',
-  'ui.bottombar.waveform_seekbar': 'off',
+  'ui.bottombar.waveform_seekbar': 'on',
   'ui.bottombar.waveform_color': '#4aafff',
   'ui.bottombar.waveform_style': 'pills',
   'ui.artwork.rounded_sidebar': 'on',

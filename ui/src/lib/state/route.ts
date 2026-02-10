@@ -9,6 +9,7 @@ export type Route =
   | { name: 'now-playing' }
   | { name: 'preferences' }
   | { name: 'lyrics-fullscreen' }
+  | { name: 'tag-editor-panel'; trackIds: number[] }
   | { name: 'album-detail'; albumArtistSort: string; albumTitleSort: string }
   | { name: 'artist-detail'; artistSort: string }
   | { name: 'search-results'; query: string };
@@ -103,8 +104,13 @@ function routesEqual(a: Route, b: Route): boolean {
       return b.name === 'artist-detail' && a.artistSort === b.artistSort;
     case 'search-results':
       return b.name === 'search-results' && a.query === b.query;
+    case 'tag-editor-panel':
+      return (
+        b.name === 'tag-editor-panel' &&
+        a.trackIds.length === b.trackIds.length &&
+        a.trackIds.every((id, index) => id === b.trackIds[index])
+      );
     default:
       return true;
   }
 }
-
