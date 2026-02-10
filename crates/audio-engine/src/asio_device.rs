@@ -65,7 +65,7 @@ pub fn open_asio_control_panel_direct(driver_name: &str) -> Result<(), String> {
     use std::thread;
     use tracing::{debug, info, warn};
     use windows_sys::Win32::System::Com::{
-        CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED,
+        COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize,
     };
 
     let driver_name = driver_name.to_string();

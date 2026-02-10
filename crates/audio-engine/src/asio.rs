@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::{debug, error, info};
 
 use crate::asio_worker::AsioWorker;
+use crate::asio_worker::SampleFormat;
 use crate::output::{AudioOutput, AudioRingBuffer, OutputError};
 
 pub struct AsioOutput {
@@ -17,6 +18,7 @@ pub struct AsioOutput {
     requested_sample_rate: u32,
     actual_sample_rate: u32,
     channels: u16,
+    source_bit_depth: u16,
     bit_depth: u16,
     valid_bits: u16,
     worker: Option<AsioWorker>,
@@ -29,7 +31,12 @@ impl AsioOutput {
     ///
     /// This validates the driver exists but does NOT load it yet.
     /// The driver is loaded lazily on first `start()` call.
-    pub fn new(driver_name: &str, sample_rate: u32, channels: u16) -> Result<Self, OutputError> {
+    pub fn new(
+        driver_name: &str,
+        sample_rate: u32,
+        channels: u16,
+        source_bit_depth: u16,
+    ) -> Result<Self, OutputError> {
         info!(
             driver = driver_name,
             sample_rate = sample_rate,
@@ -37,13 +44,16 @@ impl AsioOutput {
             "Creating ASIO output (deferred initialization)"
         );
 
+        let normalized_source_bit_depth = source_bit_depth.max(1).min(32);
+
         Ok(Self {
             driver_name: driver_name.to_string(),
             requested_sample_rate: sample_rate,
             actual_sample_rate: sample_rate,
             channels,
+            source_bit_depth: normalized_source_bit_depth,
             bit_depth: 32,
-            valid_bits: 24,
+            valid_bits: normalized_source_bit_depth,
             worker: None,
             started: AtomicBool::new(false),
             buffer_size: 0,
@@ -79,10 +89,20 @@ impl AsioOutput {
             self.channels,
         )?;
 
-        let (buffer_size, sample_format, actual_sample_rate) =
-            worker.load(&self.driver_name, self.requested_sample_rate, self.channels)?;
+        let (buffer_size, sample_format, actual_sample_rate) = worker.load(
+            &self.driver_name,
+            self.requested_sample_rate,
+            self.channels,
+            self.source_bit_depth,
+        )?;
 
         self.actual_sample_rate = actual_sample_rate;
+        self.bit_depth = 32;
+        self.valid_bits = match sample_format {
+            SampleFormat::Int32 => self.source_bit_depth.min(32),
+            SampleFormat::Int32Lsb24 => self.source_bit_depth.min(24),
+            SampleFormat::Float32 => 32,
+        };
 
         debug!(
             buffer_size = buffer_size,
@@ -317,14 +337,14 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn test_asio_output_creation_with_invalid_driver() {
-        let result = AsioOutput::new("NonExistentDriver12345", 44100, 2);
+        let result = AsioOutput::new("NonExistentDriver12345", 44100, 2, 24);
         assert!(result.is_ok());
     }
 
     #[test]
     #[cfg(windows)]
     fn test_asio_output_is_exclusive() {
-        if let Ok(output) = AsioOutput::new("FlexASIO", 44100, 2) {
+        if let Ok(output) = AsioOutput::new("FlexASIO", 44100, 2, 24) {
             assert!(output.is_exclusive());
         }
     }
@@ -332,7 +352,7 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn test_asio_output_properties() {
-        if let Ok(output) = AsioOutput::new("FlexASIO", 96000, 2) {
+        if let Ok(output) = AsioOutput::new("FlexASIO", 96000, 2, 24) {
             assert_eq!(output.sample_rate(), 96000);
             assert_eq!(output.channels(), 2);
             assert_eq!(output.bit_depth(), 32);

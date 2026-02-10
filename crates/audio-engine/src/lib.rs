@@ -29,11 +29,11 @@ pub use crate::queue::{PlaybackQueue, PreviousAction, QueueItem};
 pub use crate::types::{AudioSample, PlaySession, PlaybackState, TrackInfo};
 
 pub use crate::dop::{
-    dop_sample_rate, marker_for_frame, pack_dop_sample, DopPacker, DOP_MARKER_A, DOP_MARKER_B,
+    DOP_MARKER_A, DOP_MARKER_B, DopPacker, dop_sample_rate, marker_for_frame, pack_dop_sample,
 };
 pub use crate::dsd_decode::{
-    bit_reverse, DffDecoder, DsdDecoder, DsdError, DsdFormat, DsdInfo, DsfDecoder,
-    BIT_REVERSE_TABLE,
+    BIT_REVERSE_TABLE, DffDecoder, DsdDecoder, DsdError, DsdFormat, DsdInfo, DsfDecoder,
+    bit_reverse,
 };
 pub use crate::resample::{Resampler, ResamplerQuality};
 

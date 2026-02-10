@@ -17,7 +17,7 @@ use ringbuf::HeapRb;
 use tracing::{debug, error, info, trace, warn};
 use windows_sys::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
 
-use crate::output::OutputError;
+use crate::output::{quantize_to_i16, quantize_to_i24, quantize_to_i32, OutputError};
 
 type RingProducer = ringbuf::HeapProd<f32>;
 type RingConsumer = ringbuf::HeapCons<f32>;
@@ -56,6 +56,7 @@ pub enum AsioCommand {
         driver_name: String,
         sample_rate: u32,
         channels: u16,
+        valid_bits: u16,
     },
     /// Start playback
     Start,
@@ -91,6 +92,7 @@ pub enum AsioResponse {
 struct CallbackState {
     consumer: RingConsumer,
     sample_format: SampleFormat,
+    valid_bits: u16,
     channels: usize,
     buffer_size: i32,
     temp_buffer: Vec<f32>,
@@ -131,6 +133,7 @@ impl AsioWorker {
         let callback_state = Arc::new(Mutex::new(Some(CallbackState {
             consumer,
             sample_format: SampleFormat::Int32,
+            valid_bits: 24,
             channels: channels as usize,
             buffer_size: 0,
             temp_buffer: Vec::new(),
@@ -219,6 +222,7 @@ impl AsioWorker {
                     driver_name,
                     sample_rate,
                     channels,
+                    valid_bits,
                 } => {
                     info!(driver = %driver_name, "Loading ASIO driver");
 
@@ -379,7 +383,15 @@ impl AsioWorker {
                     {
                         let mut state_guard = callback_state.lock();
                         if let Some(ref mut state) = *state_guard {
+                            let requested_valid_bits = valid_bits.max(1);
+                            let effective_valid_bits = match sample_format {
+                                SampleFormat::Int32 => requested_valid_bits.min(32),
+                                SampleFormat::Int32Lsb24 => requested_valid_bits.min(24),
+                                SampleFormat::Float32 => 32,
+                            };
+
                             state.sample_format = sample_format;
+                            state.valid_bits = effective_valid_bits;
                             state.buffer_size = buffer_size;
                             state.channels = channels as usize;
                             state.temp_buffer =
@@ -556,7 +568,13 @@ impl AsioWorker {
                     for frame in 0..buffer_size as usize {
                         let sample_idx = frame * channels + ch;
                         let f = state.temp_buffer[sample_idx].clamp(-1.0, 1.0);
-                        out_buf[frame] = (f * 2147483647.0) as i32;
+                        out_buf[frame] = if state.valid_bits <= 16 {
+                            (quantize_to_i16(f) as i32) << 16
+                        } else if state.valid_bits <= 24 {
+                            quantize_to_i24(f) << 8
+                        } else {
+                            quantize_to_i32(f)
+                        };
                     }
                 }
                 SampleFormat::Int32Lsb24 => {
@@ -566,8 +584,11 @@ impl AsioWorker {
                     for frame in 0..buffer_size as usize {
                         let sample_idx = frame * channels + ch;
                         let f = state.temp_buffer[sample_idx].clamp(-1.0, 1.0);
-                        let i24 = (f * 8388607.0) as i32;
-                        out_buf[frame] = i24 << 8;
+                        out_buf[frame] = if state.valid_bits <= 16 {
+                            (quantize_to_i16(f) as i32) << 16
+                        } else {
+                            quantize_to_i24(f) << 8
+                        };
                     }
                 }
                 SampleFormat::Float32 => {
@@ -590,12 +611,14 @@ impl AsioWorker {
         driver_name: &str,
         sample_rate: u32,
         channels: u16,
+        valid_bits: u16,
     ) -> Result<(i32, SampleFormat, u32), OutputError> {
         self.cmd_tx
             .send(AsioCommand::Load {
                 driver_name: driver_name.to_string(),
                 sample_rate,
                 channels,
+                valid_bits,
             })
             .map_err(|_| OutputError::Asio("Worker thread disconnected".to_string()))?;
 

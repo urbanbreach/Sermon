@@ -2,10 +2,10 @@ use std::fs::File;
 use std::path::Path;
 
 use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{Decoder, DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::codecs::{CODEC_TYPE_NULL, Decoder, DecoderOptions};
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo};
-use symphonia::core::io::MediaSourceStream;
+use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::units::Time;
@@ -37,10 +37,33 @@ pub struct AudioDecoder {
     sample_buffer: Option<SampleBuffer<f32>>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct DecodePacketInfo {
+    pub frame_count: usize,
+    pub decoded: bool,
+}
+
+pub enum DecodePacketRef<'a> {
+    Skipped {
+        frame_count: usize,
+    },
+    Decoded {
+        frame_count: usize,
+        interleaved: &'a [f32],
+    },
+}
+
 impl AudioDecoder {
     pub fn open(path: &Path) -> Result<Self, DecodeError> {
         let file = File::open(path)?;
-        let mss = MediaSourceStream::new(Box::new(file), Default::default());
+        let mss = MediaSourceStream::new(
+            Box::new(file),
+            MediaSourceStreamOptions {
+                // Larger read-back buffer improves demux throughput for
+                // sequential peak extraction scans.
+                buffer_len: 1024 * 1024,
+            },
+        );
 
         let mut hint = Hint::new();
         if let Some(ext) = path.extension().and_then(|ext| ext.to_str()) {
@@ -136,14 +159,20 @@ impl AudioDecoder {
             let required_frames = decoded.capacity();
             let required_samples = required_frames * self.channels;
 
-            let buffer = match self.sample_buffer.as_mut() {
-                Some(buffer) if buffer.capacity() >= required_samples => buffer,
-                _ => {
-                    self.sample_buffer =
-                        Some(SampleBuffer::<f32>::new(required_frames as u64, spec));
-                    self.sample_buffer.as_mut().expect("just set")
-                }
-            };
+            let needs_resize = self
+                .sample_buffer
+                .as_ref()
+                .map(|buffer| buffer.capacity() < required_samples)
+                .unwrap_or(true);
+
+            if needs_resize {
+                self.sample_buffer = Some(SampleBuffer::<f32>::new(required_frames as u64, spec));
+            }
+
+            let buffer = self
+                .sample_buffer
+                .as_mut()
+                .expect("sample buffer should be set");
 
             buffer.copy_interleaved_ref(decoded);
             return Ok(Some(buffer.samples().to_vec()));
@@ -200,20 +229,155 @@ impl AudioDecoder {
             let required_frames = decoded.capacity();
             let required_samples = required_frames * self.channels;
 
-            let buffer = match self.sample_buffer.as_mut() {
-                Some(buffer) if buffer.capacity() >= required_samples => buffer,
-                _ => {
-                    self.sample_buffer =
-                        Some(SampleBuffer::<f32>::new(required_frames as u64, spec));
-                    self.sample_buffer.as_mut().expect("just set")
-                }
-            };
+            let needs_resize = self
+                .sample_buffer
+                .as_ref()
+                .map(|buffer| buffer.capacity() < required_samples)
+                .unwrap_or(true);
+
+            if needs_resize {
+                self.sample_buffer = Some(SampleBuffer::<f32>::new(required_frames as u64, spec));
+            }
+
+            let buffer = self
+                .sample_buffer
+                .as_mut()
+                .expect("sample buffer should be set");
 
             buffer.copy_interleaved_ref(decoded);
             let samples = buffer.samples();
             out.clear();
             out.extend_from_slice(samples);
             return Ok(Some(samples.len()));
+        }
+    }
+
+    /// Decode next packet into `out` only when `decode_packet` is true.
+    ///
+    /// When `decode_packet` is false, this may skip decoding and return
+    /// frame timing from packet duration (`Packet::dur`) when available.
+    /// If packet duration is unavailable, it falls back to decoding to keep
+    /// timing accurate.
+    pub fn decode_next_into_maybe(
+        &mut self,
+        out: &mut Vec<f32>,
+        decode_packet: bool,
+    ) -> Result<Option<DecodePacketInfo>, DecodeError> {
+        match self.decode_next_ref_maybe(decode_packet)? {
+            Some(DecodePacketRef::Skipped { frame_count }) => {
+                out.clear();
+                Ok(Some(DecodePacketInfo {
+                    frame_count,
+                    decoded: false,
+                }))
+            }
+            Some(DecodePacketRef::Decoded {
+                frame_count,
+                interleaved,
+            }) => {
+                out.clear();
+                out.extend_from_slice(interleaved);
+                Ok(Some(DecodePacketInfo {
+                    frame_count,
+                    decoded: true,
+                }))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Decode next packet and return a borrowed interleaved f32 slice from
+    /// the internal decode buffer.
+    pub fn decode_next_ref(&mut self) -> Result<Option<&[f32]>, DecodeError> {
+        match self.decode_next_ref_maybe(true)? {
+            Some(DecodePacketRef::Decoded { interleaved, .. }) => Ok(Some(interleaved)),
+            Some(DecodePacketRef::Skipped { .. }) => Ok(None),
+            None => Ok(None),
+        }
+    }
+
+    /// Decode next packet into an internal reusable interleaved buffer when
+    /// `decode_packet` is true. When false, skips decode and only returns
+    /// frame timing when packet duration is known.
+    pub fn decode_next_ref_maybe(
+        &mut self,
+        decode_packet: bool,
+    ) -> Result<Option<DecodePacketRef<'_>>, DecodeError> {
+        loop {
+            let packet = match self.format_reader.next_packet() {
+                Ok(packet) => packet,
+                Err(SymphoniaError::IoError(err))
+                    if err.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
+                    return Ok(None);
+                }
+                Err(SymphoniaError::IoError(err)) => return Err(DecodeError::Io(err)),
+                Err(SymphoniaError::DecodeError(desc)) => {
+                    warn!(%desc, "Skipping malformed packet from demuxer");
+                    continue;
+                }
+                Err(SymphoniaError::ResetRequired) => {
+                    self.decoder.reset();
+                    continue;
+                }
+                Err(err) => return Err(DecodeError::DecoderError(err.to_string())),
+            };
+
+            if packet.track_id() != self.track_id {
+                continue;
+            }
+
+            if !decode_packet {
+                let packet_frames = packet.dur as usize;
+                if packet_frames > 0 {
+                    return Ok(Some(DecodePacketRef::Skipped {
+                        frame_count: packet_frames,
+                    }));
+                }
+            }
+
+            let decoded = match self.decoder.decode(&packet) {
+                Ok(decoded) => decoded,
+                Err(SymphoniaError::DecodeError(desc)) => {
+                    warn!(%desc, "Skipping undecodable packet");
+                    continue;
+                }
+                Err(SymphoniaError::ResetRequired) => {
+                    self.decoder.reset();
+                    continue;
+                }
+                Err(SymphoniaError::IoError(err)) => return Err(DecodeError::Io(err)),
+                Err(err) => return Err(DecodeError::DecoderError(err.to_string())),
+            };
+
+            let spec = *decoded.spec();
+            self.sample_rate = spec.rate;
+            self.channels = spec.channels.count();
+
+            let required_frames = decoded.capacity();
+            let required_samples = required_frames * self.channels;
+
+            let needs_resize = self
+                .sample_buffer
+                .as_ref()
+                .map(|buffer| buffer.capacity() < required_samples)
+                .unwrap_or(true);
+
+            if needs_resize {
+                self.sample_buffer = Some(SampleBuffer::<f32>::new(required_frames as u64, spec));
+            }
+
+            let buffer = self
+                .sample_buffer
+                .as_mut()
+                .expect("sample buffer should be set");
+
+            buffer.copy_interleaved_ref(decoded);
+            let samples = buffer.samples();
+            return Ok(Some(DecodePacketRef::Decoded {
+                frame_count: samples.len() / self.channels,
+                interleaved: samples,
+            }));
         }
     }
 

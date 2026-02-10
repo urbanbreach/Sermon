@@ -62,6 +62,45 @@ pub struct WasapiOutput {
 }
 
 impl WasapiOutput {
+    fn encode_samples_to_bytes(&self, samples: &[f32], volume: f32) -> Vec<u8> {
+        let vol = if volume.is_finite() {
+            volume.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+
+        match (self.sample_type, self.bit_depth, self.valid_bits) {
+            (SampleType::Float, 32, _) => {
+                let mut data = Vec::with_capacity(samples.len() * 4);
+                for &sample in samples {
+                    let adjusted = sanitize_unit_sample(sample * vol);
+                    data.extend_from_slice(&adjusted.to_le_bytes());
+                }
+                data
+            }
+            (SampleType::Int, 16, 16) => f32_to_i16_le(samples, vol),
+            (SampleType::Int, 24, 24) => {
+                // Native 24-bit: 3 bytes per sample
+                f32_to_i24_native_le(samples, vol)
+            }
+            (SampleType::Int, 32, 24) => {
+                // 24-bit in 32-bit container: 4 bytes per sample, 24 valid bits
+                f32_to_i24_in_i32_le(samples, vol)
+            }
+            (SampleType::Int, 32, 16) => f32_to_i16_in_i32_le(samples, vol),
+            (SampleType::Int, 32, 32) => f32_to_i32_le(samples, vol),
+            _ => {
+                // Fallback to float
+                let mut data = Vec::with_capacity(samples.len() * 4);
+                for &sample in samples {
+                    let adjusted = sanitize_unit_sample(sample * vol);
+                    data.extend_from_slice(&adjusted.to_le_bytes());
+                }
+                data
+            }
+        }
+    }
+
     /// Open output for a specific source format. Windows will handle conversion
     /// to the device's native format via AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM.
     pub fn open_with_format(sample_rate: u32, channels: u16) -> Result<Self, OutputError> {
@@ -193,10 +232,7 @@ impl WasapiOutput {
                 (24, 24, SampleType::Int),   // Native 24-bit
                 (32, 32, SampleType::Float), // 32-bit float fallback
             ],
-            16 => vec![
-                (16, 16, SampleType::Int),   // Native 16-bit
-                (32, 32, SampleType::Float), // 32-bit float fallback
-            ],
+            16 => vec![(16, 16, SampleType::Int), (32, 16, SampleType::Int)],
             32 => vec![
                 (32, 32, SampleType::Float), // 32-bit float
                 (32, 32, SampleType::Int),   // 32-bit int
@@ -465,44 +501,8 @@ impl WasapiOutput {
             return Ok(());
         }
 
-        let vol = if volume.is_finite() {
-            volume.clamp(0.0, 1.0)
-        } else {
-            1.0
-        };
-
-        // Convert f32 samples to bytes based on format
-        // Use valid_bits to determine actual audio precision, bit_depth for container size
         let samples_subset = &samples[..samples_to_write];
-        let data = match (self.sample_type, self.bit_depth, self.valid_bits) {
-            (SampleType::Float, 32, _) => {
-                let mut d = Vec::with_capacity(samples_to_write * 4);
-                for &s in samples_subset {
-                    let adjusted = (s * vol).clamp(-1.0, 1.0);
-                    d.extend_from_slice(&adjusted.to_le_bytes());
-                }
-                d
-            }
-            (SampleType::Int, 16, 16) => f32_to_i16_le(samples_subset, vol),
-            (SampleType::Int, 24, 24) => {
-                // Native 24-bit: 3 bytes per sample
-                f32_to_i24_native_le(samples_subset, vol)
-            }
-            (SampleType::Int, 32, 24) => {
-                // 24-bit in 32-bit container: 4 bytes per sample, 24 valid bits
-                f32_to_i24_in_i32_le(samples_subset, vol)
-            }
-            (SampleType::Int, 32, 32) => f32_to_i32_le(samples_subset, vol),
-            _ => {
-                // Fallback to float
-                let mut d = Vec::with_capacity(samples_to_write * 4);
-                for &s in samples_subset {
-                    let adjusted = (s * vol).clamp(-1.0, 1.0);
-                    d.extend_from_slice(&adjusted.to_le_bytes());
-                }
-                d
-            }
-        };
+        let data = self.encode_samples_to_bytes(samples_subset, volume);
 
         match self
             .render_client
@@ -636,43 +636,7 @@ impl WasapiOutput {
             );
         }
 
-        let vol = if volume.is_finite() {
-            volume.clamp(0.0, 1.0)
-        } else {
-            1.0
-        };
-
-        // Convert f32 samples to bytes based on format
-        // Use valid_bits to determine actual audio precision, bit_depth for container size
-        let data = match (self.sample_type, self.bit_depth, self.valid_bits) {
-            (SampleType::Float, 32, _) => {
-                let mut d = Vec::with_capacity(samples_to_write * 4);
-                for &s in &samples {
-                    let adjusted = (s * vol).clamp(-1.0, 1.0);
-                    d.extend_from_slice(&adjusted.to_le_bytes());
-                }
-                d
-            }
-            (SampleType::Int, 16, 16) => f32_to_i16_le(&samples, vol),
-            (SampleType::Int, 24, 24) => {
-                // Native 24-bit: 3 bytes per sample
-                f32_to_i24_native_le(&samples, vol)
-            }
-            (SampleType::Int, 32, 24) => {
-                // 24-bit in 32-bit container: 4 bytes per sample, 24 valid bits
-                f32_to_i24_in_i32_le(&samples, vol)
-            }
-            (SampleType::Int, 32, 32) => f32_to_i32_le(&samples, vol),
-            _ => {
-                // Fallback to float
-                let mut d = Vec::with_capacity(samples_to_write * 4);
-                for &s in &samples {
-                    let adjusted = (s * vol).clamp(-1.0, 1.0);
-                    d.extend_from_slice(&adjusted.to_le_bytes());
-                }
-                d
-            }
-        };
+        let data = self.encode_samples_to_bytes(&samples, volume);
 
         match self
             .render_client
@@ -771,11 +735,73 @@ pub fn convert_channels_interleaved_f32(
     }
 
     match (input_channels, output_channels) {
+        (2, 1) => {
+            let mut out = Vec::with_capacity(frames);
+            for frame in 0..frames {
+                let base = frame * input_channels;
+                out.push((samples[base] + samples[base + 1]) * 0.5);
+            }
+            out
+        }
         (1, 2) => {
             let mut out = Vec::with_capacity(frames * 2);
             for &s in samples.iter().take(frames) {
                 out.push(s);
                 out.push(s);
+            }
+            out
+        }
+        // Standard ITU-style downmix from 5.1 (L, R, C, LFE, Ls, Rs) to stereo.
+        (6, 2) => {
+            const CENTER_GAIN: f32 = 0.707_106_77;
+            const SURROUND_GAIN: f32 = 0.707_106_77;
+            const LFE_GAIN: f32 = 0.5;
+
+            let mut out = Vec::with_capacity(frames * 2);
+            for frame in 0..frames {
+                let base = frame * input_channels;
+                let l = samples[base];
+                let r = samples[base + 1];
+                let c = samples[base + 2];
+                let lfe = samples[base + 3];
+                let ls = samples[base + 4];
+                let rs = samples[base + 5];
+
+                out.push(l + (CENTER_GAIN * c) + (SURROUND_GAIN * ls) + (LFE_GAIN * lfe));
+                out.push(r + (CENTER_GAIN * c) + (SURROUND_GAIN * rs) + (LFE_GAIN * lfe));
+            }
+            out
+        }
+        // Standard ITU-style downmix from 7.1 (L, R, C, LFE, Lb, Rb, Ls, Rs) to stereo.
+        (8, 2) => {
+            const CENTER_GAIN: f32 = 0.707_106_77;
+            const SURROUND_GAIN: f32 = 0.5;
+            const LFE_GAIN: f32 = 0.5;
+
+            let mut out = Vec::with_capacity(frames * 2);
+            for frame in 0..frames {
+                let base = frame * input_channels;
+                let l = samples[base];
+                let r = samples[base + 1];
+                let c = samples[base + 2];
+                let lfe = samples[base + 3];
+                let lb = samples[base + 4];
+                let rb = samples[base + 5];
+                let ls = samples[base + 6];
+                let rs = samples[base + 7];
+
+                out.push(
+                    l + (CENTER_GAIN * c)
+                        + (SURROUND_GAIN * lb)
+                        + (SURROUND_GAIN * ls)
+                        + (LFE_GAIN * lfe),
+                );
+                out.push(
+                    r + (CENTER_GAIN * c)
+                        + (SURROUND_GAIN * rb)
+                        + (SURROUND_GAIN * rs)
+                        + (LFE_GAIN * lfe),
+                );
             }
             out
         }
@@ -1043,6 +1069,56 @@ impl DopRingBuffer {
     }
 }
 
+#[inline]
+fn sanitize_unit_sample(sample: f32) -> f32 {
+    if sample.is_finite() {
+        sample.clamp(-1.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
+#[inline]
+pub(crate) fn quantize_to_i16(sample: f32) -> i16 {
+    let sample = sanitize_unit_sample(sample);
+    if sample >= 1.0 {
+        i16::MAX
+    } else if sample <= -1.0 {
+        i16::MIN
+    } else {
+        (sample * 32768.0).round() as i16
+    }
+}
+
+#[inline]
+pub(crate) fn quantize_to_i24(sample: f32) -> i32 {
+    const I24_MAX: i32 = 8_388_607;
+    const I24_MIN: i32 = -8_388_608;
+    const I24_SCALE: f64 = 8_388_608.0;
+
+    let sample = sanitize_unit_sample(sample);
+    if sample >= 1.0 {
+        I24_MAX
+    } else if sample <= -1.0 {
+        I24_MIN
+    } else {
+        ((sample as f64 * I24_SCALE).round() as i32).clamp(I24_MIN, I24_MAX)
+    }
+}
+
+#[inline]
+pub(crate) fn quantize_to_i32(sample: f32) -> i32 {
+    let sample = sanitize_unit_sample(sample);
+    if sample >= 1.0 {
+        i32::MAX
+    } else if sample <= -1.0 {
+        i32::MIN
+    } else {
+        ((sample as f64 * 2_147_483_648.0).round() as i64).clamp(i32::MIN as i64, i32::MAX as i64)
+            as i32
+    }
+}
+
 /// Convert f32 samples to 16-bit PCM (little-endian bytes)
 pub fn f32_to_i16_le(samples: &[f32], volume: f32) -> Vec<u8> {
     let vol = if volume.is_finite() {
@@ -1052,9 +1128,24 @@ pub fn f32_to_i16_le(samples: &[f32], volume: f32) -> Vec<u8> {
     };
     let mut out = Vec::with_capacity(samples.len() * 2);
     for &s in samples {
-        let sample = (s * vol).clamp(-1.0, 1.0);
-        let i16_sample = (sample * 32767.0) as i16;
+        let i16_sample = quantize_to_i16(s * vol);
         out.extend_from_slice(&i16_sample.to_le_bytes());
+    }
+    out
+}
+
+pub fn f32_to_i16_in_i32_le(samples: &[f32], volume: f32) -> Vec<u8> {
+    let vol = if volume.is_finite() {
+        volume.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+
+    let mut out = Vec::with_capacity(samples.len() * 4);
+    for &s in samples {
+        let i16_sample = quantize_to_i16(s * vol) as i32;
+        let i32_sample = i16_sample << 16;
+        out.extend_from_slice(&i32_sample.to_le_bytes());
     }
     out
 }
@@ -1078,12 +1169,9 @@ pub fn f32_to_i24_in_i32_le(samples: &[f32], volume: f32) -> Vec<u8> {
         1.0
     };
     let mut out = Vec::with_capacity(samples.len() * 4);
-    // 24-bit signed integer max is 2^23 - 1 = 8,388,607
-    const MAX_24BIT: f32 = 8_388_607.0;
 
     for &s in samples {
-        let sample = (s * vol).clamp(-1.0, 1.0);
-        let i24_val = (sample * MAX_24BIT) as i32;
+        let i24_val = quantize_to_i24(s * vol);
         // Pack into 32-bit container, LEFT-ALIGNED (MSB position)
         // Shift left by 8 bits so valid 24 bits occupy upper portion [31:8]
         // Lower 8 bits [7:0] are zero-padded per WAVEFORMATEXTENSIBLE spec
@@ -1102,12 +1190,9 @@ pub fn f32_to_i24_native_le(samples: &[f32], volume: f32) -> Vec<u8> {
         1.0
     };
     let mut out = Vec::with_capacity(samples.len() * 3);
-    // 24-bit signed integer max is 2^23 - 1 = 8,388,607
-    const MAX_24BIT: f32 = 8_388_607.0;
 
     for &s in samples {
-        let sample = (s * vol).clamp(-1.0, 1.0);
-        let i24_val = (sample * MAX_24BIT) as i32;
+        let i24_val = quantize_to_i24(s * vol);
         // Write only the lower 3 bytes (little-endian)
         let bytes = i24_val.to_le_bytes();
         out.push(bytes[0]);
@@ -1126,8 +1211,7 @@ pub fn f32_to_i32_le(samples: &[f32], volume: f32) -> Vec<u8> {
     };
     let mut out = Vec::with_capacity(samples.len() * 4);
     for &s in samples {
-        let sample = (s * vol).clamp(-1.0, 1.0);
-        let i32_sample = (sample * 2147483647.0) as i32;
+        let i32_sample = quantize_to_i32(s * vol);
         out.extend_from_slice(&i32_sample.to_le_bytes());
     }
     out
@@ -1503,10 +1587,10 @@ mod tests {
 
         // i16 max is 32767
         // 1.0 -> 32767 (0x7FFF) -> LE: FF 7F
-        // 0.5 -> 16383 (0x3FFF) -> LE: FF 3F
+        // 0.5 -> 16384 (0x4000) -> LE: 00 40
         // 0.0 -> 0 -> LE: 00 00
-        // -0.5 -> -16383 (0xC001) -> LE: 01 C0
-        // -1.0 -> -32767 (0x8001) -> LE: 01 80
+        // -0.5 -> -16384 (0xC000) -> LE: 00 C0
+        // -1.0 -> -32768 (0x8000) -> LE: 00 80
 
         assert_eq!(bytes.len(), input.len() * 2);
 
@@ -1516,19 +1600,19 @@ mod tests {
         assert_eq!(bytes[i + 1], 0x7F);
         i += 2;
         // 0.5
-        assert_eq!(bytes[i], 0xFF);
-        assert_eq!(bytes[i + 1], 0x3F);
+        assert_eq!(bytes[i], 0x00);
+        assert_eq!(bytes[i + 1], 0x40);
         i += 2;
         // 0.0
         assert_eq!(bytes[i], 0x00);
         assert_eq!(bytes[i + 1], 0x00);
         i += 2;
         // -0.5
-        assert_eq!(bytes[i], 0x01);
+        assert_eq!(bytes[i], 0x00);
         assert_eq!(bytes[i + 1], 0xC0);
         i += 2;
         // -1.0
-        assert_eq!(bytes[i], 0x01);
+        assert_eq!(bytes[i], 0x00);
         assert_eq!(bytes[i + 1], 0x80);
         i += 2;
         // 1.5 -> clamped to 1.0
@@ -1536,9 +1620,8 @@ mod tests {
         assert_eq!(bytes[i + 1], 0x7F);
         i += 2;
         // -1.5 -> clamped to -1.0
-        assert_eq!(bytes[i], 0x01);
+        assert_eq!(bytes[i], 0x00);
         assert_eq!(bytes[i + 1], 0x80);
-        i += 2;
     }
 
     #[test]
@@ -1554,9 +1637,9 @@ mod tests {
         // Shifted left by 8: 0x7FFFFF00
         // LE: 00 FF FF 7F
         //
-        // -1.0 * 8388607 = -8388607 (0xFF800001 in 32-bit two's complement)
-        // Shifted left by 8: 0x80000100
-        // LE: 00 01 00 80
+        // -1.0 -> -8388608 (0xFF800000 in 32-bit two's complement)
+        // Shifted left by 8: 0x80000000
+        // LE: 00 00 00 80
 
         assert_eq!(bytes.len(), input.len() * 4);
 
@@ -1573,9 +1656,36 @@ mod tests {
         assert_eq!(bytes[i + 2], 0x00);
         assert_eq!(bytes[i + 3], 0x00);
         i += 4;
-        // -1.0 -> -8388607 << 8 = 0x80000100 -> LE: 00 01 00 80
+        // -1.0 -> -8388608 << 8 = 0x80000000 -> LE: 00 00 00 80
         assert_eq!(bytes[i], 0x00);
-        assert_eq!(bytes[i + 1], 0x01);
+        assert_eq!(bytes[i + 2], 0x00);
+        assert_eq!(bytes[i + 1], 0x00);
+        assert_eq!(bytes[i + 3], 0x80);
+    }
+
+    #[test]
+    fn test_f32_to_i16_in_i32_le() {
+        let input = [1.0, 0.0, -1.0];
+        let volume = 1.0;
+        let bytes = f32_to_i16_in_i32_le(&input, volume);
+
+        assert_eq!(bytes.len(), input.len() * 4);
+
+        let mut i = 0;
+        assert_eq!(bytes[i], 0x00);
+        assert_eq!(bytes[i + 1], 0x00);
+        assert_eq!(bytes[i + 2], 0xFF);
+        assert_eq!(bytes[i + 3], 0x7F);
+
+        i += 4;
+        assert_eq!(bytes[i], 0x00);
+        assert_eq!(bytes[i + 1], 0x00);
+        assert_eq!(bytes[i + 2], 0x00);
+        assert_eq!(bytes[i + 3], 0x00);
+
+        i += 4;
+        assert_eq!(bytes[i], 0x00);
+        assert_eq!(bytes[i + 1], 0x00);
         assert_eq!(bytes[i + 2], 0x00);
         assert_eq!(bytes[i + 3], 0x80);
     }
@@ -1599,9 +1709,9 @@ mod tests {
         // 1.0 * 8388607 = 8388607 (0x7FFFFF)
         // LE: FF FF 7F
 
-        // -1.0 * 8388607 = -8388607
-        // -8388607 in 24-bit two's complement = 0x800001
-        // LE: 01 00 80
+        // -1.0 -> -8388608
+        // -8388608 in 24-bit two's complement = 0x800000
+        // LE: 00 00 80
 
         assert_eq!(bytes.len(), input.len() * 3);
 
@@ -1616,10 +1726,45 @@ mod tests {
         assert_eq!(bytes[i + 1], 0x00);
         assert_eq!(bytes[i + 2], 0x00);
         i += 3;
-        // -1.0 -> -8388607 = 0x800001 -> LE: 01 00 80
-        assert_eq!(bytes[i], 0x01);
+        // -1.0 -> -8388608 = 0x800000 -> LE: 00 00 80
+        assert_eq!(bytes[i], 0x00);
         assert_eq!(bytes[i + 1], 0x00);
         assert_eq!(bytes[i + 2], 0x80);
+    }
+
+    #[test]
+    fn test_convert_channels_stereo_to_mono_average() {
+        let input = [1.0, -1.0, 0.75, 0.25];
+        let output = convert_channels_interleaved_f32(&input, 2, 1);
+        assert_eq!(output, vec![0.0, 0.5]);
+    }
+
+    #[test]
+    fn test_convert_channels_5_1_to_stereo_downmix() {
+        // 1 frame of 5.1: L, R, C, LFE, Ls, Rs
+        let input = [1.0, 2.0, 0.5, 0.25, 0.75, 1.25];
+        let output = convert_channels_interleaved_f32(&input, 6, 2);
+
+        let expected_l = 1.0 + (0.707_106_77 * 0.5) + (0.707_106_77 * 0.75) + (0.5 * 0.25);
+        let expected_r = 2.0 + (0.707_106_77 * 0.5) + (0.707_106_77 * 1.25) + (0.5 * 0.25);
+
+        assert_eq!(output.len(), 2);
+        assert!((output[0] - expected_l).abs() < 1e-6);
+        assert!((output[1] - expected_r).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_convert_channels_7_1_to_stereo_downmix() {
+        // 1 frame of 7.1: L, R, C, LFE, Lb, Rb, Ls, Rs
+        let input = [1.0, 2.0, 0.5, 0.25, 0.75, 1.0, 0.5, 1.25];
+        let output = convert_channels_interleaved_f32(&input, 8, 2);
+
+        let expected_l = 1.0 + (0.707_106_77 * 0.5) + (0.5 * 0.75) + (0.5 * 0.5) + (0.5 * 0.25);
+        let expected_r = 2.0 + (0.707_106_77 * 0.5) + (0.5 * 1.0) + (0.5 * 1.25) + (0.5 * 0.25);
+
+        assert_eq!(output.len(), 2);
+        assert!((output[0] - expected_l).abs() < 1e-6);
+        assert!((output[1] - expected_r).abs() < 1e-6);
     }
 
     #[test]
