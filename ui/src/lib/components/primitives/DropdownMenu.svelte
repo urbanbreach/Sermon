@@ -23,10 +23,10 @@
   :global(.dropdown-content) {
     min-width: 160px;
     padding: var(--space-1, 4px) 0;
-    background: var(--surface-floating, rgba(255, 255, 255, 0.08));
-    border: 1px solid var(--divider, rgba(255, 255, 255, 0.07));
+    background: var(--surface-floating, rgba(20, 20, 20, 0.96));
+    border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.14));
     border-radius: var(--radius-md, 8px);
-    box-shadow: var(--shadow-2, 0 4px 12px rgba(0, 0, 0, 0.5));
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
     outline: none;
     z-index: 1000;
   }
@@ -64,7 +64,7 @@
   :global(.dropdown-separator) {
     height: 1px;
     margin: var(--space-1, 4px) 0;
-    background: var(--divider, rgba(255, 255, 255, 0.07));
+    background: var(--divider-color, rgba(255, 255, 255, 0.14));
   }
 
   :global(.dropdown-group-heading) {
