@@ -2,7 +2,7 @@ use library::db::{
     get_audio_device_preference, get_audio_volume, get_setting, get_track_by_id, open_db,
     set_setting, upsert_track,
 };
-use library::{TrackRow, apply_migrations};
+use library::{apply_migrations, TrackRow};
 use tempfile::tempdir;
 
 #[test]
@@ -44,7 +44,10 @@ fn test_settings_crud() {
     assert_eq!(get_audio_device_preference(&conn), "device_guid_123");
 
     // Test new output settings
-    use library::db::{get_audio_output_fade, get_audio_output_mode, get_audio_output_policy};
+    use library::db::{
+        get_audio_output_fade, get_audio_output_mode, get_audio_output_policy,
+        get_audio_output_timing,
+    };
 
     // Defaults
     assert_eq!(get_audio_output_mode(&conn), "exclusive");
@@ -62,6 +65,22 @@ fn test_settings_crud() {
 
     set_setting(&conn, "audio.output.fade", "off").unwrap();
     assert_eq!(get_audio_output_fade(&conn), false);
+
+    set_setting(&conn, "audio.output.mode", "  ExClUsIvE ").unwrap();
+    set_setting(&conn, "audio.output.policy", " STRICT ").unwrap();
+    set_setting(&conn, "audio.output.timing", " EVENT ").unwrap();
+
+    assert_eq!(get_audio_output_mode(&conn), "exclusive");
+    assert_eq!(get_audio_output_policy(&conn), "strict");
+    assert_eq!(get_audio_output_timing(&conn), "event");
+
+    set_setting(&conn, "audio.output.mode", "bad-mode").unwrap();
+    set_setting(&conn, "audio.output.policy", "bad-policy").unwrap();
+    set_setting(&conn, "audio.output.timing", "bad-timing").unwrap();
+
+    assert_eq!(get_audio_output_mode(&conn), "exclusive");
+    assert_eq!(get_audio_output_policy(&conn), "strict");
+    assert_eq!(get_audio_output_timing(&conn), "polling");
 }
 
 #[test]

@@ -1,4 +1,6 @@
-use library::{apply_migrations, list_tracks, open_db, scan_folder};
+use library::{
+    apply_migrations, backfill_loudness_metadata_once, list_tracks, open_db, scan_folder,
+};
 use std::fs::File;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
@@ -205,4 +207,28 @@ fn test_scan_empty_folder() {
     let conn = open_db(&db_path).unwrap();
     let tracks = list_tracks(&conn, "id", "asc").unwrap();
     assert!(tracks.is_empty());
+}
+
+#[test]
+fn test_loudness_backfill_sets_completion_marker() {
+    let temp = tempdir().unwrap();
+    let db_path = temp.path().join("test.db");
+
+    let conn = open_db(&db_path).unwrap();
+    apply_migrations(&conn).unwrap();
+    drop(conn);
+
+    let first = backfill_loudness_metadata_once(&db_path).unwrap();
+    assert!(!first.skipped);
+    assert_eq!(first.candidates, 0);
+    assert_eq!(first.checked, 0);
+    assert_eq!(first.updated, 0);
+
+    let conn = open_db(&db_path).unwrap();
+    let marker = library::db::get_setting(&conn, "library.loudness_backfill_v1_done").unwrap();
+    assert_eq!(marker.as_deref(), Some("on"));
+    drop(conn);
+
+    let second = backfill_loudness_metadata_once(&db_path).unwrap();
+    assert!(second.skipped);
 }

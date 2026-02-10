@@ -80,7 +80,7 @@ fn test_migration_second_run_preserves_existing_rows() {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, 10);
 
     let settings_after: i64 = conn
         .query_row(
@@ -106,7 +106,22 @@ fn test_in_memory_migration() {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, 10);
+}
+
+#[test]
+fn test_tracks_has_loudness_column() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    apply_migrations(&conn).unwrap();
+
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tracks') WHERE name = 'loudness_db'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
 }
 
 #[test]
