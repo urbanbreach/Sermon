@@ -35,7 +35,6 @@ import { onDestroy, onMount } from 'svelte';
   import PreferencesView from './lib/views/PreferencesView.svelte';
   import NowPlayingView from './lib/views/NowPlayingView.svelte';
   import SearchResultsView from './lib/views/SearchResultsView.svelte';
-  import LyricsView from './lib/views/LyricsView.svelte';
   import TagEditorWindowView from './lib/views/TagEditorWindowView.svelte';
   import TagEditorPanelView from './lib/views/TagEditorPanelView.svelte';
 
@@ -118,54 +117,47 @@ onMount(async () => {
   {:else}
     <BackgroundLayer />
 
-    <!-- Fullscreen Lyrics (renders above everything when active) -->
-    {#if $currentRouteName === 'lyrics-fullscreen'}
-      <LyricsView />
-    {:else}
-      <TopBar />
+    <TopBar />
 
-      <div class="main-body">
-        {#if $sidebarVisible}
-          <LeftNav />
-          <ResizeHandle side="left" minWidth={180} maxWidth={450} />
-        {/if}
+    <div class="main-body">
+      {#if $sidebarVisible}
+        <LeftNav />
+        <ResizeHandle side="left" minWidth={180} maxWidth={450} />
+      {/if}
 
-        <main class="content-area">
-          <div class="content-row">
-            <div class="view-viewport">
-              {#if $currentRouteName === 'albums'}
-                <AlbumsView />
-              {:else if $currentRouteName === 'artists'}
-                <ArtistsView />
-              {:else if $currentRouteName === 'tracks'}
-                <TracksView />
-              {:else if $currentRouteName === 'tag-editor-panel'}
-                <TagEditorPanelView />
-              {:else if $currentRouteName === 'diagnostics'}
-                <DiagnosticsView />
-              {:else if $currentRouteName === 'preferences'}
-                <PreferencesView />
-              {:else if $currentRouteName === 'album-detail'}
-                <AlbumDetailView />
-              {:else if $currentRouteName === 'artist-detail'}
-                <ArtistDetailView />
-              {:else if $currentRouteName === 'search-results'}
-                <SearchResultsView />
-              {/if}
-
-              {#if $currentRouteName === 'now-playing'}
-                <NowPlayingView />
-              {/if}
-            </div>
-
-            <ResizeHandle side="right" minWidth={280} maxWidth={500} />
-            <RightRail />
+      <main class="content-area">
+        <div class="content-row">
+          <div class="view-viewport">
+            {#if $currentRouteName === 'albums'}
+              <AlbumsView />
+            {:else if $currentRouteName === 'artists'}
+              <ArtistsView />
+            {:else if $currentRouteName === 'tracks'}
+              <TracksView />
+            {:else if $currentRouteName === 'tag-editor-panel'}
+              <TagEditorPanelView />
+            {:else if $currentRouteName === 'diagnostics'}
+              <DiagnosticsView />
+            {:else if $currentRouteName === 'preferences'}
+              <PreferencesView />
+            {:else if $currentRouteName === 'album-detail'}
+              <AlbumDetailView />
+            {:else if $currentRouteName === 'artist-detail'}
+              <ArtistDetailView />
+            {:else if $currentRouteName === 'search-results'}
+              <SearchResultsView />
+            {:else if $currentRouteName === 'now-playing'}
+              <NowPlayingView />
+            {/if}
           </div>
-        </main>
-      </div>
 
-      <BottomBar />
-    {/if}
+          <ResizeHandle side="right" minWidth={280} maxWidth={500} />
+          <RightRail />
+        </div>
+      </main>
+    </div>
+
+    <BottomBar />
   {/if}
 </div>
 
@@ -215,14 +207,6 @@ onMount(async () => {
     overflow-clip-margin: content-box 6px; /* Buffer for hover effects that may extend beyond content */
     display: flex;
     flex-direction: column;
-  }
-
-  /* Cider-style vertical dividers between columns */
-  .divider-v {
-    width: 1px;
-    background: var(--divider-color, rgba(255, 255, 255, 0.07));
-    flex-shrink: 0;
-    align-self: stretch;
   }
 
 </style>
