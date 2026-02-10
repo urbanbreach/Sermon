@@ -9,8 +9,8 @@ use library::models::{
     SearchSuggestResponse,
 };
 use library::safe_write::WriteStatus;
-use library::tag_edit::{update_track_tags, UpdateTagsRequest};
-use library::{list_tracks, open_db, scan_folder, LibraryFolder, TrackRow};
+use library::tag_edit::{UpdateTagsRequest, update_track_tags};
+use library::{LibraryFolder, TrackRow, list_tracks, open_db, scan_folder};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tags::{NumberPatch, TagPatch};
@@ -137,7 +137,7 @@ pub async fn cmd_scan_start(
     // Ensure folder is added to DB
     {
         let conn = open_db(&state_db_path).map_err(|e| e.to_string())?;
-            add_folder(&conn, &path).map_err(|e| e.to_string())?;
+        add_folder(&conn, &path).map_err(|e| e.to_string())?;
     }
 
     // Spawn scan task
@@ -546,6 +546,14 @@ pub struct UpdateTrackTagsRequest {
     pub album: TagPatchRequest,
     pub album_artist: TagPatchRequest,
     pub genre: TagPatchRequest,
+    pub publisher: TagPatchRequest,
+    pub composer: TagPatchRequest,
+    pub conductor: TagPatchRequest,
+    pub comments: TagPatchRequest,
+    pub grouping: TagPatchRequest,
+    pub lyricist: TagPatchRequest,
+    pub plain_lyrics: TagPatchRequest,
+    pub synced_lyrics: TagPatchRequest,
     pub track_no: NumberPatchRequest,
     pub disc_no: NumberPatchRequest,
     pub year: NumberPatchRequest,
@@ -580,6 +588,14 @@ pub async fn cmd_library_update_track_tags(
         album: request.album.to_tag_patch(),
         album_artist: request.album_artist.to_tag_patch(),
         genre: request.genre.to_tag_patch(),
+        publisher: request.publisher.to_tag_patch(),
+        composer: request.composer.to_tag_patch(),
+        conductor: request.conductor.to_tag_patch(),
+        comments: request.comments.to_tag_patch(),
+        grouping: request.grouping.to_tag_patch(),
+        lyricist: request.lyricist.to_tag_patch(),
+        plain_lyrics: request.plain_lyrics.to_tag_patch(),
+        synced_lyrics: request.synced_lyrics.to_tag_patch(),
         track_no: request.track_no.to_number_patch(),
         disc_no: request.disc_no.to_number_patch(),
         year: request.year.to_number_patch(),
@@ -588,7 +604,7 @@ pub async fn cmd_library_update_track_tags(
     // Run in blocking task since it involves file I/O
     let result = tauri::async_runtime::spawn_blocking(move || {
         let conn = open_db(&db_path).map_err(|e| e.to_string())?;
-    
+
         // Create status callback for retry events
         let app_clone = app.clone();
         let callback = move |status: WriteStatus| {

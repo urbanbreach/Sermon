@@ -2,7 +2,7 @@ use crate::state::{AudioState, DiagnosticsState, LibraryState, PlaybackCommand};
 use chrono::Utc;
 use library::db::{get_setting, set_setting};
 use library::open_db;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
 use sysinfo::{Pid, System};
@@ -244,8 +244,9 @@ pub async fn cmd_settings_export_diagnostics(
         let pid = Pid::from_u32(std::process::id());
         let mut sys = System::new();
         sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
-        
-        let (cpu_pct, rss_bytes) = sys.process(pid)
+
+        let (cpu_pct, rss_bytes) = sys
+            .process(pid)
             .map(|p| (p.cpu_usage() as f64, p.memory()))
             .unwrap_or((0.0, 0));
 

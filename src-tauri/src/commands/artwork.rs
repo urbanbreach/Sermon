@@ -1,4 +1,4 @@
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use library::open_db;
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -99,6 +99,27 @@ pub async fn cmd_artwork_get_thumb_bytes(
     artwork_state: State<'_, ArtworkCacheState>,
     thumb_state: State<'_, ThumbnailCacheState>,
 ) -> Result<ArtworkBytesResponse, String> {
+    if request.size == 0 {
+        let source_path = artwork_state.cache_dir.join(&request.cache_key);
+        if !source_path.exists() {
+            return Err(format!("Cache file not found: {}", request.cache_key));
+        }
+        let bytes =
+            fs::read(&source_path).map_err(|e| format!("Failed to read cache file: {}", e))?;
+        let mime = if bytes.starts_with(&[0xFF, 0xD8]) {
+            "image/jpeg"
+        } else if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
+            "image/png"
+        } else {
+            "application/octet-stream"
+        };
+        let bytes_base64 = BASE64.encode(&bytes);
+        return Ok(ArtworkBytesResponse {
+            mime: mime.to_string(),
+            bytes_base64,
+        });
+    }
+
     let thumb_path = generate_thumbnail(
         &artwork_state.cache_dir,
         &thumb_state.cache_dir,
@@ -125,7 +146,11 @@ pub fn write_to_cache(
 ) -> Result<(), String> {
     let entry_size = bytes.len() as u64;
     if entry_size > ARTWORK_MAX_ENTRY_SIZE {
-        warn!(entry_size = entry_size, max_size = ARTWORK_MAX_ENTRY_SIZE, "artwork_cache_skip_large_entry");
+        warn!(
+            entry_size = entry_size,
+            max_size = ARTWORK_MAX_ENTRY_SIZE,
+            "artwork_cache_skip_large_entry"
+        );
         return Ok(());
     }
 
@@ -143,7 +168,11 @@ pub fn write_to_cache_with_eviction(
 ) -> Result<(), String> {
     let entry_size = bytes.len() as u64;
     if entry_size > ARTWORK_MAX_ENTRY_SIZE {
-        warn!(entry_size = entry_size, max_size = ARTWORK_MAX_ENTRY_SIZE, "artwork_cache_skip_large_entry");
+        warn!(
+            entry_size = entry_size,
+            max_size = ARTWORK_MAX_ENTRY_SIZE,
+            "artwork_cache_skip_large_entry"
+        );
         return Ok(());
     }
 
@@ -160,7 +189,11 @@ pub fn cache_exists(cache_dir: &std::path::Path, cache_key: &str) -> bool {
     cache_dir.join(cache_key).exists()
 }
 
-fn update_artwork_cache_access_album(conn: &Connection, album_artist_sort: &str, album_title_sort: &str) {
+fn update_artwork_cache_access_album(
+    conn: &Connection,
+    album_artist_sort: &str,
+    album_title_sort: &str,
+) {
     let _ = conn.execute(
         "UPDATE artwork_cache_map_album SET selected_at = strftime('%s','now') WHERE album_artist_sort = ?1 AND album_title_sort = ?2",
         rusqlite::params![album_artist_sort, album_title_sort],
@@ -180,9 +213,11 @@ fn evict_artwork_cache_lru(conn: &Connection, cache_dir: &Path, target_free: u64
             .prepare("SELECT cache_key, selected_at FROM artwork_cache_map_album")
             .ok()
             .and_then(|mut stmt| {
-                stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
-                    .ok()
-                    .map(|rows| rows.flatten().collect())
+                stmt.query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                })
+                .ok()
+                .map(|rows| rows.flatten().collect())
             })
             .unwrap_or_default();
 
@@ -190,9 +225,11 @@ fn evict_artwork_cache_lru(conn: &Connection, cache_dir: &Path, target_free: u64
             .prepare("SELECT cache_key, selected_at FROM artwork_cache_map_track")
             .ok()
             .and_then(|mut stmt| {
-                stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
-                    .ok()
-                    .map(|rows| rows.flatten().collect())
+                stmt.query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                })
+                .ok()
+                .map(|rows| rows.flatten().collect())
             })
             .unwrap_or_default();
 
@@ -212,7 +249,10 @@ fn evict_artwork_cache_lru(conn: &Connection, cache_dir: &Path, target_free: u64
             .collect()
     };
 
-    let total_size: u64 = entries.iter().map(|(_, s)| s.parse::<u64>().unwrap_or(0)).sum();
+    let total_size: u64 = entries
+        .iter()
+        .map(|(_, s)| s.parse::<u64>().unwrap_or(0))
+        .sum();
     if total_size <= ARTWORK_CACHE_CAP_BYTES.saturating_sub(target_free) {
         return;
     }
@@ -224,8 +264,14 @@ fn evict_artwork_cache_lru(conn: &Connection, cache_dir: &Path, target_free: u64
         let size = size_str.parse::<u64>().unwrap_or(0);
         let cache_path = cache_dir.join(&key);
         if fs::remove_file(&cache_path).is_ok() {
-            let _ = conn.execute("DELETE FROM artwork_cache_map_album WHERE cache_key = ?1", [&key]);
-            let _ = conn.execute("DELETE FROM artwork_cache_map_track WHERE cache_key = ?1", [&key]);
+            let _ = conn.execute(
+                "DELETE FROM artwork_cache_map_album WHERE cache_key = ?1",
+                [&key],
+            );
+            let _ = conn.execute(
+                "DELETE FROM artwork_cache_map_track WHERE cache_key = ?1",
+                [&key],
+            );
             freed += size;
             info!(evicted_key = %key, evicted_size = size, "artwork_cache_evict");
             if freed >= to_free {
@@ -485,7 +531,11 @@ pub async fn cmd_artwork_get_best_for_album(
     if let Some((cache_key, mime)) = album_result {
         // Verify cache file exists
         if cache_exists(&artwork_state.cache_dir, &cache_key) {
-            update_artwork_cache_access_album(&conn, &request.album_artist_sort, &request.album_title_sort);
+            update_artwork_cache_access_album(
+                &conn,
+                &request.album_artist_sort,
+                &request.album_title_sort,
+            );
             return Ok(BestArtworkResponse {
                 source: "albumSelection".to_string(),
                 cache_key: Some(cache_key),
@@ -737,7 +787,7 @@ pub async fn cmd_artwork_embed_to_file(
     library_state: State<'_, crate::state::LibraryState>,
     artwork_state: State<'_, ArtworkCacheState>,
 ) -> Result<EmbedArtworkResponse, String> {
-    use tags::{write_tags, PicturePatch, TagPatches, TagWriteOptions};
+    use tags::{PicturePatch, TagPatches, TagWriteOptions, write_tags};
 
     // Get track path from DB
     let conn = open_db(&library_state.db_path).map_err(|e| e.to_string())?;
@@ -939,7 +989,12 @@ pub async fn cmd_artwork_find_folder(
             {
                 let _lock = artwork_state.lock.lock();
                 if !cache_exists(&artwork_state.cache_dir, &cache_key) {
-                    write_to_cache_with_eviction(&conn, &artwork_state.cache_dir, &cache_key, &bytes)?;
+                    write_to_cache_with_eviction(
+                        &conn,
+                        &artwork_state.cache_dir,
+                        &cache_key,
+                        &bytes,
+                    )?;
                 }
             }
 
@@ -1018,7 +1073,8 @@ pub fn try_local_artwork(
                 .as_millis();
             let size = meta.len();
             let provider_item_id = format!("{}:{}:{}", track_path, mtime, size);
-            let cache_key = compute_cache_key("embedded", "embedded", "embedded", &provider_item_id);
+            let cache_key =
+                compute_cache_key("embedded", "embedded", "embedded", &provider_item_id);
 
             // Write to cache if not exists
             if !cache_exists(cache_dir, &cache_key) {
@@ -1052,7 +1108,8 @@ pub fn try_local_artwork(
                     let size = meta.len();
                     let provider_item_id =
                         format!("{}:{}:{}", artwork_path.to_string_lossy(), mtime, size);
-                    let cache_key = compute_cache_key("folder", "folder", "folder", &provider_item_id);
+                    let cache_key =
+                        compute_cache_key("folder", "folder", "folder", &provider_item_id);
 
                     // Write to cache if not exists
                     if !cache_exists(cache_dir, &cache_key) {
@@ -1153,8 +1210,8 @@ pub fn generate_thumbnail(
         return Err(format!("Source artwork not found: {}", cache_key));
     }
 
-    let source_bytes = fs::read(&source_path)
-        .map_err(|e| format!("Failed to read source artwork: {}", e))?;
+    let source_bytes =
+        fs::read(&source_path).map_err(|e| format!("Failed to read source artwork: {}", e))?;
 
     let img = ImageReader::new(Cursor::new(&source_bytes))
         .with_guessed_format()

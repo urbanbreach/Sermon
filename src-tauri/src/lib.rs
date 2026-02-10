@@ -1,52 +1,54 @@
 mod commands;
 mod state;
 
-use serde::Serialize;
 use audio_engine::decode::AudioDecoder;
 use audio_engine::device::{get_default_device, get_device_by_id};
 use audio_engine::gapless_decoder::{AudioFormat, GaplessDecoder, TransitionType};
 use audio_engine::output::{
-    convert_channels_interleaved_f32, AudioOutput, AudioRingBuffer, OutputBackend, WasapiOutput,
+    AudioOutput, AudioRingBuffer, OutputBackend, WasapiOutput, convert_channels_interleaved_f32,
 };
 use audio_engine::{PlaybackState, TrackInfo};
 use commands::{
-    cache_exists, cmd_artwork_embed_to_file, cmd_artwork_extract_embedded,
-    cmd_artwork_find_folder, cmd_artwork_get_best_for_album, cmd_artwork_get_best_for_track,
-    cmd_artwork_get_bytes, cmd_artwork_get_thumb_bytes, cmd_artwork_search_candidates, cmd_artwork_select_candidate_for_album,
-    cmd_library_add_folder, cmd_library_get_folder_track_count, cmd_library_get_raw_tags,
-    cmd_library_get_stats, cmd_library_get_track_by_id, cmd_library_list_album_tracks_page,
-    cmd_library_list_albums_page, cmd_library_list_artist_tracks_page,
-    cmd_library_list_artists_page, cmd_library_list_folders, cmd_library_list_tracks,
-    cmd_library_list_tracks_page, cmd_library_remove_folder, cmd_library_search_albums_page,
-    cmd_library_search_artists_page, cmd_library_search_suggest, cmd_library_search_tracks_page,
-    cmd_library_update_folder_enabled, cmd_library_update_folder_options,
-    cmd_library_update_track_tags, cmd_list_asio_drivers,
-    cmd_lyrics_get_for_track,
-    cmd_open_asio_control_panel,
-    cmd_output_get_settings, cmd_output_list_devices, cmd_output_probe_capabilities,
-    cmd_output_set_device, cmd_output_set_settings, cmd_playback_next, cmd_playback_pause,
-    cmd_playback_previous, cmd_playback_resume, cmd_playback_seek, cmd_playback_start,
-    cmd_playback_stop, cmd_playback_restore_session, cmd_queue_add, cmd_queue_add_next, cmd_queue_play_now, cmd_queue_set_and_play,
-    cmd_scan_start, cmd_settings_export_diagnostics, cmd_settings_get, cmd_settings_get_category,
-    cmd_settings_reset_category, cmd_settings_set, cmd_settings_set_category, cmd_volume_get,
-    cmd_volume_set, cmd_waveform_get_peaks, generate_thumbnail, try_local_artwork,
-    AudioDebugEvent, AudioFormatData,
-    DeviceChangedEvent, NowPlayingEvent, PlaybackErrorEvent, PlaybackPositionEvent,
-    PlaybackStateEvent, QueueChangedEvent, QueueItemData, TrackEventData,
+    AudioDebugEvent, AudioFormatData, DeviceChangedEvent, NowPlayingEvent, PlaybackErrorEvent,
+    PlaybackPositionEvent, PlaybackStateEvent, QueueChangedEvent, QueueItemData, TrackEventData,
+    cache_exists, cmd_artwork_embed_to_file, cmd_artwork_extract_embedded, cmd_artwork_find_folder,
+    cmd_artwork_get_best_for_album, cmd_artwork_get_best_for_track, cmd_artwork_get_bytes,
+    cmd_artwork_get_thumb_bytes, cmd_artwork_search_candidates,
+    cmd_artwork_select_candidate_for_album, cmd_library_add_folder,
+    cmd_library_get_folder_track_count, cmd_library_get_raw_tags, cmd_library_get_stats,
+    cmd_library_get_track_by_id, cmd_library_list_album_tracks_page, cmd_library_list_albums_page,
+    cmd_library_list_artist_tracks_page, cmd_library_list_artists_page, cmd_library_list_folders,
+    cmd_library_list_tracks, cmd_library_list_tracks_page, cmd_library_remove_folder,
+    cmd_library_search_albums_page, cmd_library_search_artists_page, cmd_library_search_suggest,
+    cmd_library_search_tracks_page, cmd_library_update_folder_enabled,
+    cmd_library_update_folder_options, cmd_library_update_track_tags, cmd_list_asio_drivers,
+    cmd_lyrics_get_for_track, cmd_open_asio_control_panel, cmd_output_get_settings,
+    cmd_output_list_devices, cmd_output_probe_capabilities, cmd_output_set_device,
+    cmd_output_set_settings, cmd_playback_next, cmd_playback_pause, cmd_playback_previous,
+    cmd_playback_restore_session, cmd_playback_resume, cmd_playback_seek, cmd_playback_start,
+    cmd_playback_stop, cmd_queue_add, cmd_queue_add_next, cmd_queue_play_now,
+    cmd_queue_set_and_play, cmd_scan_start, cmd_settings_export_diagnostics, cmd_settings_get,
+    cmd_settings_get_category, cmd_settings_reset_category, cmd_settings_set,
+    cmd_settings_set_category, cmd_volume_get, cmd_volume_set, cmd_waveform_get_peaks,
+    generate_thumbnail, try_local_artwork,
 };
-use crossbeam_channel::{select, tick, unbounded, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender, select, tick, unbounded};
 use parking_lot::Mutex;
 use rusqlite::OptionalExtension;
-use state::{persist_session, ArtworkCacheState, AudioState, DiagnosticsState, LibraryState, PlaybackCommand, PlaybackSessionSnapshot, ThumbnailCacheState, WaveformCacheState};
+use serde::Serialize;
+use state::{
+    ArtworkCacheState, AudioState, DiagnosticsState, LibraryState, PlaybackCommand,
+    PlaybackSessionSnapshot, ThumbnailCacheState, WaveformCacheState, persist_session,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{Emitter, Listener, Manager};
-use tracing::{debug, error, info, warn, Level};
+use tracing::{Level, debug, error, info, warn};
 use tracing_subscriber::{
-    filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt, Layer,
+    Layer, filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt,
 };
 
 pub fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
@@ -178,7 +180,13 @@ fn resolve_album_cache_key(
         }
     }
 
-    Err((StatusCode::NOT_FOUND, format!("Artwork not found for album: {}/{}", album_artist_sort, album_title_sort)))
+    Err((
+        StatusCode::NOT_FOUND,
+        format!(
+            "Artwork not found for album: {}/{}",
+            album_artist_sort, album_title_sort
+        ),
+    ))
 }
 
 fn resolve_track_cache_key(
@@ -238,7 +246,10 @@ fn resolve_track_cache_key(
         }
     }
 
-    Err((StatusCode::NOT_FOUND, format!("Artwork not found for track: {}", track_id)))
+    Err((
+        StatusCode::NOT_FOUND,
+        format!("Artwork not found for track: {}", track_id),
+    ))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -253,7 +264,9 @@ pub fn run() {
 
     // Initialize diagnostics state with startup timestamp
     let diagnostics = Arc::new(DiagnosticsState::new());
-    diagnostics.startup_start_ms.store(startup_start_ms, std::sync::atomic::Ordering::SeqCst);
+    diagnostics
+        .startup_start_ms
+        .store(startup_start_ms, std::sync::atomic::Ordering::SeqCst);
 
     let mut builder = tauri::Builder::default();
 
@@ -422,6 +435,46 @@ pub fn run() {
                             return;
                         }
                     };
+
+                    // Full-resolution request (s=0): serve original artwork directly
+                    if size == 0 && !is_lqip {
+                        let artwork_state = app_handle.state::<ArtworkCacheState>();
+                        let source_path = artwork_state.cache_dir.join(&cache_key);
+                        if source_path.exists() {
+                            match std::fs::read(&source_path) {
+                                Ok(bytes) => {
+                                    let content_type = if bytes.starts_with(&[0xFF, 0xD8]) {
+                                        "image/jpeg"
+                                    } else if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
+                                        "image/png"
+                                    } else {
+                                        "application/octet-stream"
+                                    };
+                                    log_request(StatusCode::OK, Some(true), None);
+                                    responder.respond(
+                                        Response::builder()
+                                            .status(StatusCode::OK)
+                                            .header(header::CONTENT_TYPE, content_type)
+                                            .header(header::CACHE_CONTROL, "max-age=31536000, immutable")
+                                            .body(bytes)
+                                            .unwrap(),
+                                    );
+                                }
+                                Err(e) => {
+                                    warn!("Failed to read original artwork {}: {}", source_path.display(), e);
+                                    log_request(StatusCode::INTERNAL_SERVER_ERROR, None, None);
+                                    responder.respond(make_error(
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        "Failed to read artwork",
+                                    ));
+                                }
+                            }
+                        } else {
+                            log_request(StatusCode::NOT_FOUND, None, None);
+                            responder.respond(make_error(StatusCode::NOT_FOUND, "Original artwork not found"));
+                        }
+                        return;
+                    }
 
                     let thumb_state = app_handle.state::<ThumbnailCacheState>();
 
@@ -810,28 +863,45 @@ pub fn run() {
 
                 if !scan_enabled {
                     info!("Startup scan disabled by user preference");
-                    return;
+                } else {
+                    match library::quick_scan(&db_path_clone) {
+                        Ok(summary) => {
+                            info!(
+                                "Startup quick scan complete: {} folders, {} files checked, {} added, {} missing, {} restored in {}ms",
+                                summary.folders_checked,
+                                summary.files_checked,
+                                summary.files_added,
+                                summary.files_marked_missing,
+                                summary.files_restored,
+                                summary.elapsed_ms
+                            );
+
+                            // Emit event if any changes were made
+                            if summary.files_added > 0 || summary.files_marked_missing > 0 || summary.files_restored > 0 {
+                                let _ = app_handle.emit("evt_quick_scan_complete", &summary);
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Startup quick scan failed: {}", e);
+                        }
+                    }
                 }
 
-                match library::quick_scan(&db_path_clone) {
+                match library::backfill_loudness_metadata_once(&db_path_clone) {
                     Ok(summary) => {
-                        info!(
-                            "Startup quick scan complete: {} folders, {} files checked, {} added, {} missing, {} restored in {}ms",
-                            summary.folders_checked,
-                            summary.files_checked,
-                            summary.files_added,
-                            summary.files_marked_missing,
-                            summary.files_restored,
-                            summary.elapsed_ms
-                        );
-
-                        // Emit event if any changes were made
-                        if summary.files_added > 0 || summary.files_marked_missing > 0 || summary.files_restored > 0 {
-                            let _ = app_handle.emit("evt_quick_scan_complete", &summary);
+                        if summary.skipped {
+                            info!("Loudness metadata backfill already completed");
+                        } else {
+                            info!(
+                                "Loudness metadata backfill complete: {} candidates, {} checked, {} updated",
+                                summary.candidates,
+                                summary.checked,
+                                summary.updated
+                            );
                         }
                     }
                     Err(e) => {
-                        warn!("Startup quick scan failed: {}", e);
+                        warn!("Loudness metadata backfill failed: {}", e);
                     }
                 }
             });
@@ -951,12 +1021,12 @@ struct AudioPlayback {
     device_id: String, // "default" or specific device ID
     output_sample_rate: u32,
     output_channels: u16,
-    end_of_track: bool,         // Track if decoder has finished
+    end_of_track: bool,            // Track if decoder has finished
     current_track_id: Option<i64>, // Track ID currently loaded in decoder
-    output_mode: String,        // "exclusive" or "shared" or "asio"
-    policy: String,             // "strict" or "compatibility"
-    gain_mode: String,          // "unity" or "software"
-    conversion: Option<String>, // None, "pad_16_to_24", "shared_fallback"
+    output_mode: String,           // "exclusive" or "shared" or "asio"
+    policy: String,                // "strict" or "compatibility"
+    gain_mode: String,             // "unity" or "software"
+    conversion: Option<String>,    // None, "pad_16_to_24", "shared_fallback"
     fade_enabled: bool,
     fade_state: Option<FadeState>,
     timing_mode: String, // "event" or "polling"
@@ -986,16 +1056,114 @@ struct PreloadResult {
     bytes: Vec<u8>,
 }
 
-struct FadeState {
-    direction: FadeDirection,
-    samples_remaining: usize,
-    total_samples: usize,
+struct FadeState;
+
+fn uses_unity_gain(output_mode: &str, policy: &str) -> bool {
+    policy == "strict" && matches!(output_mode, "exclusive" | "asio")
 }
 
-#[derive(Clone, Copy, PartialEq)]
-enum FadeDirection {
-    In,
-    Out,
+fn normalize_output_mode_value(mode: &str) -> String {
+    match mode.trim().to_ascii_lowercase().as_str() {
+        "exclusive" => "exclusive".to_string(),
+        "shared" => "shared".to_string(),
+        "asio" => "asio".to_string(),
+        other => {
+            warn!(mode = %other, "Invalid output mode value; defaulting to exclusive");
+            "exclusive".to_string()
+        }
+    }
+}
+
+fn normalize_output_policy_value(policy: &str) -> String {
+    match policy.trim().to_ascii_lowercase().as_str() {
+        "strict" => "strict".to_string(),
+        "compatibility" => "compatibility".to_string(),
+        other => {
+            warn!(policy = %other, "Invalid output policy value; defaulting to strict");
+            "strict".to_string()
+        }
+    }
+}
+
+fn normalize_output_timing_value(timing: &str) -> String {
+    match timing.trim().to_ascii_lowercase().as_str() {
+        "event" => "event".to_string(),
+        "polling" => "polling".to_string(),
+        other => {
+            warn!(timing = %other, "Invalid output timing value; defaulting to polling");
+            "polling".to_string()
+        }
+    }
+}
+
+fn output_matches_mode(output: &OutputBackend, output_mode: &str) -> bool {
+    match output_mode {
+        "shared" => matches!(output, OutputBackend::Wasapi(o) if !o.is_exclusive()),
+        "exclusive" => matches!(output, OutputBackend::Wasapi(o) if o.is_exclusive()),
+        "asio" => {
+            #[cfg(windows)]
+            {
+                matches!(output, OutputBackend::Asio(_))
+            }
+            #[cfg(not(windows))]
+            {
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
+fn output_backend_kind(output: Option<&OutputBackend>, configured_output_mode: &str) -> &'static str {
+    match output {
+        Some(OutputBackend::Wasapi(_)) => "wasapi",
+        Some(OutputBackend::NullSink(_)) => {
+            if configured_output_mode == "asio" {
+                "asio"
+            } else {
+                "wasapi"
+            }
+        }
+        #[cfg(windows)]
+        Some(OutputBackend::Asio(_)) => "asio",
+        None => {
+            if configured_output_mode == "asio" {
+                "asio"
+            } else {
+                "wasapi"
+            }
+        }
+    }
+}
+
+fn resolve_output_device_name(playback: &AudioPlayback, fallback_device_name: Option<&str>) -> String {
+    let backend_kind = output_backend_kind(playback.output.as_ref(), &playback.output_mode);
+    if backend_kind == "asio" {
+        if let Some(driver_name) = playback
+            .asio_driver
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        {
+            return driver_name.to_string();
+        }
+    }
+
+    fallback_device_name
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or("Default")
+        .to_string()
+}
+
+fn asio_driver_matches(output: &OutputBackend, configured_driver: Option<&str>) -> bool {
+    #[cfg(windows)]
+    {
+        if let (OutputBackend::Asio(asio), Some(driver)) = (output, configured_driver) {
+            return asio.driver_name() == driver;
+        }
+    }
+    false
 }
 
 impl AudioPlayback {
@@ -1082,17 +1250,23 @@ impl AudioPlayback {
 
         // Check if we need to reopen
         if let Some(ref output) = self.output {
-            let mode_mismatch = if self.output_mode == "exclusive" {
-                !output.is_exclusive()
+            let mode_matches = output_matches_mode(output, &self.output_mode);
+            let bit_depth_matches = match self.output_mode.as_str() {
+                "exclusive" => output.bit_depth() == bit_depth,
+                "asio" => output.valid_bits() == bit_depth,
+                _ => true,
+            };
+            let asio_driver_ok = if self.output_mode == "asio" {
+                asio_driver_matches(output, self.asio_driver.as_deref())
             } else {
-                output.is_exclusive()
+                true
             };
 
-            if !mode_mismatch
+            if mode_matches
+                && asio_driver_ok
                 && output.sample_rate() == sample_rate
                 && output.channels() == channels
-                // For exclusive, check bit depth match. For shared, bit depth is always 32-float so we ignore source bit depth.
-                && (!output.is_exclusive() || output.bit_depth() == bit_depth)
+                && bit_depth_matches
             {
                 return Ok(());
             }
@@ -1122,7 +1296,7 @@ impl AudioPlayback {
 
             if let Some(ref driver_name) = self.asio_driver {
                 info!(driver = %driver_name, "Opening ASIO output");
-                match AsioOutput::new(driver_name, sample_rate, channels) {
+                match AsioOutput::new(driver_name, sample_rate, channels, bit_depth) {
                     Ok(output) => {
                         self.output_sample_rate = output.sample_rate();
                         self.output_channels = output.channels();
@@ -1198,15 +1372,10 @@ impl AudioPlayback {
             self.conversion = None;
         }
 
-        // Initialize fade-in if enabled
-        if self.fade_enabled && self.output.is_some() {
-            let fade_frames = (self.output_sample_rate * 10) / 1000; // 10ms
-            self.fade_state = Some(FadeState {
-                direction: FadeDirection::In,
-                samples_remaining: fade_frames as usize,
-                total_samples: fade_frames as usize,
-            });
-        }
+        // Fade processing is not currently applied in the PCM write path.
+        // Keep fade state cleared so diagnostics do not report a persistent
+        // non-bit-perfect fade window that is never actually consumed.
+        self.fade_state = None;
 
         Ok(())
     }
@@ -1234,7 +1403,7 @@ impl AudioPlayback {
             use audio_engine::asio::AsioOutput;
 
             if let Some(ref driver_name) = self.asio_driver {
-                match AsioOutput::new(driver_name, dop_rate, channels) {
+                match AsioOutput::new(driver_name, dop_rate, channels, 24) {
                     Ok(output) => {
                         self.output_sample_rate = output.sample_rate();
                         self.output_channels = output.channels();
@@ -1866,7 +2035,10 @@ fn spawn_audio_thread(
                 let path = request.path;
                 match fs::read(&path) {
                     Ok(bytes) => {
-                        if preload_result_tx.send(PreloadResult { path, bytes }).is_err() {
+                        if preload_result_tx
+                            .send(PreloadResult { path, bytes })
+                            .is_err()
+                        {
                             break;
                         }
                     }
@@ -1896,18 +2068,15 @@ fn spawn_audio_thread(
 
         // Load saved settings from DB into playback state
         if let Ok(conn) = library::open_db(&db_path) {
-            if let Ok(Some(mode)) = library::get_setting(&conn, "audio.output.mode") {
-                playback.output_mode = mode;
-            }
-            if let Ok(Some(policy)) = library::get_setting(&conn, "audio.output.policy") {
-                playback.policy = policy;
-            }
-            if let Ok(Some(fade)) = library::get_setting(&conn, "audio.output.fade") {
-                playback.fade_enabled = fade == "on";
-            }
+            playback.output_mode = library::get_audio_output_mode(&conn);
+            playback.policy = library::get_audio_output_policy(&conn);
+            playback.fade_enabled = library::get_audio_output_fade(&conn);
+            playback.timing_mode = library::get_audio_output_timing(&conn);
             // Set gain_mode based on output_mode and policy
-            if playback.output_mode == "exclusive" && playback.policy == "strict" {
+            if uses_unity_gain(&playback.output_mode, &playback.policy) {
                 playback.gain_mode = "unity".to_string();
+            } else {
+                playback.gain_mode = "software".to_string();
             }
             // Load DSD settings
             if let Ok(Some(dop_enabled)) = library::get_setting(&conn, "devices.dsd_dop_enabled") {
@@ -1917,11 +2086,7 @@ fn spawn_audio_thread(
                 playback.dsd_dop_strict = dop_strict == "on";
             }
             // Load ASIO driver setting
-            if let Ok(Some(asio_driver)) = library::get_setting(&conn, "audio.output.asio_driver") {
-                if !asio_driver.is_empty() {
-                    playback.asio_driver = Some(asio_driver);
-                }
-            }
+            playback.asio_driver = library::get_audio_output_asio_driver(&conn);
         }
 
         // Try to open default output at startup
@@ -2211,7 +2376,9 @@ fn handle_playback_command(
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
-            diagnostics.playback_start_ms.store(now_ms, std::sync::atomic::Ordering::SeqCst);
+            diagnostics
+                .playback_start_ms
+                .store(now_ms, std::sync::atomic::Ordering::SeqCst);
 
             playback.cancel_preload();
             let Some(track) = resolve_track(db_path, track_id)
@@ -2243,7 +2410,9 @@ fn handle_playback_command(
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
-            diagnostics.playback_complete_ms.store(complete_ms, std::sync::atomic::Ordering::SeqCst);
+            diagnostics
+                .playback_complete_ms
+                .store(complete_ms, std::sync::atomic::Ordering::SeqCst);
 
             emit_now_playing(app, engine);
             emit_playback_state(app, engine);
@@ -2290,7 +2459,9 @@ fn handle_playback_command(
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
-            diagnostics.playback_start_ms.store(now_ms, std::sync::atomic::Ordering::SeqCst);
+            diagnostics
+                .playback_start_ms
+                .store(now_ms, std::sync::atomic::Ordering::SeqCst);
 
             playback.cancel_preload();
             let mut tracks = Vec::new();
@@ -2333,7 +2504,9 @@ fn handle_playback_command(
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
-            diagnostics.playback_complete_ms.store(complete_ms, std::sync::atomic::Ordering::SeqCst);
+            diagnostics
+                .playback_complete_ms
+                .store(complete_ms, std::sync::atomic::Ordering::SeqCst);
 
             emit_now_playing(app, engine);
             emit_playback_state(app, engine);
@@ -2407,16 +2580,18 @@ fn handle_playback_command(
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
-            diagnostics.seek_start_ms.store(now_ms, std::sync::atomic::Ordering::SeqCst);
+            diagnostics
+                .seek_start_ms
+                .store(now_ms, std::sync::atomic::Ordering::SeqCst);
 
             playback.cancel_preload();
-            
+
             // Check if decoder track matches engine track (fixes race condition)
             let engine_track_id = {
                 let engine = engine.lock();
                 engine.session.as_ref().map(|s| s.track_id)
             };
-            
+
             if playback.current_track_id != engine_track_id {
                 // Decoder has stale track - reload the correct track before seeking
                 if let Some(track_id) = engine_track_id {
@@ -2425,14 +2600,17 @@ fn handle_playback_command(
                         engine.session.as_ref().map(|s| s.track.clone())
                     };
                     if let Some(track) = track {
-                        info!("Seek: reloading track {} (decoder had stale track)", track_id);
+                        info!(
+                            "Seek: reloading track {} (decoder had stale track)",
+                            track_id
+                        );
                         if let Err(e) = playback.start_playback(&track, db_path) {
                             error!("Failed to reload track for seek: {}", e);
                         }
                     }
                 }
             }
-            
+
             if let Err(e) = playback.seek(position_ms) {
                 error!("Seek failed: {}", e);
             }
@@ -2442,7 +2620,9 @@ fn handle_playback_command(
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
-            diagnostics.seek_complete_ms.store(complete_ms, std::sync::atomic::Ordering::SeqCst);
+            diagnostics
+                .seek_complete_ms
+                .store(complete_ms, std::sync::atomic::Ordering::SeqCst);
 
             emit_position_now(app, engine);
         }
@@ -2574,6 +2754,10 @@ fn handle_playback_command(
             timing,
             asio_driver,
         } => {
+            let mode = normalize_output_mode_value(&mode);
+            let policy = normalize_output_policy_value(&policy);
+            let timing = normalize_output_timing_value(&timing);
+
             info!(
                 "Received output settings update: mode={}, policy={}, fade={}, timing={}, asio_driver={:?}",
                 mode, policy, fade, timing, asio_driver
@@ -2599,7 +2783,7 @@ fn handle_playback_command(
             playback.policy = policy.clone();
 
             // Update gain_mode based on output_mode and policy
-            if mode == "exclusive" && policy == "strict" {
+            if uses_unity_gain(&mode, &policy) {
                 playback.gain_mode = "unity".to_string();
             } else {
                 playback.gain_mode = "software".to_string();
@@ -2683,13 +2867,16 @@ fn handle_playback_command(
             // First try to use the active ASIO output if available
             if let Some(ref output) = playback.output {
                 if let Err(e) = output.open_asio_control_panel() {
-                    warn!("Failed to open ASIO control panel via active output: {:?}", e);
+                    warn!(
+                        "Failed to open ASIO control panel via active output: {:?}",
+                        e
+                    );
                     // Fall through to direct method
                 } else {
                     return; // Success via active output
                 }
             }
-            
+
             // No active ASIO output or it failed - use direct method
             info!(driver = %driver_name, "Opening ASIO control panel directly (no active output)");
             if let Err(e) = audio_engine::open_asio_control_panel_direct(&driver_name) {
@@ -3160,10 +3347,18 @@ fn signal_path_check(
     }
 }
 
-fn compute_signal_path_checks(playback: &AudioPlayback, track: Option<&TrackInfo>) -> Vec<SignalPathCheck> {
+fn compute_signal_path_checks(
+    playback: &AudioPlayback,
+    track: Option<&TrackInfo>,
+) -> Vec<SignalPathCheck> {
     let output = playback.output.as_ref();
+    let backend_kind = output_backend_kind(output, &playback.output_mode);
     let exclusive_active = output.map(|o| o.is_exclusive()).unwrap_or(false);
-    let track_sample_rate = track.and_then(|t| t.sample_rate);
+    let track_sample_rate = if playback.source_sample_rate > 0 {
+        Some(playback.source_sample_rate)
+    } else {
+        track.and_then(|t| t.sample_rate)
+    };
     let track_bit_depth = track.and_then(|t| t.bit_depth);
 
     let source_check = if track.is_none() {
@@ -3199,7 +3394,7 @@ fn compute_signal_path_checks(playback: &AudioPlayback, track: Option<&TrackInfo
             Some("Conversion: Zero-pad 16->32 (compat)".to_string()),
         )
     } else if let (Some(track_bd), Some(output)) = (track_bit_depth, output) {
-        if output.valid_bits() != track_bd && playback.conversion.is_none() {
+        if exclusive_active && output.valid_bits() != track_bd && playback.conversion.is_none() {
             signal_path_check(
                 SignalPathStage::Decode,
                 SignalPathStatus::TouchingBits,
@@ -3218,7 +3413,7 @@ fn compute_signal_path_checks(playback: &AudioPlayback, track: Option<&TrackInfo
     };
 
     let resample_check = if playback.resampler.is_some() {
-        let reason_code = if playback.output_mode == "asio" {
+        let reason_code = if backend_kind == "asio" {
             REASON_ASIO_RESAMPLER_ACTIVE
         } else {
             REASON_SAMPLE_RATE_MISMATCH
@@ -3262,7 +3457,12 @@ fn compute_signal_path_checks(playback: &AudioPlayback, track: Option<&TrackInfo
         signal_path_check(SignalPathStage::Resample, SignalPathStatus::Ok, None, None)
     };
 
-    let channel_map_check = signal_path_check(SignalPathStage::ChannelMap, SignalPathStatus::Ok, None, None);
+    let channel_map_check = signal_path_check(
+        SignalPathStage::ChannelMap,
+        SignalPathStatus::Ok,
+        None,
+        None,
+    );
 
     let unity_forced = exclusive_active && playback.policy == "strict";
     let gain_check = if playback.gain_mode == "software" {
@@ -3271,7 +3471,7 @@ fn compute_signal_path_checks(playback: &AudioPlayback, track: Option<&TrackInfo
                 SignalPathStage::Gain,
                 SignalPathStatus::Ok,
                 Some(REASON_GAIN_SOFTWARE_BYPASSED),
-                Some("Gain: Software volume bypassed (exclusive strict)".to_string()),
+                Some("Gain: Software volume bypassed (strict policy)".to_string()),
             )
         } else {
             signal_path_check(
@@ -3360,7 +3560,11 @@ fn derive_pcm_bit_perfect(
     playback: &AudioPlayback,
     checks: &[SignalPathCheck],
 ) -> (String, String) {
-    let exclusive_active = playback.output.as_ref().map(|o| o.is_exclusive()).unwrap_or(false);
+    let exclusive_active = playback
+        .output
+        .as_ref()
+        .map(|o| o.is_exclusive())
+        .unwrap_or(false);
     let all_relevant_ok = checks
         .iter()
         .filter(|check| check.status != SignalPathStatus::Inactive)
@@ -3480,7 +3684,11 @@ fn emit_audio_debug(
     let track = session.map(|s| &s.track);
 
     let decode_format = AudioFormatData {
-        sample_rate: track.and_then(|t| t.sample_rate).unwrap_or(0),
+        sample_rate: if playback.source_sample_rate > 0 {
+            playback.source_sample_rate
+        } else {
+            track.and_then(|t| t.sample_rate).unwrap_or(0)
+        },
         bit_depth: track.and_then(|t| t.bit_depth).unwrap_or(0),
         channels: track.and_then(|t| t.channels).unwrap_or(0),
         codec: track.and_then(|t| t.codec.clone()),
@@ -3515,9 +3723,10 @@ fn emit_audio_debug(
         },
     };
 
-    let (device_id, device_name) = device
+    let (device_id, fallback_device_name) = device
         .map(|d| (d.id.clone(), d.name.clone()))
         .unwrap_or_else(|| ("default".to_string(), "Default".to_string()));
+    let device_name = resolve_output_device_name(playback, Some(fallback_device_name.as_str()));
 
     let exclusive_active = playback
         .output
@@ -3603,15 +3812,12 @@ fn build_telemetry_snapshot(
             .unwrap_or_else(|| "none".to_string()),
     };
 
-    let (device_id, device_name) = device
+    let (device_id, fallback_device_name) = device
         .map(|d| (d.id.clone(), d.name.clone()))
         .unwrap_or_else(|| ("default".to_string(), "Default".to_string()));
+    let device_name = resolve_output_device_name(playback, Some(fallback_device_name.as_str()));
 
-    let backend_kind = if playback.output_mode == "asio" {
-        "asio"
-    } else {
-        "wasapi"
-    };
+    let backend_kind = output_backend_kind(playback.output.as_ref(), &playback.output_mode);
 
     let wasapi_backend = if backend_kind == "wasapi" {
         Some(TelemetryWasapiBackend {
@@ -3658,20 +3864,31 @@ fn build_telemetry_snapshot(
     };
 
     let decode_format = TelemetryDecodeFormat {
-        sample_rate: track.and_then(|t| t.sample_rate).unwrap_or(0),
+        sample_rate: if playback.source_sample_rate > 0 {
+            playback.source_sample_rate
+        } else {
+            track.and_then(|t| t.sample_rate).unwrap_or(0)
+        },
         bit_depth: track.and_then(|t| t.bit_depth).unwrap_or(0),
         channels: track.and_then(|t| t.channels).unwrap_or(0),
         codec: track.and_then(|t| t.codec.clone()).unwrap_or_default(),
         container: track.and_then(|t| t.container.clone()).unwrap_or_default(),
         is_dsd: track.and_then(|t| t.dsd_rate_hz).is_some(),
         dsd_rate_hz: track.and_then(|t| t.dsd_rate_hz).unwrap_or(0),
-        dop_rate_hz: track.and_then(|t| t.dsd_rate_hz).map(|r| r / 16).unwrap_or(0),
+        dop_rate_hz: track
+            .and_then(|t| t.dsd_rate_hz)
+            .map(|r| r / 16)
+            .unwrap_or(0),
     };
 
     let output_format = TelemetryOutputFormat {
         sample_rate: playback.output_sample_rate,
         bit_depth: playback.output.as_ref().map(|o| o.bit_depth()).unwrap_or(0),
-        valid_bits: playback.output.as_ref().map(|o| o.valid_bits()).unwrap_or(0),
+        valid_bits: playback
+            .output
+            .as_ref()
+            .map(|o| o.valid_bits())
+            .unwrap_or(0),
         channels: playback.output_channels,
     };
 
@@ -3704,8 +3921,14 @@ fn build_telemetry_snapshot(
             capacity_frames: 0,
             available_frames: 0,
             fill_percent: 0.0,
-            underruns: TelemetryCounter { track: 0, lifetime: 0 },
-            overflows: TelemetryCounter { track: 0, lifetime: 0 },
+            underruns: TelemetryCounter {
+                track: 0,
+                lifetime: 0,
+            },
+            overflows: TelemetryCounter {
+                track: 0,
+                lifetime: 0,
+            },
         }
     };
 
@@ -3728,19 +3951,41 @@ fn build_telemetry_snapshot(
             capacity_frames: 0,
             available_frames: 0,
             fill_percent: 0.0,
-            underruns: TelemetryCounter { track: 0, lifetime: 0 },
-            overflows: TelemetryCounter { track: 0, lifetime: 0 },
+            underruns: TelemetryCounter {
+                track: 0,
+                lifetime: 0,
+            },
+            overflows: TelemetryCounter {
+                track: 0,
+                lifetime: 0,
+            },
         }
     };
 
     let asio_stats = TelemetryAsioStats {
         callback_underruns: TelemetryCounter {
-            track: playback.output.as_ref().and_then(|o| o.asio_callback_underruns()).unwrap_or(0),
-            lifetime: playback.output.as_ref().and_then(|o| o.asio_callback_underruns()).unwrap_or(0),
+            track: playback
+                .output
+                .as_ref()
+                .and_then(|o| o.asio_callback_underruns())
+                .unwrap_or(0),
+            lifetime: playback
+                .output
+                .as_ref()
+                .and_then(|o| o.asio_callback_underruns())
+                .unwrap_or(0),
         },
         dop_drops: TelemetryCounter {
-            track: playback.output.as_ref().and_then(|o| o.asio_dop_drops()).unwrap_or(0),
-            lifetime: playback.output.as_ref().and_then(|o| o.asio_dop_drops()).unwrap_or(0),
+            track: playback
+                .output
+                .as_ref()
+                .and_then(|o| o.asio_dop_drops())
+                .unwrap_or(0),
+            lifetime: playback
+                .output
+                .as_ref()
+                .and_then(|o| o.asio_dop_drops())
+                .unwrap_or(0),
         },
     };
 
@@ -3845,7 +4090,9 @@ mod tests {
         playback.fade_state = None;
         playback.output_sample_rate = 44_100;
         playback.output_channels = 2;
-        playback.output = Some(OutputBackend::NullSink(NullSinkOutput::new(44_100, 2, 24, true)));
+        playback.output = Some(OutputBackend::NullSink(NullSinkOutput::new(
+            44_100, 2, 24, true,
+        )));
 
         let track = TrackInfo {
             id: 1,
@@ -3875,6 +4122,113 @@ mod tests {
         let (bit_perfect, reason) = derive_pcm_bit_perfect(&playback, &checks);
         assert_eq!(bit_perfect, "yes");
         assert!(reason.is_empty());
+    }
+
+    #[test]
+    fn decode_bit_depth_mismatch_requires_exclusive_active() {
+        let mut playback = AudioPlayback::new();
+        playback.output_mode = "exclusive".to_string();
+        playback.policy = "strict".to_string();
+        playback.output_sample_rate = 44_100;
+        playback.output_channels = 2;
+        playback.output = Some(OutputBackend::NullSink(NullSinkOutput::new(
+            44_100, 2, 32, false,
+        )));
+
+        let track = TrackInfo {
+            id: 1,
+            path: "test".to_string(),
+            title: None,
+            artist: None,
+            album: None,
+            duration_ms: None,
+            sample_rate: Some(44_100),
+            bit_depth: Some(16),
+            channels: Some(2),
+            codec: None,
+            container: None,
+            dsd_rate_hz: None,
+            dsd_channels: None,
+        };
+
+        let checks = compute_signal_path_checks(&playback, Some(&track));
+        let decode_check = checks
+            .iter()
+            .find(|check| check.stage == SignalPathStage::Decode)
+            .expect("decode stage check should exist");
+        let device_check = checks
+            .iter()
+            .find(|check| check.stage == SignalPathStage::Device)
+            .expect("device stage check should exist");
+
+        assert_eq!(decode_check.status, SignalPathStatus::Ok);
+        assert!(decode_check.reason_code.is_empty());
+        assert_eq!(device_check.status, SignalPathStatus::TouchingBits);
+        assert_eq!(device_check.reason_code, REASON_EXCLUSIVE_INACTIVE);
+    }
+
+    #[test]
+    fn decode_bit_depth_mismatch_is_reported_when_exclusive_is_active() {
+        let mut playback = AudioPlayback::new();
+        playback.output_mode = "exclusive".to_string();
+        playback.policy = "strict".to_string();
+        playback.output_sample_rate = 44_100;
+        playback.output_channels = 2;
+        playback.output = Some(OutputBackend::NullSink(NullSinkOutput::new(
+            44_100, 2, 32, true,
+        )));
+
+        let track = TrackInfo {
+            id: 1,
+            path: "test".to_string(),
+            title: None,
+            artist: None,
+            album: None,
+            duration_ms: None,
+            sample_rate: Some(44_100),
+            bit_depth: Some(16),
+            channels: Some(2),
+            codec: None,
+            container: None,
+            dsd_rate_hz: None,
+            dsd_channels: None,
+        };
+
+        let checks = compute_signal_path_checks(&playback, Some(&track));
+        let decode_check = checks
+            .iter()
+            .find(|check| check.stage == SignalPathStage::Decode)
+            .expect("decode stage check should exist");
+
+        assert_eq!(decode_check.status, SignalPathStatus::TouchingBits);
+        assert_eq!(decode_check.reason_code, REASON_BIT_DEPTH_MISMATCH);
+    }
+
+    #[test]
+    fn resolve_output_device_name_uses_asio_driver_for_asio_backend() {
+        let mut playback = AudioPlayback::new();
+        playback.output_mode = "asio".to_string();
+        playback.asio_driver = Some("iFi USB Audio Device".to_string());
+
+        let name = resolve_output_device_name(
+            &playback,
+            Some("AORUS FO27Q2 (NVIDIA High Definition Audio)"),
+        );
+
+        assert_eq!(name, "iFi USB Audio Device");
+    }
+
+    #[test]
+    fn resolve_output_device_name_falls_back_when_no_asio_driver_is_configured() {
+        let mut playback = AudioPlayback::new();
+        playback.output_mode = "asio".to_string();
+
+        let name = resolve_output_device_name(
+            &playback,
+            Some("AORUS FO27Q2 (NVIDIA High Definition Audio)"),
+        );
+
+        assert_eq!(name, "AORUS FO27Q2 (NVIDIA High Definition Audio)");
     }
 }
 

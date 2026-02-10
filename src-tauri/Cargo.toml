@@ -44,6 +44,9 @@ tauri-plugin-mcp-bridge = "0.8"
 tauri-plugin-window-state = "2"
 sysinfo = "0.32"
 
+[dev-dependencies]
+tempfile = "3"
+
 [target.'cfg(windows)'.dependencies]
 wasapi = "0.22"
 asio-sys = "0.2.5"
