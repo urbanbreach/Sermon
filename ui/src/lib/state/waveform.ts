@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { getWaveformPeaks } from '../api/waveform';
 
 export interface WaveformState {
@@ -20,11 +20,21 @@ const initialState: WaveformState = {
 
 export const waveformPeaks = writable<WaveformState>(initialState);
 
+let activeWaveformRequestId = 0;
+
 export function clearWaveformPeaks() {
+  activeWaveformRequestId += 1;
   waveformPeaks.set(initialState);
 }
 
 export async function loadWaveformPeaks(trackId: number) {
+  const current = get(waveformPeaks);
+  if (current.trackId === trackId && (current.status === 'ready' || current.status === 'loading')) {
+    return;
+  }
+
+  const requestId = ++activeWaveformRequestId;
+
   waveformPeaks.set({
     ...initialState,
     status: 'loading',
@@ -50,8 +60,17 @@ export async function loadWaveformPeaks(trackId: number) {
     }
 
     const response = await getWaveformPeaks(trackId);
+
+    if (requestId !== activeWaveformRequestId) {
+      return;
+    }
     
-    const peaksU8 = Uint8Array.from(atob(response.peaksBase64), c => c.charCodeAt(0));
+    const peaksRaw = atob(response.peaksBase64);
+    const peaksLen = peaksRaw.length;
+    const peaksU8 = new Uint8Array(peaksLen);
+    for (let i = 0; i < peaksLen; i++) {
+      peaksU8[i] = peaksRaw.charCodeAt(i);
+    }
 
     waveformPeaks.set({
       status: 'ready',
@@ -62,6 +81,10 @@ export async function loadWaveformPeaks(trackId: number) {
     });
 
   } catch (e) {
+    if (requestId !== activeWaveformRequestId) {
+      return;
+    }
+
     console.error('Failed to load waveform peaks:', e);
     waveformPeaks.set({
       ...initialState,
