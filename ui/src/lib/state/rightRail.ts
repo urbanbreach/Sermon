@@ -4,10 +4,10 @@ import { listAlbumTracksPage } from '../api/library';
 import type { TrackRow } from '../types/library';
 import { persistRailOpen, persistRailMode } from './effects';
 
-export type RailMode = 'now-playing' | 'lyrics';
+export type RailMode = 'now-playing';
 
 // Rail mode state
-export const railMode = writable<RailMode>('now-playing');
+export const railMode = writable<'now-playing' | 'lyrics'>('now-playing');
 
 // Rail open state - responsive default
 // Default to true if server-side (though Svelte is client-side here), 
@@ -51,9 +51,12 @@ export function toggleRail(): void {
 }
 
 // Set rail mode
-export function setRailMode(mode: RailMode): void {
-  railMode.set(mode);
-  persistRailMode(mode);
+export function setRailMode(mode: RailMode): void;
+export function setRailMode(mode: 'lyrics'): void;
+export function setRailMode(mode: RailMode | 'lyrics'): void {
+  const normalizedMode: RailMode = mode === 'lyrics' ? 'now-playing' : mode;
+  railMode.set(normalizedMode);
+  persistRailMode(normalizedMode);
 }
 
 // Album tracks for "Playing Tracks" section

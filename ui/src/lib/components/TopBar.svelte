@@ -25,7 +25,7 @@
     }
   }
 
-  type SimpleRouteName = 'albums' | 'artists' | 'tracks' | 'preferences';
+  type SimpleRouteName = 'albums' | 'artists' | 'tracks' | 'preferences' | 'now-playing';
 
   const navItems = [
     { label: 'Albums', routeName: 'albums' as SimpleRouteName, icon: Disc3 },

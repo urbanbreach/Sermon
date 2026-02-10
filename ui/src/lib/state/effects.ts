@@ -239,7 +239,9 @@ export async function loadEffectsSettings(): Promise<void> {
     isRailOpen.set(railOpenVal === 'on');
   }
   if (railModeVal !== null) {
-    railMode.set(railModeVal as 'now-playing' | 'lyrics');
+    // Backward compat: 'lyrics' mode removed, map to 'now-playing'
+    const mode = railModeVal === 'lyrics' ? 'now-playing' : railModeVal;
+    railMode.set(mode as 'now-playing');
   }
 
   // Apply effects immediately
