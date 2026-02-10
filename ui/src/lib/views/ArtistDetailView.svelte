@@ -7,6 +7,7 @@
   import type { TrackRow, ArtistCursor } from '../types/library';
   import { ArrowLeft } from '@lucide/svelte';
   import { openAlbumInline } from '../state/albumInline';
+  import { selectAlbumSummary } from '../state/albumSelection';
   import { getArtworkBestForAlbum } from '../api/artwork';
   import ArtworkImage from '../components/ArtworkImage.svelte';
 
@@ -133,6 +134,7 @@
   }
 
   function handleAlbumClick(album: ArtistAlbum) {
+    selectAlbumSummary(album);
     openAlbumInline({
       albumArtistSort: album.albumArtistSort,
       albumTitleSort: album.albumTitleSort

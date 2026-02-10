@@ -112,6 +112,12 @@
     return parts.join(', ');
   }
 
+  function formatLoudnessDb(value: number | null | undefined): string {
+    if (value == null || !Number.isFinite(value)) return 'N/A';
+    const sign = value > 0 ? '+' : '';
+    return `${sign}${value.toFixed(2).replace('.', ',')} dB`;
+  }
+
   function normalizeAlbumContext(
     albumArtist?: string | null,
     artist?: string | null,
@@ -217,6 +223,7 @@
   
   <aside 
     class="right-rail-panel"
+    class:lyrics-mode={$railMode === 'lyrics'}
     transition:slide={{ duration: 250, easing: cubicOut, axis: 'x' }}
   >
     <!-- Header with mode toggle -->
@@ -398,6 +405,9 @@
                   <span class="info-value">{$currentTrackFull.genre}</span>
                 </div>
               {/if}
+              <div class="info-row loudness">
+                <span class="info-value">{formatLoudnessDb($currentTrackFull.loudnessDb)}</span>
+              </div>
               <div class="info-row format">
                 <span class="info-value">{formatAudioInfo($currentTrackFull)}</span>
               </div>
@@ -408,7 +418,7 @@
               <ArtworkImage 
                 artistSort={albumContext.artistSort}
                 titleSort={albumContext.titleSort}
-                size={512} 
+                size={0} 
                 class="large-artwork" 
               />
             </div>
@@ -441,7 +451,6 @@
             </div>
           {:else if $currentLyrics && $currentLyrics.length > 0}
             <div class="lyrics-rail-content" data-testid="lyrics-lines">
-              <div class="lyrics-mask-top"></div>
               <div class="lyrics-scroll-container" bind:this={lyricsScrollEl}>
                 {#each $currentLyrics as line, i}
                   <p
@@ -454,7 +463,6 @@
                   </p>
                 {/each}
               </div>
-              <div class="lyrics-mask-bottom"></div>
             </div>
           {:else}
             <div class="empty-state" data-testid="lyrics-empty" use:fadeIn={{ duration: 300 }}>
@@ -482,6 +490,15 @@
     box-sizing: border-box;
     z-index: 90;
     position: relative;
+    overflow: hidden;
+  }
+
+  .right-rail-panel.lyrics-mode {
+    border-left-color: transparent;
+  }
+
+  .right-rail-panel.lyrics-mode .rail-content {
+    padding-left: 14px;
   }
 
   /* Persistent mode (>=1280px) */
@@ -790,6 +807,12 @@
     font-size: 13px;
   }
 
+  .info-row.loudness {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+  }
+
   .info-row.format {
     margin-top: 2px;
     font-size: 10px;
@@ -910,27 +933,6 @@
 
   .lyrics-scroll-container::-webkit-scrollbar {
     display: none;
-  }
-
-  /* Gradient masks for edge softening */
-  .lyrics-mask-top,
-  .lyrics-mask-bottom {
-    position: absolute;
-    left: 0;
-    right: 0;
-    height: 48px;
-    pointer-events: none;
-    z-index: 2;
-  }
-
-  .lyrics-mask-top {
-    top: 0;
-    background: linear-gradient(to bottom, var(--surface-1), transparent);
-  }
-
-  .lyrics-mask-bottom {
-    bottom: 0;
-    background: linear-gradient(to top, var(--surface-1), transparent);
   }
 
   .lyric-line {

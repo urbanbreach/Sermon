@@ -6,6 +6,7 @@
   import { navigate } from '../state/route';
   import { setViewTitle } from '../state/viewTitle';
   import { setAlphabetSelector, clearAlphabetSelector } from '../state/alphabetSelector';
+  import { fadeIn } from '../utils/animations';
 
   let artists: ArtistListItem[] = $state([]);
   let loading = $state(false);
@@ -81,6 +82,7 @@
   class="view-container" 
   bind:this={scrollContainer}
   onscroll={handleScroll}
+  use:fadeIn={{ duration: 300 }}
 >
   {#if !initialLoadComplete && artists.length === 0}
     <div class="loading-state">Loading...</div>
@@ -121,7 +123,7 @@
     padding: 1rem;
     padding-top: 12px;
     padding-right: 0;
-    padding-bottom: calc(var(--layout-player-height, 80px) + 2rem);
+    padding-bottom: 0;
     color: #fff;
     height: 100%;
     overflow-y: auto;

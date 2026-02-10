@@ -3,10 +3,8 @@
   import { 
     accentColor, sidebarVisible, bottomBarWaveformStyle,
     artworkRoundedSidebar, artworkRoundedAlbums, artworkRoundedAlbumDetail,
-    bottomBarWaveformSeekbar,
     setAccentColor, setSidebarVisible, setBottomBarWaveformStyle,
     setArtworkRoundedSidebar, setArtworkRoundedAlbums, setArtworkRoundedAlbumDetail,
-    setBottomBarWaveformSeekbar,
     loadEffectsSettings
   } from '../../state/effects';
   import SettingGroup from '../primitives/SettingGroup.svelte';
@@ -96,35 +94,24 @@
   </SettingGroup>
 
   <SettingGroup title="Waveform">
-    <SettingRow label="Waveform Seekbar" description="Show waveform visualization in the bottom player bar">
-      <input 
-        type="checkbox" 
-        checked={$bottomBarWaveformSeekbar}
-        onchange={(e) => setBottomBarWaveformSeekbar(e.currentTarget.checked)}
-        disabled={isMock}
-      />
+    <SettingRow label="Waveform Style" description="Choose the visual style of the bottom seekbar waveform">
+      <div class="segmented-control">
+        <button 
+          class:active={$bottomBarWaveformStyle === 'pills'} 
+          onclick={() => setBottomBarWaveformStyle('pills')}
+          disabled={isMock}
+        >
+          Pills
+        </button>
+        <button 
+          class:active={$bottomBarWaveformStyle === 'raw'} 
+          onclick={() => setBottomBarWaveformStyle('raw')}
+          disabled={isMock}
+        >
+          Raw
+        </button>
+      </div>
     </SettingRow>
-
-    {#if $bottomBarWaveformSeekbar}
-      <SettingRow label="Waveform Style" description="Choose the visual style of the waveform">
-        <div class="segmented-control">
-          <button 
-            class:active={$bottomBarWaveformStyle === 'pills'} 
-            onclick={() => setBottomBarWaveformStyle('pills')}
-            disabled={isMock}
-          >
-            Pills
-          </button>
-          <button 
-            class:active={$bottomBarWaveformStyle === 'raw'} 
-            onclick={() => setBottomBarWaveformStyle('raw')}
-            disabled={isMock}
-          >
-            Raw
-          </button>
-        </div>
-      </SettingRow>
-    {/if}
   </SettingGroup>
 
   <SettingGroup title="Cover Art">

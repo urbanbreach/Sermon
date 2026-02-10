@@ -14,6 +14,7 @@
   --surface-active: rgba(255, 255, 255, 0.06);
   --surface-sidebar: rgba(255, 255, 255, 0.02); /* Kept from original, aligned with surface-1 concept */
   --surface-header: rgba(255, 255, 255, 0.03); /* Kept from original */
+  --surface-floating: rgba(20, 20, 20, 0.96);
   
   /* Hairlines */
   --divider-color: rgba(255, 255, 255, 0.07);
@@ -28,13 +29,14 @@
   --layout-sidebar-width: 240px;
   --layout-rail-width: 320px;
   --layout-header-height: 44px;
-  --layout-player-height: 88px;
+  --layout-player-height: 64px;
   
   /* Liquid Glass Bar positioning - Kept for layout logic */
   --layout-rail-open: 0; /* 0 or 1, toggled by JS */
   --layout-bar-left: 0;
   --layout-bar-right: 0;
-  --layout-bottom-bar-progress-height: 28px;
+  --layout-bottom-bar-progress-height: 18px;
+  --layout-bottom-bar-meta-height: 14px;
 
   /* DEPRECATED: Liquid Glass effect defaults */
   /* --glass-main-blur: 22px; */
@@ -124,6 +126,7 @@
 
   /* Color scheme */
   color-scheme: dark;
+  interpolate-size: allow-keywords;
   color: rgba(255, 255, 255, 0.87);
   
   font-synthesis: none;
@@ -199,11 +202,11 @@ body {
 }
 ::-webkit-scrollbar-track {
   background: var(--scrollbar-track, rgba(255, 255, 255, 0.06));
-  border-radius: 4px;
+  border-radius: 0;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb, rgba(255, 255, 255, 0.18));
-  border-radius: 4px;
+  border-radius: 0;
   transition: background 0.15s ease;
 }
 ::-webkit-scrollbar-thumb:hover {

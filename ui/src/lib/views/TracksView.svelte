@@ -3,9 +3,10 @@
   import { VList } from 'virtua/svelte';
   import { tracks, sortBy, scanStatus, scanProgress, setSortBy, toggleSortDirection, initLibrary, loadTracks } from '../state/library';
   import { addToQueue, addToQueueNext, currentTrack, playNowWithQueue } from '../state/playback';
+  import { selectLibrarySummaryFromTracks, selectTrackSummary } from '../state/albumSelection';
   import { setViewTitle } from '../state/viewTitle';
   import type { SortBy, TrackRow } from '../types/library';
-  import TagEditor from '../components/TagEditor.svelte';
+  import { openTagEditorWindow } from '../state/tagEditorWindow';
   import SkeletonRow from '../components/SkeletonRow.svelte';
   import * as ContextMenu from '../components/primitives/ContextMenu.svelte';
   import { ChevronUp, Play, ListMusic, Check, Square } from '@lucide/svelte';
@@ -14,10 +15,7 @@
   // Multi-select state
   let selectionMode = $state(false);
   let selectedIds = $state<Set<number>>(new Set());
-
-  // Tag editor state
-  let editingTrackIds = $state<number[]>([]);
-  let tagEditorOpen = $state(false);
+  let hasTrackSelection = $state(false);
 
   // Right-click context menu state
   let rightClickTrackId = $state<number | null>(null);
@@ -37,6 +35,12 @@
     setViewTitle('');
   });
 
+  $effect(() => {
+    if ($tracks.length === 0) return;
+    if (hasTrackSelection) return;
+    selectLibrarySummaryFromTracks($tracks);
+  });
+
   function formatDuration(ms?: number): string {
     if (!ms) return '—';
     const minutes = Math.floor(ms / 60000);
@@ -52,14 +56,8 @@
     }
   }
 
-  function openTagEditor(ids: number[]) {
-    editingTrackIds = ids;
-    tagEditorOpen = true;
-  }
-
-  function closeTagEditor() {
-    tagEditorOpen = false;
-    editingTrackIds = [];
+  async function openTagEditor(ids: number[]) {
+    await openTagEditorWindow(ids);
   }
 
   function handleTrackDoubleClick(track: TrackRow, trackIndex: number) {
@@ -93,6 +91,9 @@
   }
 
   function handleRowClick(e: MouseEvent, track: TrackRow) {
+    selectTrackSummary(track);
+    hasTrackSelection = true;
+
     if (selectionMode) {
       e.preventDefault();
       toggleSelection(track.id);
@@ -159,10 +160,10 @@
     }
   }
 
-  function handleEditSelected() {
+  async function handleEditSelected() {
     const ids = Array.from(selectedIds);
     if (ids.length > 0) {
-      openTagEditor(ids);
+      await openTagEditor(ids);
     }
   }
 </script>
@@ -241,8 +242,8 @@
         <VList data={$tracks} getKey={(t) => t.id} itemSize={40} bufferSize={200}>
           {#snippet children(track: TrackRow, i: number)}
             <ContextMenu.Root>
-              <ContextMenu.Trigger asChild>
-                {#snippet children({ props })}
+              <ContextMenu.Trigger>
+                {#snippet child({ props })}
                   <div 
                     {...props}
                     class="track-row"
@@ -304,13 +305,12 @@
   </div>
 </div>
 
-<TagEditor trackIds={editingTrackIds} open={tagEditorOpen} onclose={closeTagEditor} />
-
 <style>
   .view-container {
     padding: 1rem;
     padding-top: 12px;
     padding-right: 0;
+    padding-bottom: 0;
     color: #fff;
     height: 100%;
     overflow-y: hidden;

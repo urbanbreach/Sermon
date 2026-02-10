@@ -5,6 +5,7 @@
   import { searchTracksPage, searchAlbumsPage, searchArtistsPage } from '../api/library';
   import type { TrackRow, AlbumListItem, ArtistListItem, OffsetCursor, AlbumCursor, ArtistCursor } from '../types/library';
   import { openAlbumInlineFromItem } from '../state/albumInline';
+  import { selectAlbumSummary } from '../state/albumSelection';
   import ArtworkImage from '../components/ArtworkImage.svelte';
   import { ArrowLeft } from '@lucide/svelte';
   import { VList } from 'virtua/svelte';
@@ -156,6 +157,7 @@
   }
 
   function handleAlbumClick(album: AlbumListItem) {
+    selectAlbumSummary(album);
     openAlbumInlineFromItem(album);
     navigate({ name: 'albums' });
   }

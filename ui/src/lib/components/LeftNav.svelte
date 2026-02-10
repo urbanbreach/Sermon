@@ -1,11 +1,11 @@
 <script lang="ts">
   import { currentRouteName, navigate } from '../state/route';
-  import { Disc3, Users, ListMusic, Activity, Settings, ChevronDown, ChevronRight, Search, X } from '@lucide/svelte';
+  import { Disc3, Users, ListMusic, Settings, ChevronDown, ChevronRight, Search, X } from '@lucide/svelte';
   import { pressScale } from '../utils/animations';
   import { currentTrack } from '../state/playback';
   import ArtworkImage from './ArtworkImage.svelte';
 
-  type SimpleRouteName = 'albums' | 'artists' | 'tracks' | 'diagnostics' | 'preferences';
+  type SimpleRouteName = 'albums' | 'artists' | 'tracks' | 'preferences';
 
   // Collapsible section state
   let expandedSections = $state<Record<string, boolean>>({
@@ -27,7 +27,6 @@
       header: 'System',
       collapsible: true,
       items: [
-        { label: 'Diagnostics', routeName: 'diagnostics' as SimpleRouteName, icon: Activity },
         { label: 'Preferences', routeName: 'preferences' as SimpleRouteName, icon: Settings },
       ]
     }
@@ -82,7 +81,7 @@
   </div>
 
   <!-- Navigation Sections -->
-  {#each sections as section}
+  {#each sections as section (section.header)}
     <div class="nav-section">
       <button 
         class="section-header"
@@ -103,7 +102,7 @@
       
       {#if expandedSections[section.header]}
         <div class="section-items">
-          {#each section.items as item}
+          {#each section.items as item (item.routeName)}
             <button 
               class="nav-item"
               class:active={$currentRouteName === item.routeName}

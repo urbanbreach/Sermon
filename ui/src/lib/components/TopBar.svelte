@@ -5,10 +5,11 @@
   import { sidebarVisible } from '../state/effects';
   import { alphabetSelector } from '../state/alphabetSelector';
   import { pressScale } from '../utils/animations';
-  import { ChevronLeft, ChevronRight, PanelRight, Disc3, Users, ListMusic, Activity, Settings } from '@lucide/svelte';
+  import { ChevronLeft, ChevronRight, PanelRight, Disc3, Users, ListMusic, Settings } from '@lucide/svelte';
   import AlphabetSelector from './AlphabetSelector.svelte';
   import { SegmentedControl } from './primitives';
   import WindowControls from './WindowControls.svelte';
+  import DiagnosticsHoverCard from './DiagnosticsHoverCard.svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
 
   const appWindow = getCurrentWindow();
@@ -17,7 +18,14 @@
     await appWindow.toggleMaximize();
   }
 
-  type SimpleRouteName = 'albums' | 'artists' | 'tracks' | 'diagnostics' | 'preferences';
+  function handleTopBarKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      void handleDoubleClick();
+    }
+  }
+
+  type SimpleRouteName = 'albums' | 'artists' | 'tracks' | 'preferences';
 
   const navItems = [
     { label: 'Albums', routeName: 'albums' as SimpleRouteName, icon: Disc3 },
@@ -26,7 +34,6 @@
   ];
 
   const systemItems = [
-    { label: 'Diagnostics', routeName: 'diagnostics' as SimpleRouteName, icon: Activity },
     { label: 'Settings', routeName: 'preferences' as SimpleRouteName, icon: Settings },
   ];
 
@@ -35,14 +42,14 @@
   }
 
   // Transform navItems for SegmentedControl
-  $: segmentedItems = navItems.map(item => ({
+  const segmentedItems = navItems.map(item => ({
     id: item.routeName,
     label: item.label,
     icon: item.icon
   }));
 </script>
 
-<div class="top-bar" ondblclick={handleDoubleClick}>
+<div class="top-bar" role="button" tabindex="0" aria-label="Application top bar" ondblclick={handleDoubleClick} onkeydown={handleTopBarKeydown}>
   <!-- Left Region: Navigation & Tabs -->
   <div class="region-left">
     <div class="nav-buttons">
@@ -90,9 +97,11 @@
 
   <!-- Right Region: Status Cluster -->
   <div class="region-right">
+    <DiagnosticsHoverCard />
+
     {#if !$sidebarVisible}
       <div class="system-controls">
-        {#each systemItems as item}
+        {#each systemItems as item (item.routeName)}
           <button 
             class="nav-btn system-btn"
             class:active={$currentRouteName === item.routeName}
@@ -124,10 +133,8 @@
 <style>
   .top-bar {
     height: 44px; /* Fixed height as per spec */
-    background: var(--glass-bg);
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    border-bottom: 1px solid var(--glass-border);
+    background: var(--surface-header, rgba(18, 18, 18, 0.95));
+    border-bottom: 1px solid var(--divider-color, rgba(255, 255, 255, 0.07));
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
@@ -240,6 +247,6 @@
   .divider {
     width: 1px;
     height: 16px;
-    background: var(--glass-border);
+    background: var(--divider-color, rgba(255, 255, 255, 0.07));
   }
 </style>
