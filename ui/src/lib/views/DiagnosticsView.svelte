@@ -1,575 +1,599 @@
 <script lang="ts">
-  import { audioTelemetry } from '../state/playback';
-  import { 
-    probeOutputCapabilities, 
-    type ProbeCapabilitiesResult, 
-    type ProbeCell 
-  } from '../api/playback';
-  import { onMount, onDestroy } from 'svelte';
-  import { setViewTitle } from '../state/viewTitle';
-  import Modal from '../components/Modal.svelte';
-  import { 
-    Activity, 
-    CheckCircle, 
-    AlertTriangle, 
-    XCircle, 
-    ChevronRight, 
-    ChevronDown, 
-    Cpu, 
-    Server, 
-    ShieldCheck, 
-    Zap,
+  import { onDestroy, onMount } from 'svelte';
+  import {
+    Activity,
+    AlertTriangle,
     ArrowRight,
-    Play
+    CheckCircle,
+    ChevronDown,
+    ChevronRight,
+    Cpu,
+    Server,
+    ShieldCheck,
+    XCircle,
   } from '@lucide/svelte';
-  import type { AudioTelemetryEvent } from '../types/telemetry';
+  import Modal from '../components/Modal.svelte';
+  import { setViewTitle } from '../state/viewTitle';
+  import { audioTelemetry } from '../state/playback';
+  import type { AudioTelemetryEvent, TelemetrySignalPathCheck } from '../types/telemetry';
+
+  type HealthTone = 'healthy' | 'warning' | 'idle';
+
+  const isDebugMode = import.meta.env.SERMON_DEBUG === '1';
 
   let telemetry = $derived($audioTelemetry);
-  
-  // Probe state
-  let probeResults = $state<ProbeCapabilitiesResult | null>(null);
-  let isProbing = $state(false);
+  let nowMs = $state(Date.now());
 
-  function isProbeValid(results: ProbeCapabilitiesResult | null, t: AudioTelemetryEvent | null): boolean {
-    if (!results || !t || !t.device) return false;
-    
-    const k = results.key;
-    const backend = t.device.backend.kind;
-    
-    if (k.backend !== backend) return false;
-    
-    if (backend === 'asio') {
-      return k.asioDriver === (t.device.backend.asio?.driver_name ?? null);
-    } else {
-      return k.deviceId === t.device.device_id;
-    }
-  }
+  // Signal-path selection
+  let manualSelectedStage = $state<string | null>(null);
+  let signalChecks = $derived(telemetry?.signal_path_checks ?? []);
+  let selectedSignalStage = $derived(
+    signalChecks.length === 0
+      ? null
+      : manualSelectedStage && signalChecks.some((check) => check.stage === manualSelectedStage)
+        ? manualSelectedStage
+        : signalChecks[0].stage,
+  );
+  let selectedSignalCheck = $derived(
+    selectedSignalStage
+      ? signalChecks.find((check) => check.stage === selectedSignalStage) ?? null
+      : null,
+  );
 
-  let activeProbeResults = $derived(isProbeValid(probeResults, telemetry) ? probeResults : null);
-
-  async function handleProbe() {
-    if (!telemetry) return;
-    
-    const backend = telemetry.device?.backend?.kind || 'wasapi';
-    const isAsio = backend === 'asio';
-    const isPlaying = telemetry.playback?.state !== 'stopped';
-    
-    if (isAsio && isPlaying) {
-      console.error('Cannot probe ASIO while playing');
-      return;
-    }
-    
-    isProbing = true;
-    try {
-      const result = await probeOutputCapabilities(
-        backend as 'wasapi' | 'asio',
-        telemetry.device?.device_id || null,
-        telemetry.device?.backend?.asio?.driver_name || null,
-        2,
-        [44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000],
-        [16, 24, 32]
-      );
-      probeResults = result;
-    } catch (e) {
-      console.error('Probe failed:', e);
-    } finally {
-      isProbing = false;
-    }
-  }
-
-  function getProbeCell(sampleRate: number, bitDepth: number): ProbeCell | undefined {
-    if (!activeProbeResults?.cells) return undefined;
-    return activeProbeResults.cells.find(
-      c => c.sampleRate === sampleRate && c.bitDepth === bitDepth
-    );
-  }
-
-  // Section visibility state
-  let showSignalPath = $state(true);
-  let showDeviceDetails = $state(false);
-  let showStability = $state(false);
-  let showCapabilities = $state(false);
+  // Debug harness (DEV only)
   let showDevTools = $state(false);
-
-  // Focus trap harness (DEV only)
-  const isDebugMode = import.meta.env.SERMON_DEBUG === '1';
   let harnessModalOpen = $state(false);
   let harnessInput = $state('');
   let harnessCheckbox = $state(false);
   let activeElementInfo = $state('');
-  
-  function updateActiveElement() {
-    const el = document.activeElement;
-    if (el) {
-      const tag = el.tagName.toLowerCase();
-      const id = el.id ? `#${el.id}` : '';
-      const testId = el.getAttribute('data-testid') || '';
-      activeElementInfo = `${tag}${id}${testId ? ` [${testId}]` : ''}`;
-    } else {
-      activeElementInfo = 'none';
-    }
-  }
+
+  let clockInterval: ReturnType<typeof setInterval> | null = null;
+  let debugInterval: ReturnType<typeof setInterval> | null = null;
+
+  let healthTone = $derived(computeHealthTone(telemetry));
+  let healthHeadline = $derived(getHealthHeadline(healthTone));
+  let healthDetail = $derived(getHealthDetail(telemetry, healthTone));
+
+  let modeLabel = $derived(getModeLabel(telemetry));
+  let backendLabel = $derived(telemetry?.device?.backend?.kind?.toUpperCase() || '—');
+  let sourceSummary = $derived(getSourceSummary(telemetry));
+  let outputSummary = $derived(getOutputSummary(telemetry));
+  let resamplerSummary = $derived(getResamplerSummary(telemetry));
+  let telemetryAgeLabel = $derived(getTelemetryAgeLabel(telemetry, nowMs));
+
+  let ringFillPercent = $derived(
+    Math.max(0, Math.min(100, telemetry?.stability?.ring_buffer?.fill_percent ?? 0)),
+  );
+  let dopFillPercent = $derived(
+    Math.max(0, Math.min(100, telemetry?.stability?.dop_ring_buffer?.fill_percent ?? 0)),
+  );
+
+  let ringUnderrunsTrack = $derived(telemetry?.stability?.ring_buffer?.underruns?.track ?? 0);
+  let ringOverflowsTrack = $derived(telemetry?.stability?.ring_buffer?.overflows?.track ?? 0);
+  let signalIssueCount = $derived(
+    signalChecks.filter((check) => check.status !== 'ok' && check.status !== 'inactive').length,
+  );
+  let recentEvents = $derived((telemetry?.stability?.recent_events ?? []).slice(0, 6));
 
   onMount(() => {
     setViewTitle('Audio Diagnostics');
 
+    clockInterval = setInterval(() => {
+      nowMs = Date.now();
+    }, 1000);
+
     if (isDebugMode) {
-      const interval = setInterval(() => {
+      debugInterval = setInterval(() => {
         if (harnessModalOpen) {
           updateActiveElement();
         }
-      }, 100);
-      return () => clearInterval(interval);
+      }, 120);
     }
   });
 
   onDestroy(() => {
     setViewTitle('');
+
+    if (clockInterval) {
+      clearInterval(clockInterval);
+      clockInterval = null;
+    }
+
+    if (debugInterval) {
+      clearInterval(debugInterval);
+      debugInterval = null;
+    }
   });
 
-  // Helpers for display
-  function formatSampleRate(hz: number): string {
-    if (!hz) return '—';
-    return (hz / 1000).toFixed(1) + ' kHz';
+  function updateActiveElement() {
+    const active = document.activeElement;
+
+    if (!active) {
+      activeElementInfo = 'none';
+      return;
+    }
+
+    const tag = active.tagName.toLowerCase();
+    const id = active.id ? `#${active.id}` : '';
+    const testId = active.getAttribute('data-testid');
+    activeElementInfo = testId ? `${tag}${id} [${testId}]` : `${tag}${id}`;
   }
 
-  function formatBitDepth(bits: number, validBits?: number): string {
-    if (!bits) return '—';
-    if (validBits && validBits < bits) {
+  function computeHealthTone(t: AudioTelemetryEvent | null): HealthTone {
+    if (!t) {
+      return 'idle';
+    }
+
+    if (
+      t.integrity.pcm_bit_perfect.status === 'no' ||
+      t.stability.ring_buffer.underruns.track > 0 ||
+      t.stability.ring_buffer.overflows.track > 0 ||
+      t.signal_path_checks.some((check) => check.status === 'touching_bits')
+    ) {
+      return 'warning';
+    }
+
+    return 'healthy';
+  }
+
+  function getHealthHeadline(tone: HealthTone): string {
+    if (tone === 'healthy') {
+      return 'Signal path healthy';
+    }
+
+    if (tone === 'warning') {
+      return 'Attention recommended';
+    }
+
+    return 'Waiting for telemetry';
+  }
+
+  function getHealthDetail(t: AudioTelemetryEvent | null, tone: HealthTone): string {
+    if (!t) {
+      return 'Start playback to populate diagnostics.';
+    }
+
+    if (tone === 'healthy') {
+      return 'No active integrity or stability warnings.';
+    }
+
+    const issues: string[] = [];
+
+    if (t.integrity.pcm_bit_perfect.status === 'no') {
+      issues.push('bit-perfect path is not preserved');
+    }
+
+    if (t.stability.ring_buffer.underruns.track > 0) {
+      issues.push(`underruns (${t.stability.ring_buffer.underruns.track})`);
+    }
+
+    if (t.stability.ring_buffer.overflows.track > 0) {
+      issues.push(`overflows (${t.stability.ring_buffer.overflows.track})`);
+    }
+
+    const touchingChecks = t.signal_path_checks.filter((check) => check.status === 'touching_bits').length;
+    if (touchingChecks > 0) {
+      issues.push(`signal-path touchpoints (${touchingChecks})`);
+    }
+
+    return `Detected ${issues.join(', ')}.`;
+  }
+
+  function formatSampleRate(hz: number): string {
+    if (!hz) {
+      return '—';
+    }
+
+    return `${(hz / 1000).toFixed(1)} kHz`;
+  }
+
+  function formatBitDepth(bits: number, validBits: number): string {
+    if (!bits) {
+      return '—';
+    }
+
+    if (validBits > 0 && validBits < bits) {
       return `${validBits}/${bits} bit`;
     }
+
     return `${bits} bit`;
   }
 
-  function getFormatSummary(t: AudioTelemetryEvent | null) {
-    if (!t) return { source: '—', output: 'Waiting for playback...' };
-    
-    const decode = t.format?.decode;
-    const output = t.format?.output;
-    const backend = t.device?.backend;
-    const isExclusive = t.device?.exclusive_active;
+  function getModeLabel(t: AudioTelemetryEvent | null): string {
+    if (!t) {
+      return 'Standby';
+    }
 
-    const sourceStr = decode 
-      ? `${decode.codec?.toUpperCase() || 'PCM'} ${formatSampleRate(decode.sample_rate)}/${decode.bit_depth}bit`
-      : 'No Source';
+    if (t.playback.output_mode === 'exclusive') {
+      return 'WASAPI Exclusive';
+    }
 
-    const backendStr = backend?.kind === 'asio' 
-      ? 'ASIO' 
-      : (isExclusive ? 'WASAPI Exclusive' : 'WASAPI Shared');
+    if (t.playback.output_mode === 'shared') {
+      return 'WASAPI Shared';
+    }
 
-    const outputStr = output
-      ? `${backendStr} ${formatSampleRate(output.sample_rate)}/${formatBitDepth(output.bit_depth, output.valid_bits)}`
-      : 'No Output';
-
-    return { source: sourceStr, output: outputStr };
+    return 'ASIO';
   }
 
-  let summary = $derived(getFormatSummary(telemetry));
+  function getSourceSummary(t: AudioTelemetryEvent | null): string {
+    if (!t) {
+      return 'No source active';
+    }
 
-  // Capability probe logic
-  let isAsio = $derived(telemetry?.device?.backend?.kind === 'asio');
-  let isPlaying = $derived(telemetry?.playback?.state !== 'stopped');
-  let canProbe = $derived(!isAsio || !isPlaying);
+    const decode = t.format.decode;
+    const codec = decode.codec ? decode.codec.toUpperCase() : 'PCM';
+    return `${codec} · ${formatSampleRate(decode.sample_rate)} · ${decode.bit_depth} bit · ${decode.channels}ch`;
+  }
+
+  function getOutputSummary(t: AudioTelemetryEvent | null): string {
+    if (!t) {
+      return 'No output active';
+    }
+
+    const output = t.format.output;
+    return `${formatSampleRate(output.sample_rate)} · ${formatBitDepth(output.bit_depth, output.valid_bits)} · ${output.channels}ch`;
+  }
+
+  function getResamplerSummary(t: AudioTelemetryEvent | null): string {
+    if (!t) {
+      return 'Inactive';
+    }
+
+    if (!t.format.resampler.active) {
+      return 'Bypassed';
+    }
+
+    return `${formatSampleRate(t.format.resampler.source_sample_rate)} → ${formatSampleRate(t.format.resampler.output_sample_rate)}`;
+  }
+
+  function getTelemetryAgeLabel(t: AudioTelemetryEvent | null, now: number): string {
+    if (!t) {
+      return 'No telemetry frame';
+    }
+
+    const ageMs = Math.max(0, now - t.timestamp_ms);
+
+    if (ageMs < 1500) {
+      return 'Live now';
+    }
+
+    const ageSec = Math.floor(ageMs / 1000);
+    return `${ageSec}s ago`;
+  }
+
+  function getSignalStatusLabel(status: TelemetrySignalPathCheck['status']): string {
+    if (status === 'ok') {
+      return 'ok';
+    }
+
+    if (status === 'touching_bits') {
+      return 'touching bits';
+    }
+
+    if (status === 'inactive') {
+      return 'inactive';
+    }
+
+    return 'unknown';
+  }
+
+  function getEventAgeLabel(eventTimestampMs: number): string {
+    const ageMs = Math.max(0, nowMs - eventTimestampMs);
+
+    if (ageMs < 1000) {
+      return 'just now';
+    }
+
+    if (ageMs < 60000) {
+      return `${Math.floor(ageMs / 1000)}s ago`;
+    }
+
+    return `${Math.floor(ageMs / 60000)}m ago`;
+  }
 </script>
 
 <div class="view-container" data-testid="diag-view">
   <div class="content-width">
-    
-    <!-- Compact Overview Panel -->
-    <div class="overview-panel" data-testid="diag-overview">
-      <div class="overview-header">
-        <div class="badges">
-          <!-- Bit Perfect Badge -->
-          <div class="integrity-badge" 
-               class:success={telemetry?.integrity?.pcm_bit_perfect?.status === 'yes'}
-               class:warning={telemetry?.integrity?.pcm_bit_perfect?.status === 'no'}
-               class:unknown={!telemetry || telemetry?.integrity?.pcm_bit_perfect?.status === 'unknown'}
-          >
-            {#if telemetry?.integrity?.pcm_bit_perfect?.status === 'yes'}
-              <ShieldCheck size={16} />
-              <span>Bit-Perfect</span>
-            {:else if telemetry?.integrity?.pcm_bit_perfect?.status === 'no'}
-              <AlertTriangle size={16} />
-              <span>Resampled</span>
-            {:else}
-              <Activity size={16} />
-              <span>Standby</span>
-            {/if}
-          </div>
+    <header class="hero" data-testid="diag-overview">
+      <div class="hero-status">
+        <div
+          class="health-badge"
+          class:healthy={healthTone === 'healthy'}
+          class:warning={healthTone === 'warning'}
+          class:idle={healthTone === 'idle'}
+        >
+          {#if healthTone === 'healthy'}
+            <ShieldCheck size={16} />
+          {:else if healthTone === 'warning'}
+            <AlertTriangle size={16} />
+          {:else}
+            <Activity size={16} />
+          {/if}
+        </div>
 
-          <!-- DoP Integrity Badge (Only if DSD/DoP active or relevant) -->
-          {#if telemetry?.format?.decode?.is_dsd || telemetry?.integrity?.dop_payload_integrity?.status !== 'unknown'}
-            <div class="integrity-badge"
-                 class:success={telemetry?.integrity?.dop_payload_integrity?.status === 'ok'}
-                 class:error={telemetry?.integrity?.dop_payload_integrity?.status === 'degraded'}
+        <div class="hero-copy">
+          <h2>{healthHeadline}</h2>
+          <p>{healthDetail}</p>
+        </div>
+      </div>
+
+      <div class="hero-device">
+        <div class="device-line">
+          <Server size={12} />
+          <span>{telemetry?.device?.device_name || 'No output device selected'}</span>
+        </div>
+        <div class="device-sub">
+          <span class="mode-pill">{modeLabel}</span>
+          <span class="age-label">{telemetryAgeLabel}</span>
+        </div>
+      </div>
+    </header>
+    <div class="flow-bar">
+      <div class="flow-endpoint">
+        <span class="flow-label">SOURCE</span>
+        <span class="flow-value">{sourceSummary}</span>
+      </div>
+      <span class="flow-arrow"><ArrowRight size={14} /></span>
+      <div class="flow-endpoint flow-output">
+        <span class="flow-label">OUTPUT</span>
+        <span class="flow-value">{outputSummary}</span>
+      </div>
+    </div>
+    <section class="section" data-testid="diag-signal-path">
+      <div class="section-head">
+        <span class="section-title">Signal Path</span>
+        <span class="section-meta">{signalChecks.length} stages · Resampler: {resamplerSummary}</span>
+      </div>
+
+      {#if signalChecks.length === 0}
+        <div class="empty-state">Waiting for signal-path data&hellip;</div>
+      {:else}
+        <div class="pipeline" data-testid="diag-signal-path-graph">
+          {#each signalChecks as check, index (check.stage)}
+            <button
+              class="stage-node"
+              class:selected={check.stage === selectedSignalStage}
+              class:ok={check.status === 'ok'}
+              class:warn={check.status === 'touching_bits'}
+              class:inactive={check.status === 'inactive'}
+              class:unknown={check.status === 'unknown'}
+              onclick={() => (manualSelectedStage = check.stage)}
             >
-              <Zap size={16} />
-              <span>DoP Integrity</span>
-            </div>
-          {/if}
-        </div>
-        
-        <div class="device-info">
-          <Server size={14} class="icon-muted" />
-          <span class="device-name">{telemetry?.device?.device_name || 'No Device Selected'}</span>
-        </div>
-      </div>
-
-      <div class="format-flow">
-        <div class="flow-node source">
-          <span class="label">Source</span>
-          <span class="value">{summary.source}</span>
-        </div>
-        <div class="flow-arrow">
-          <ArrowRight size={16} />
-        </div>
-        <div class="flow-node output">
-          <span class="label">Output</span>
-          <span class="value">{summary.output}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Expandable: Signal Path -->
-    <div class="section-container" data-testid="diag-signal-path">
-      <button class="section-header" onclick={() => showSignalPath = !showSignalPath}>
-        <div class="header-left">
-          {#if showSignalPath}
-            <ChevronDown size={18} />
-          {:else}
-            <ChevronRight size={18} />
-          {/if}
-          <h3>Signal Path</h3>
-        </div>
-        <div class="header-right">
-          <!-- Summary/Status icon could go here -->
-        </div>
-      </button>
-      
-      {#if showSignalPath}
-        <div class="section-content">
-          <div class="signal-path-graph" data-testid="diag-signal-path-graph">
-            {#if telemetry?.signal_path_checks}
-              <div class="graph-scroll-container">
-                {#each telemetry.signal_path_checks as check, i}
-                  <div class="graph-node-wrapper">
-                    <div 
-                      class="graph-node" 
-                      class:ok={check.status === 'ok'}
-                      class:touching={check.status === 'touching_bits'}
-                      class:unknown={check.status === 'unknown'}
-                      class:inactive={check.status === 'inactive'}
-                    >
-                      <div class="node-icon">
-                        {#if check.status === 'ok'}
-                          <CheckCircle size={18} />
-                        {:else if check.status === 'touching_bits'}
-                          <AlertTriangle size={18} />
-                        {:else if check.status === 'inactive'}
-                          <XCircle size={18} />
-                        {:else}
-                          <Activity size={18} />
-                        {/if}
-                      </div>
-                      <div class="node-content">
-                        <span class="node-stage">{check.stage}</span>
-                        <span class="node-reason">{check.reason_code || check.status}</span>
-                      </div>
-                      
-                      <div class="node-tooltip">
-                        <strong>{check.stage.toUpperCase()}</strong>
-                        <div class="tooltip-status"
-                             class:text-ok={check.status === 'ok'}
-                             class:text-warn={check.status === 'touching_bits'}
-                        >
-                          Status: {check.status.replace('_', ' ')}
-                        </div>
-                        <p>{check.detail}</p>
-                      </div>
-                    </div>
-                    
-                    {#if i < telemetry.signal_path_checks.length - 1}
-                      <div class="graph-connector">
-                        <ArrowRight size={16} />
-                      </div>
-                    {/if}
-                  </div>
-                {/each}
-              </div>
-            {:else}
-               <div class="empty-graph">Waiting for signal path data...</div>
-            {/if}
-          </div>
-          
-          <div class="signal-checks">
-            {#if telemetry?.signal_path_checks}
-              {#each telemetry.signal_path_checks as check}
-                <div class="check-item">
-                  <div class="check-status" class:ok={check.status === 'ok'} class:warn={check.status !== 'ok'}>
-                    {#if check.status === 'ok'}
-                      <CheckCircle size={14} />
-                    {:else}
-                      <AlertTriangle size={14} />
-                    {/if}
-                  </div>
-                  <div class="check-info">
-                    <span class="check-stage">{check.stage}</span>
-                    <span class="check-detail">{check.detail}</span>
-                  </div>
-                </div>
-              {/each}
-            {:else}
-              <div class="empty-state">No signal path data available</div>
-            {/if}
-          </div>
-        </div>
-      {/if}
-    </div>
-
-    <!-- Expandable: Device Details -->
-    <div class="section-container" data-testid="diag-device-details">
-      <button class="section-header" onclick={() => showDeviceDetails = !showDeviceDetails}>
-        <div class="header-left">
-          {#if showDeviceDetails}
-            <ChevronDown size={18} />
-          {:else}
-            <ChevronRight size={18} />
-          {/if}
-          <h3>Device & Backend</h3>
-        </div>
-      </button>
-
-      {#if showDeviceDetails}
-        <div class="section-content">
-          <div class="detail-grid">
-            <div class="detail-row">
-              <span class="label">Backend Type</span>
-              <span class="value">{telemetry?.device?.backend?.kind?.toUpperCase() || '—'}</span>
-            </div>
-            
-            {#if telemetry?.device?.backend?.wasapi}
-               <div class="detail-row">
-                 <span class="label">Buffer Size</span>
-                 <span class="value">{telemetry.device.backend.wasapi.buffer_frames} frames</span>
-               </div>
-               <div class="detail-row">
-                 <span class="label">Device Period</span>
-                 <span class="value">{(telemetry.device.backend.wasapi.device_period_default_hns / 10000).toFixed(2)} ms</span>
-               </div>
-            {/if}
-
-            {#if telemetry?.device?.backend?.asio}
-               <div class="detail-row">
-                 <span class="label">Driver</span>
-                 <span class="value">{telemetry.device.backend.asio.driver_name}</span>
-               </div>
-               <div class="detail-row">
-                 <span class="label">Buffer Size</span>
-                 <span class="value">{telemetry.device.backend.asio.buffer_size_frames} samples</span>
-               </div>
-               <div class="detail-row">
-                 <span class="label">Sample Format</span>
-                 <span class="value">{telemetry.device.backend.asio.sample_format}</span>
-               </div>
-            {/if}
-            
-            <div class="detail-row">
-               <span class="label">Exclusive Mode</span>
-               <span class="value highlight">{telemetry?.device?.exclusive_active ? 'Active' : 'Inactive'}</span>
-            </div>
-          </div>
-        </div>
-      {/if}
-    </div>
-
-    <!-- Expandable: Stability -->
-    <div class="section-container" data-testid="diag-stability">
-      <button class="section-header" onclick={() => showStability = !showStability}>
-        <div class="header-left">
-          {#if showStability}
-            <ChevronDown size={18} />
-          {:else}
-            <ChevronRight size={18} />
-          {/if}
-          <h3>Stability & Telemetry</h3>
-        </div>
-      </button>
-
-      {#if showStability}
-        <div class="section-content">
-          <div class="detail-grid">
-             <div class="detail-row">
-               <span class="label">Ring Buffer Fill</span>
-               <div class="bar-container">
-                  <div class="bar-fill" style="width: {telemetry?.stability?.ring_buffer?.fill_percent || 0}%"></div>
-               </div>
-               <span class="value-mini">{telemetry?.stability?.ring_buffer?.fill_percent?.toFixed(1) || 0}%</span>
-             </div>
-             
-             <div class="detail-row">
-                <span class="label">Underruns (Track)</span>
-                <span class="value" class:warn={(telemetry?.stability?.ring_buffer?.underruns?.track || 0) > 0}>
-                  {telemetry?.stability?.ring_buffer?.underruns?.track || 0}
-                </span>
-             </div>
-
-             <div class="detail-row">
-                <span class="label">Overflows (Track)</span>
-                <span class="value" class:warn={(telemetry?.stability?.ring_buffer?.overflows?.track || 0) > 0}>
-                  {telemetry?.stability?.ring_buffer?.overflows?.track || 0}
-                </span>
-             </div>
-          </div>
-        </div>
-      {/if}
-    </div>
-
-    <!-- Expandable: Capabilities -->
-    <div class="section-container" data-testid="diag-capabilities">
-      <button class="section-header" onclick={() => showCapabilities = !showCapabilities}>
-        <div class="header-left">
-          {#if showCapabilities}
-            <ChevronDown size={18} />
-          {:else}
-            <ChevronRight size={18} />
-          {/if}
-          <h3>Format Capabilities</h3>
-        </div>
-      </button>
-
-      {#if showCapabilities}
-        <div class="section-content">
-          {#if !activeProbeResults}
-            <div class="capabilities-placeholder" data-testid="diag-capability-matrix">
-              <p>Probe device capabilities to populate matrix.</p>
-              
-              <div class="probe-action">
-                <button 
-                  class="probe-btn" 
-                  disabled={!canProbe || isProbing || !telemetry}
-                  onclick={handleProbe}
-                  data-testid="diag-probe-btn"
-                  title={!canProbe ? "Stop playback to probe ASIO device" : "Check supported formats"}
-                >
-                  {#if isProbing}
-                    <Activity size={16} class="spin" />
-                    Probing...
-                  {:else}
-                    <Play size={16} />
-                    Run Probe
-                  {/if}
-                </button>
-                {#if !canProbe}
-                  <span class="probe-hint">
-                    <AlertTriangle size={14} />
-                    ASIO requires exclusive access. Stop playback to probe.
-                  </span>
+              <span class="stage-icon">
+                {#if check.status === 'ok'}
+                  <CheckCircle size={12} />
+                {:else if check.status === 'touching_bits'}
+                  <AlertTriangle size={12} />
+                {:else if check.status === 'inactive'}
+                  <XCircle size={12} />
+                {:else}
+                  <Activity size={12} />
                 {/if}
-              </div>
+              </span>
+              <span class="stage-name">{check.stage}</span>
+            </button>
+
+            {#if index < signalChecks.length - 1}
+              <span class="pipe-connector"><ArrowRight size={11} /></span>
+            {/if}
+          {/each}
+        </div>
+
+        {#if selectedSignalCheck}
+          <div class="stage-detail">
+            <div class="detail-head">
+              <span class="detail-stage">{selectedSignalCheck.stage}</span>
+              <span class="detail-reason">
+                {selectedSignalCheck.reason_code || getSignalStatusLabel(selectedSignalCheck.status)}
+              </span>
             </div>
-          {:else}
-            <div class="capability-results" data-testid="diag-capability-matrix">
-              <div class="matrix-header">
-                <div class="matrix-meta">
-                  <span class="label">Last Probed</span>
-                  <span class="value">{new Date(activeProbeResults.probedAtMs).toLocaleTimeString()}</span>
-                </div>
-                <button 
-                   class="probe-retry-btn" 
-                   onclick={handleProbe}
-                   disabled={isProbing}
-                >
-                  Refresh
-                </button>
-              </div>
+            <p class="detail-body">{selectedSignalCheck.detail || 'No additional detail provided.'}</p>
+          </div>
+        {/if}
+      {/if}
+    </section>
 
-              <div class="capability-matrix">
-                <!-- Header Row -->
-                <div class="matrix-row header">
-                  <div class="matrix-cell label">Hz \ Bit</div>
-                  {#each [16, 24, 32] as bit}
-                    <div class="matrix-cell header">{bit} bit</div>
-                  {/each}
-                </div>
+    <div class="main-grid">
 
-                <!-- Data Rows -->
-                {#each [44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000] as sr}
-                  <div class="matrix-row">
-                    <div class="matrix-cell label">{(sr / 1000).toFixed(1)}k</div>
-                    {#each [16, 24, 32] as bit}
-                      {@const cell = getProbeCell(sr, bit)}
-                      <div class="matrix-cell data" 
-                           class:supported={cell?.supported}
-                           class:unsupported={cell && !cell.supported}
-                           title={cell?.supported ? 'Supported' : (cell?.reasonCode || 'Unsupported')}
-                      >
-                        {#if cell?.supported}
-                          <div class="dot supported"></div>
-                        {:else if cell}
-                          <div class="dot unsupported"></div>
-                        {:else}
-                          <span class="dash">—</span>
-                        {/if}
-                      </div>
-                    {/each}
-                  </div>
-                {/each}
+      <section class="section" data-testid="diag-stability">
+        <div class="section-head">
+          <span class="section-title">Health & Stability</span>
+          <span class="section-meta" class:meta-warn={signalIssueCount > 0}>{signalIssueCount} issues</span>
+        </div>
+
+        <div class="health-strip">
+          <div class="hs-metric">
+            <span class="hs-label">Bit-perfect</span>
+            <span class="hs-value">{telemetry?.integrity?.pcm_bit_perfect?.status || 'unknown'}</span>
+          </div>
+          <div class="hs-metric">
+            <span class="hs-label">Anomalies</span>
+            <span class="hs-value" class:val-warn={signalIssueCount > 0}>{signalIssueCount}</span>
+          </div>
+          <div class="hs-metric">
+            <span class="hs-label">Underruns</span>
+            <span class="hs-value" class:val-warn={ringUnderrunsTrack > 0}>{ringUnderrunsTrack}</span>
+          </div>
+          <div class="hs-metric">
+            <span class="hs-label">Overflows</span>
+            <span class="hs-value" class:val-warn={ringOverflowsTrack > 0}>{ringOverflowsTrack}</span>
+          </div>
+        </div>
+
+        <div class="buffer-section">
+          <div class="buf-row">
+            <div class="buf-head">
+              <span class="buf-name">PCM ring buffer</span>
+              <span class="buf-pct">{ringFillPercent.toFixed(0)}%</span>
+            </div>
+            <div class="buf-track"><div class="buf-fill" style={`width: ${ringFillPercent}%`}></div></div>
+          </div>
+
+          <div class="buf-row">
+            <div class="buf-head">
+              <span class="buf-name">DoP ring buffer</span>
+              <span class="buf-pct">{dopFillPercent.toFixed(0)}%</span>
+            </div>
+            <div class="buf-track"><div class="buf-fill" style={`width: ${dopFillPercent}%`}></div></div>
+          </div>
+        </div>
+
+        <div class="counter-row">
+          <span class:val-warn={(telemetry?.stability?.ring_buffer?.underruns?.track ?? 0) > 0}>
+            PCM underruns {telemetry?.stability?.ring_buffer?.underruns?.track ?? 0}
+          </span>
+          <span class:val-warn={(telemetry?.stability?.ring_buffer?.overflows?.track ?? 0) > 0}>
+            PCM overflows {telemetry?.stability?.ring_buffer?.overflows?.track ?? 0}
+          </span>
+          <span class:val-warn={(telemetry?.stability?.dop_ring_buffer?.underruns?.track ?? 0) > 0}>
+            DoP underruns {telemetry?.stability?.dop_ring_buffer?.underruns?.track ?? 0}
+          </span>
+          <span class:val-warn={(telemetry?.stability?.dop_ring_buffer?.overflows?.track ?? 0) > 0}>
+            DoP overflows {telemetry?.stability?.dop_ring_buffer?.overflows?.track ?? 0}
+          </span>
+          <span class:val-warn={(telemetry?.stability?.asio?.callback_underruns?.track ?? 0) > 0}>
+            ASIO cb {telemetry?.stability?.asio?.callback_underruns?.track ?? 0}
+          </span>
+          <span class:val-warn={(telemetry?.stability?.asio?.dop_drops?.track ?? 0) > 0}>
+            ASIO DoP drops {telemetry?.stability?.asio?.dop_drops?.track ?? 0}
+          </span>
+        </div>
+
+        {#if recentEvents.length > 0}
+          <div class="events-section" data-testid="diag-events">
+            <div class="events-head">
+              <span class="section-title">Recent Events</span>
+              <span class="section-meta">{recentEvents.length}</span>
+            </div>
+            {#each recentEvents as event (`${event.ts_ms}-${event.code}`)}
+              <div class="event-row">
+                <span class="event-code">{event.code}</span>
+                <span class="event-detail">{event.detail || 'No detail provided.'}</span>
+                <span class="event-age">{getEventAgeLabel(event.ts_ms)}</span>
               </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="empty-subtle">No recent engine events.</div>
+        {/if}
+      </section>
+
+      <section class="section" data-testid="diag-device-details">
+        <div class="section-head">
+          <span class="section-title">Engine Snapshot</span>
+        </div>
+
+        <div class="engine-list">
+          <div class="eng-row">
+            <span class="eng-label">Device</span>
+            <span class="eng-value">{telemetry?.device?.device_name || '—'}</span>
+          </div>
+          <div class="eng-row">
+            <span class="eng-label">Backend</span>
+            <span class="eng-value">{backendLabel}</span>
+          </div>
+          <div class="eng-row">
+            <span class="eng-label">Mode</span>
+            <span class="eng-value">{modeLabel}</span>
+          </div>
+          <div class="eng-row">
+            <span class="eng-label">Policy</span>
+            <span class="eng-value">{telemetry?.playback?.policy || '—'}</span>
+          </div>
+          <div class="eng-row">
+            <span class="eng-label">Timing</span>
+            <span class="eng-value">{telemetry?.playback?.timing_mode || '—'}</span>
+          </div>
+          <div class="eng-row">
+            <span class="eng-label">Gain</span>
+            <span class="eng-value">{telemetry?.playback?.gain_mode || '—'}</span>
+          </div>
+          <div class="eng-row">
+            <span class="eng-label">Conversion</span>
+            <span class="eng-value">{telemetry?.playback?.conversion || '—'}</span>
+          </div>
+          <div class="eng-row">
+            <span class="eng-label">Volume mode</span>
+            <span class="eng-value">{telemetry?.playback?.effective_volume_mode || '—'}</span>
+          </div>
+          <div class="eng-row">
+            <span class="eng-label">Fade</span>
+            <span class="eng-value">
+              {telemetry?.playback?.fade_enabled ? 'Enabled' : 'Off'}{telemetry?.playback?.fade_active ? ' (active)' : ''}
+            </span>
+          </div>
+          <div class="eng-row">
+            <span class="eng-label">Playback state</span>
+            <span class="eng-value">{telemetry?.playback?.state || '—'}</span>
+          </div>
+
+          {#if telemetry?.device?.backend?.wasapi}
+            <div class="eng-row">
+              <span class="eng-label">WASAPI buffer</span>
+              <span class="eng-value">{telemetry.device.backend.wasapi.buffer_frames} frames</span>
+            </div>
+            <div class="eng-row">
+              <span class="eng-label">Default period</span>
+              <span class="eng-value">{(telemetry.device.backend.wasapi.device_period_default_hns / 10000).toFixed(2)} ms</span>
+            </div>
+          {/if}
+
+          {#if telemetry?.device?.backend?.asio}
+            <div class="eng-row">
+              <span class="eng-label">ASIO driver</span>
+              <span class="eng-value">{telemetry.device.backend.asio.driver_name}</span>
+            </div>
+            <div class="eng-row">
+              <span class="eng-label">ASIO buffer</span>
+              <span class="eng-value">{telemetry.device.backend.asio.buffer_size_frames} samples</span>
+            </div>
+            <div class="eng-row">
+              <span class="eng-label">ASIO sample fmt</span>
+              <span class="eng-value">{telemetry.device.backend.asio.sample_format}</span>
             </div>
           {/if}
         </div>
-      {/if}
+      </section>
     </div>
 
-    <!-- Dev Tools (only when SERMON_DEBUG=1) -->
     {#if isDebugMode}
-      <div class="section-container dev-tools-section">
-        <button class="section-header" onclick={() => showDevTools = !showDevTools} data-testid="dev-tools-header">
-           <div class="header-left">
-             {#if showDevTools}
-               <ChevronDown size={18} />
-             {:else}
-               <ChevronRight size={18} />
-             {/if}
-             <Cpu size={18} />
-             <h3>Dev Tools</h3>
-           </div>
+      <section class="section dev-section">
+        <button class="collapse-toggle" onclick={() => (showDevTools = !showDevTools)} data-testid="dev-tools-header">
+          <div class="toggle-left">
+            {#if showDevTools}
+              <ChevronDown size={15} />
+            {:else}
+              <ChevronRight size={15} />
+            {/if}
+            <Cpu size={15} />
+            <span class="section-title">Dev Tools</span>
+          </div>
         </button>
 
         {#if showDevTools}
-          <div class="section-content">
-            <div class="dev-tools-grid">
-              <div class="dev-tool-item">
-                <span class="tool-label">Focus Management</span>
-                <button 
-                  class="harness-btn primary" 
-                  onclick={() => harnessModalOpen = true} 
-                  data-testid="harness-open-btn"
-                >
-                  Open Focus Trap Harness
-                </button>
-              </div>
-            </div>
+          <div class="collapse-body">
+            <button class="action-btn" onclick={() => (harnessModalOpen = true)} data-testid="harness-open-btn">
+              Open focus trap harness
+            </button>
           </div>
         {/if}
-      </div>
+      </section>
     {/if}
   </div>
 </div>
 
-<!-- Focus Trap Test Modal (DEV only) -->
 {#if isDebugMode}
-  <Modal open={harnessModalOpen} title="Focus Trap Test" onclose={() => harnessModalOpen = false}>
+  <Modal open={harnessModalOpen} title="Focus Trap Test" onclose={() => (harnessModalOpen = false)}>
     <div class="harness-modal-content">
       <div class="focus-debug">
-        <strong>Active Element:</strong> <code>{activeElementInfo}</code>
+        <strong>Active element:</strong> <code>{activeElementInfo}</code>
       </div>
 
       <div class="harness-field">
-        <label for="harness-input">Test Input</label>
-        <input 
-          id="harness-input" 
-          type="text" 
+        <label for="harness-input">Test input</label>
+        <input
+          id="harness-input"
+          type="text"
           bind:value={harnessInput}
           placeholder="Type something..."
           data-testid="harness-input"
@@ -578,28 +602,17 @@
 
       <div class="harness-field">
         <label class="checkbox-label">
-          <input 
-            type="checkbox" 
-            bind:checked={harnessCheckbox}
-            data-testid="harness-checkbox"
-          />
-          Test Checkbox
+          <input type="checkbox" bind:checked={harnessCheckbox} data-testid="harness-checkbox" />
+          Test checkbox
         </label>
       </div>
 
       <div class="harness-actions">
-        <button 
-          class="harness-btn secondary"
-          onclick={() => harnessModalOpen = false}
-          data-testid="harness-cancel-btn"
-        >
+        <button class="harness-btn secondary" onclick={() => (harnessModalOpen = false)} data-testid="harness-cancel-btn">
           Cancel
         </button>
-        <button 
-          class="harness-btn primary"
-          onclick={() => harnessModalOpen = false}
-          data-testid="harness-apply-btn"
-        >
+
+        <button class="harness-btn" onclick={() => (harnessModalOpen = false)} data-testid="harness-apply-btn">
           Apply
         </button>
       </div>
@@ -608,732 +621,729 @@
 {/if}
 
 <style>
+  /* ═══ Layout shell ═══ */
+
   .view-container {
-    padding: 1.5rem;
-    padding-bottom: calc(var(--layout-player-height, 80px) + 2rem);
-    color: var(--text-primary);
     height: 100%;
     overflow-y: auto;
+    padding: 20px;
+    padding-bottom: calc(var(--layout-player-height, 80px) + 28px);
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
   }
 
   .content-width {
-    max-width: 800px;
+    width: min(1040px, 100%);
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 10px;
   }
 
-  /* Overview Panel */
-  .overview-panel {
-    background: var(--surface-1);
-    border: 1px solid var(--divider-color);
+  /* ═══ Section ═══ */
+
+  .section {
     border-radius: var(--radius-md);
-    padding: 1.5rem;
-    backdrop-filter: none;
-    box-shadow: var(--shadow-2);
+    border: 1px solid var(--divider-color);
+    background: rgba(255, 255, 255, 0.02);
+    overflow: hidden;
   }
 
-  .overview-header {
+  .section-head {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1.5rem;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--divider-color);
   }
 
-  .badges {
-    display: flex;
-    gap: 0.75rem;
-  }
-
-  .integrity-badge {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.35rem 0.75rem;
-    border-radius: var(--radius-pill);
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    font-size: var(--text-meta);
-    font-weight: 600;
+  .section-title {
+    font-size: 11px;
+    font-weight: 650;
     color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
   }
 
-  .integrity-badge.success {
-    background: rgba(76, 175, 80, 0.15);
-    border-color: rgba(76, 175, 80, 0.3);
-    color: #4caf50;
+  .section-meta {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
   }
 
-  .integrity-badge.warning {
-    background: rgba(255, 152, 0, 0.15);
-    border-color: rgba(255, 152, 0, 0.3);
-    color: #ff9800;
-  }
-  
-  .integrity-badge.error {
-    background: rgba(244, 67, 54, 0.15);
-    border-color: rgba(244, 67, 54, 0.3);
-    color: #f44336;
+  .section-meta.meta-warn {
+    color: #f8b44f;
   }
 
-  .device-info {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: var(--text-meta);
-    color: var(--text-secondary);
-  }
+  /* ═══ Hero ═══ */
 
-  .icon-muted {
-    opacity: 0.5;
-  }
-
-  .format-flow {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: rgba(0, 0, 0, 0.2);
+  .hero {
     border-radius: var(--radius-md);
-    padding: 1rem 1.5rem;
     border: 1px solid var(--divider-color);
-  }
-
-  .flow-node {
+    background: rgba(255, 255, 255, 0.025);
+    padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 14px;
   }
 
-  .flow-node.output {
+  .hero-status {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .health-badge {
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--text-tertiary);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .health-badge.healthy {
+    color: #36d77f;
+    background: rgba(54, 215, 127, 0.1);
+    border-color: rgba(54, 215, 127, 0.25);
+  }
+
+  .health-badge.warning {
+    color: #f8b44f;
+    background: rgba(248, 180, 79, 0.1);
+    border-color: rgba(248, 180, 79, 0.25);
+  }
+
+  .hero-copy {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .hero-copy h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 650;
+    color: var(--text-primary);
+    line-height: 1.3;
+  }
+
+  .hero-copy p {
+    margin: 2px 0 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  .hero-device {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding-top: 12px;
+    border-top: 1px solid var(--divider-color);
+  }
+
+  .device-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .device-line :global(svg) {
+    flex-shrink: 0;
+    color: var(--text-tertiary);
+  }
+
+  .device-sub {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .mode-pill {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 3px 8px;
+    border-radius: var(--radius-pill);
+    background: rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.12);
+    border: 1px solid rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.28);
+    color: var(--text-primary);
+  }
+
+  .age-label {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ═══ Flow bar ═══ */
+
+  .flow-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--divider-color);
+  }
+
+  .flow-endpoint {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .flow-output {
     text-align: right;
     align-items: flex-end;
   }
 
-  .flow-node .label {
-    font-size: var(--text-meta);
+  .flow-label {
+    font-size: 9px;
+    font-weight: 650;
     color: var(--text-tertiary);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.08em;
   }
 
-  .flow-node .value {
-    font-family: 'Inter Variable', monospace;
-    font-weight: 500;
-    font-size: var(--text-body);
+  .flow-value {
+    font-size: 12px;
     color: var(--text-primary);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .flow-arrow {
     color: var(--text-tertiary);
+    display: flex;
     opacity: 0.5;
   }
 
-  /* Section Styles */
-  .section-container {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--divider-color);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-    transition: background 0.2s;
+  /* ═══ Signal Path pipeline ═══ */
+
+  .pipeline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 14px;
   }
 
-  .section-container:hover {
+  .stage-node {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    background: rgba(255, 255, 255, 0.02);
+    color: var(--text-secondary);
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      background var(--motion-fast) var(--ease-out),
+      border-color var(--motion-fast) var(--ease-out);
+  }
+
+  .stage-node:hover {
     background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.12);
   }
 
-  .section-header {
-    width: 100%;
+  .stage-node.selected {
+    border-color: var(--accent-medium);
+    background: rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.08);
+  }
+
+  .stage-node.ok { color: #36d77f; }
+  .stage-node.warn { color: #f8b44f; }
+  .stage-node.inactive,
+  .stage-node.unknown { color: var(--text-tertiary); }
+
+  .stage-icon {
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+
+  .stage-name {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .pipe-connector {
+    color: var(--text-disabled);
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+
+  .stage-detail {
+    margin: 0 14px 12px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background: rgba(0, 0, 0, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .detail-head {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem 1.25rem;
-    background: transparent;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: color 0.2s;
-    text-align: left;
+    gap: 8px;
+    margin-bottom: 5px;
   }
 
-  .section-header:hover {
-    color: var(--text-primary);
-  }
-
-  .header-left {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .section-header h3 {
-    margin: 0;
-    font-size: var(--text-body);
-    font-weight: 500;
-  }
-
-  .section-content {
-    padding: 0 1.5rem 1.5rem 1.5rem;
-    border-top: 1px solid var(--divider-color);
-    margin-top: -1px; /* Align border */
-    padding-top: 1.5rem;
-  }
-
-  /* Signal Path Specifics */
-  .signal-path-graph {
-    margin-bottom: 2rem;
-    position: relative;
-    z-index: 1;
-  }
-
-  .graph-scroll-container {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    overflow-x: auto;
-    padding: 1rem 0.5rem;
-    /* Hide scrollbar but keep functionality */
-    scrollbar-width: thin;
-    scrollbar-color: var(--divider-color) transparent;
-  }
-
-  .graph-scroll-container::-webkit-scrollbar {
-    height: 6px;
-  }
-
-  .graph-scroll-container::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .graph-scroll-container::-webkit-scrollbar-thumb {
-    background-color: var(--divider-color);
-    border-radius: 3px;
-  }
-
-  .graph-node-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .graph-node {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    width: 110px;
-    height: 80px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--divider-color);
-    border-radius: var(--radius-md);
-    padding: 0.75rem;
-    transition: all 0.2s ease;
-    cursor: default;
-    user-select: none;
-  }
-
-  .graph-node:hover {
-    transform: translateY(-2px);
-    background: rgba(255, 255, 255, 0.07);
-    box-shadow: var(--shadow-2);
-    z-index: 10;
-  }
-
-  .graph-node.ok {
-    border-color: rgba(76, 175, 80, 0.3);
-    background: linear-gradient(180deg, rgba(76, 175, 80, 0.05) 0%, rgba(76, 175, 80, 0.1) 100%);
-  }
-  .graph-node.ok .node-icon { color: #4ade80; }
-
-  .graph-node.touching {
-    border-color: rgba(251, 146, 60, 0.3);
-    background: linear-gradient(180deg, rgba(251, 146, 60, 0.05) 0%, rgba(251, 146, 60, 0.1) 100%);
-  }
-  .graph-node.touching .node-icon { color: #fb923c; }
-
-  .graph-node.unknown {
-    border-color: var(--divider-color);
-    opacity: 0.8;
-  }
-  .graph-node.unknown .node-icon { color: var(--text-tertiary); }
-
-  .graph-node.inactive {
-    border-color: rgba(255, 255, 255, 0.05);
-    background: rgba(0, 0, 0, 0.2);
-    opacity: 0.5;
-  }
-  .graph-node.inactive .node-icon { color: var(--text-disabled); }
-
-  .node-icon {
-    margin-bottom: 0.5rem;
-  }
-
-  .node-content {
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .node-stage {
-    font-size: 0.75rem;
-    font-weight: 600;
+  .detail-stage {
+    font-size: 11px;
+    font-weight: 650;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.04em;
     color: var(--text-secondary);
   }
 
-  .node-reason {
-    font-size: 0.65rem;
+  .detail-reason {
+    font-size: 11px;
+    font-family: var(--font-mono);
     color: var(--text-tertiary);
-    max-width: 100%;
+  }
+
+  .detail-body {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.45;
+  }
+
+  /* ═══ Main two-column grid ═══ */
+
+  .main-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  /* ═══ Health strip ═══ */
+
+  .health-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .hs-metric {
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    border-right: 1px solid var(--divider-color);
+  }
+
+  .hs-metric:last-child {
+    border-right: none;
+  }
+
+  .hs-label {
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .hs-value {
+    font-size: 15px;
+    font-weight: 650;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    text-transform: capitalize;
+    font-family: var(--font-mono);
+  }
+
+  .hs-value.val-warn {
+    color: #f8b44f;
+  }
+
+  /* ═══ Buffer bars ═══ */
+
+  .buffer-section {
+    padding: 10px 14px;
+    border-top: 1px solid var(--divider-color);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .buf-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .buf-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .buf-name {
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  .buf-pct {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .buf-track {
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
     overflow: hidden;
-    text-overflow: ellipsis;
+  }
+
+  .buf-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      var(--theme-accent) 0%,
+      rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.5) 100%
+    );
+    transition: width var(--motion-medium) var(--ease-out);
+  }
+
+  /* ═══ Counter row ═══ */
+
+  .counter-row {
+    padding: 8px 14px;
+    border-top: 1px solid var(--divider-color);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    font-size: 10px;
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .counter-row .val-warn {
+    color: #f8b44f;
+  }
+
+  /* ═══ Events ═══ */
+
+  .events-section {
+    border-top: 1px solid var(--divider-color);
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .events-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2px;
+  }
+
+  .event-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 8px;
+    align-items: baseline;
+    padding: 4px 0;
+  }
+
+  .event-row + .event-row {
+    border-top: 1px solid rgba(255, 255, 255, 0.03);
+  }
+
+  .event-code {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--text-primary);
     white-space: nowrap;
   }
 
-  .graph-connector {
-    color: var(--text-tertiary);
-    opacity: 0.3;
-    display: flex;
-    align-items: center;
-  }
-
-  .empty-graph {
-    text-align: center;
-    padding: 2rem;
-    color: var(--text-tertiary);
-    font-style: italic;
-    background: rgba(0, 0, 0, 0.1);
-    border-radius: var(--radius-md);
-  }
-
-  .node-tooltip {
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%) translateY(-10px);
-    width: 220px;
-    background: #1a1a1a;
-    border: 1px solid var(--divider-color);
-    padding: 0.75rem;
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-3);
-    pointer-events: none;
-    opacity: 0;
-    visibility: hidden;
-    transition: all 0.2s ease;
-    z-index: 100;
-  }
-
-  .graph-node:hover .node-tooltip {
-    opacity: 1;
-    visibility: visible;
-    transform: translateX(-50%) translateY(-5px);
-  }
-
-  .node-tooltip strong {
-    display: block;
-    color: var(--text-primary);
-    font-size: 0.8rem;
-    margin-bottom: 0.25rem;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-    padding-bottom: 0.25rem;
-  }
-
-  .tooltip-status {
-    font-size: 0.75rem;
-    font-weight: 600;
-    margin-bottom: 0.25rem;
-    text-transform: capitalize;
-    color: var(--text-tertiary);
-  }
-
-  .tooltip-status.text-ok { color: #4ade80; }
-  .tooltip-status.text-warn { color: #fb923c; }
-
-  .node-tooltip p {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    margin: 0;
-    line-height: 1.4;
-  }
-
-  .node-tooltip::after {
-    content: '';
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    margin-left: -6px;
-    border-width: 6px;
-    border-style: solid;
-    border-color: #1a1a1a transparent transparent transparent;
-  }
-
-  .signal-checks {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .check-item {
-    display: flex;
-    gap: 1rem;
-    align-items: flex-start;
-  }
-
-  .check-status {
-    margin-top: 2px;
-    color: var(--text-tertiary);
-  }
-
-  .check-status.ok { color: #4caf50; }
-  .check-status.warn { color: #ff9800; }
-
-  .check-info {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .check-stage {
-    font-size: var(--text-body);
-    font-weight: 500;
-  }
-
-  .check-detail {
-    font-size: var(--text-meta);
-    color: var(--text-secondary);
-  }
-
-  /* Details Grid */
-  .detail-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 1.5rem;
-  }
-
-  .detail-row {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .detail-row .label {
-    font-size: var(--text-meta);
-    color: var(--text-secondary);
-  }
-
-  .detail-row .value {
-    font-family: 'Inter Variable', monospace;
-    font-size: var(--text-body);
-    color: var(--text-primary);
-  }
-
-  .detail-row .value.highlight {
-    color: var(--theme-accent);
-  }
-
-  .detail-row .value.warn {
-    color: #ff9800;
-  }
-
-  /* Stability Bars */
-  .bar-container {
-    height: 6px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 3px;
-    width: 100%;
-    margin: 4px 0;
-    overflow: hidden;
-  }
-
-  .bar-fill {
-    height: 100%;
-    background: var(--theme-accent);
-    transition: width 0.3s ease-out;
-  }
-
-  .value-mini {
+  .event-detail {
     font-size: 11px;
     color: var(--text-tertiary);
-    font-family: monospace;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
-  /* Capabilities */
-  .capabilities-placeholder {
-    text-align: center;
-    padding: 2rem;
-    color: var(--text-secondary);
-  }
-
-  .probe-action {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.75rem;
-    margin-top: 1rem;
-  }
-
-  .probe-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    background: var(--theme-accent);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #fff;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font-weight: 500;
-    transition: all 0.2s;
-  }
-
-  .probe-btn:hover:not(:disabled) {
-    background: var(--theme-accent-hover);
-    transform: translateY(-1px);
-  }
-
-  .probe-btn:disabled {
-    background: rgba(255, 255, 255, 0.05);
+  .event-age {
+    font-size: 10px;
     color: var(--text-disabled);
-    cursor: not-allowed;
-    border-color: transparent;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
-  .probe-hint {
+  /* ═══ Engine list ═══ */
+
+  .engine-list {
+    padding: 4px 0;
+  }
+
+  .eng-row {
     display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.8rem;
-    color: #ff9800;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 6px 14px;
   }
 
-  .spin {
-    animation: spin 1s linear infinite;
+  .eng-row + .eng-row {
+    border-top: 1px solid rgba(255, 255, 255, 0.035);
   }
 
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+  .eng-label {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+    white-space: nowrap;
   }
 
-  /* Capability Matrix */
-  .capability-results {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
+  .eng-value {
+    font-size: 12px;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+    text-align: right;
+    overflow-wrap: anywhere;
+    min-width: 0;
   }
 
-  .matrix-header {
+  /* ═══ Empty states ═══ */
+
+  .empty-state {
+    padding: 20px 14px;
+    color: var(--text-tertiary);
+    font-size: 12px;
+    text-align: center;
+  }
+
+  .empty-subtle {
+    padding: 12px 14px;
+    border-top: 1px solid var(--divider-color);
+    color: var(--text-disabled);
+    font-size: 11px;
+  }
+
+  /* ═══ Dev tools ═══ */
+
+  .dev-section {
+    border-color: rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.25);
+  }
+
+  .collapse-toggle {
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 10px 14px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-  }
-
-  .matrix-meta {
-    display: flex;
-    gap: 0.5rem;
-    font-size: var(--text-meta);
-  }
-
-  .matrix-meta .label {
-    color: var(--text-tertiary);
-  }
-
-  .probe-retry-btn {
-    background: transparent;
-    border: none;
-    color: var(--theme-accent);
-    font-size: var(--text-meta);
     cursor: pointer;
-    padding: 0.25rem 0.5rem;
-    border-radius: var(--radius-sm);
+    text-align: left;
   }
 
-  .probe-retry-btn:hover {
-    background: rgba(255, 255, 255, 0.05);
+  .collapse-toggle:hover {
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-primary);
   }
 
-  .capability-matrix {
-    display: grid;
-    gap: 2px;
-    background: rgba(255, 255, 255, 0.05); /* Grid lines */
-    border: 1px solid var(--divider-color);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-  }
-
-  .matrix-row {
-    display: grid;
-    grid-template-columns: 80px repeat(3, 1fr);
-    background: transparent;
-  }
-
-  .matrix-cell {
-    background: var(--surface-1); /* Reset bg for cells to create gaps */
-    padding: 0.75rem;
-    display: flex;
+  .toggle-left {
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    font-size: 0.9rem;
+    gap: 6px;
   }
 
-  .matrix-cell.label {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    background: rgba(0, 0, 0, 0.2);
+  .collapse-body {
+    border-top: 1px solid var(--divider-color);
+    padding: 12px 14px;
+  }
+
+  .action-btn {
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.14);
+    color: var(--text-primary);
+    padding: 7px 12px;
+    font-size: 12px;
     font-weight: 600;
+    cursor: pointer;
+    transition:
+      background var(--motion-fast) var(--ease-out),
+      border-color var(--motion-fast) var(--ease-out);
   }
 
-  .matrix-cell.header {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    background: rgba(0, 0, 0, 0.2);
-    font-weight: 600;
+  .action-btn:hover {
+    background: rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.24);
+    border-color: rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.4);
   }
 
-  .matrix-cell.data {
-    transition: background 0.2s;
-  }
-
-  .matrix-cell.data:hover {
-    background: rgba(255, 255, 255, 0.05);
-  }
-
-  .dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-  }
-
-  .dot.supported {
-    background: #4ade80;
-    box-shadow: 0 0 8px rgba(74, 222, 128, 0.4);
-  }
-
-  .dot.unsupported {
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid var(--divider-color);
-    width: 8px;
-    height: 8px;
-  }
-
-  .dash {
-    color: var(--text-disabled);
-  }
-
-  /* Dev Tools Styles */
-  .dev-tools-section {
-    opacity: 0.9;
-    margin-top: 2rem;
-    border-color: rgba(68, 170, 255, 0.3);
-  }
-
-  .dev-tools-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-  }
-
-  .dev-tool-item {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .tool-label {
-    font-size: var(--text-meta);
-    color: var(--text-tertiary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
+  /* ═══ Harness modal ═══ */
 
   .harness-modal-content {
     min-width: 350px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
 
   .focus-debug {
-    background: rgba(68, 170, 255, 0.1);
-    border: 1px solid rgba(68, 170, 255, 0.3);
-    border-radius: 6px;
-    padding: 0.75rem;
-    margin-bottom: 1.5rem;
-    font-size: 0.9rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.4);
+    background: rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.1);
+    padding: 9px 10px;
+    color: var(--text-secondary);
+    font-size: 12px;
   }
 
   .focus-debug code {
-    font-family: monospace;
-    color: #4af;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
   }
 
   .harness-field {
-    margin-bottom: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
   }
 
   .harness-field label {
-    display: block;
-    font-size: 0.85rem;
-    color: #888;
-    margin-bottom: 0.25rem;
+    color: var(--text-tertiary);
+    font-size: 12px;
   }
 
-  .harness-field input[type="text"] {
+  .harness-field input[type='text'] {
     width: 100%;
-    background: rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-sm);
     border: 1px solid var(--divider-color);
-    border-radius: 6px;
-    color: #fff;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.95rem;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    font-size: 13px;
+    padding: 8px 10px;
     outline: none;
   }
 
-  .harness-field input[type="text"]:focus {
-    border-color: rgba(68, 170, 255, 0.5);
+  .harness-field input[type='text']:focus {
+    box-shadow: var(--focus-ring);
+    border-color: rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.5);
   }
 
-  .harness-field .checkbox-label {
-    display: flex;
+  .checkbox-label {
+    display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    cursor: pointer;
-    color: #ccc;
+    gap: 8px;
+    color: var(--text-secondary);
+    font-size: 13px;
   }
 
   .harness-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 0.75rem;
-    margin-top: 1.5rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--divider-color);
+    gap: 8px;
+    margin-top: 4px;
   }
 
   .harness-btn {
-    background: rgba(68, 170, 255, 0.2);
-    border: 1px solid rgba(68, 170, 255, 0.4);
-    color: #4af;
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.14);
+    color: var(--text-primary);
+    padding: 7px 12px;
+    font-size: 12px;
+    font-weight: 600;
     cursor: pointer;
-    font-size: 0.9rem;
-    transition: all 0.2s;
-    backdrop-filter: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
 
-  .harness-btn:hover {
-    background: rgba(68, 170, 255, 0.3);
+  .harness-btn:hover:not(:disabled) {
+    background: rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.24);
+    border-color: rgba(var(--theme-accent-r), var(--theme-accent-g), var(--theme-accent-b), 0.4);
   }
 
   .harness-btn.secondary {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.05);
     border-color: var(--divider-color);
-    color: #ccc;
   }
 
-  .harness-btn.secondary:hover {
-    background: rgba(255, 255, 255, 0.12);
-    color: #fff;
+  /* ═══ Responsive ═══ */
+
+  @media (max-width: 900px) {
+    .main-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .health-strip {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .hs-metric:nth-child(2) {
+      border-right: none;
+    }
+
+    .hs-metric:nth-child(3),
+    .hs-metric:nth-child(4) {
+      border-top: 1px solid var(--divider-color);
+    }
+
+    .hero-device {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .flow-bar {
+      grid-template-columns: 1fr;
+      gap: 6px;
+    }
+
+    .flow-output {
+      text-align: left;
+      align-items: flex-start;
+    }
+
+    .flow-arrow {
+      transform: rotate(90deg);
+      justify-self: start;
+    }
+
+    .counter-row {
+      flex-direction: column;
+      gap: 2px;
+    }
   }
 </style>
