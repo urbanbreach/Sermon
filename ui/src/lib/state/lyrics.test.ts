@@ -6,6 +6,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 import { invoke } from '@tauri-apps/api/core';
+import { currentTrack } from './playback';
 import {
   fetchLyricsForTrack,
   findActiveLineIndex,
@@ -25,6 +26,12 @@ function createDeferred<T>(): Deferred<T> {
     resolve = res;
   });
   return { promise, resolve };
+}
+
+async function flushMicrotasks(passes = 4): Promise<void> {
+  for (let i = 0; i < passes; i += 1) {
+    await Promise.resolve();
+  }
 }
 
 describe('lyrics parser', () => {
@@ -56,6 +63,22 @@ describe('lyrics parser', () => {
     const lines = parseLrc('[offset:+500]\n[00:01.00]Hello');
 
     expect(lines).toEqual([{ timeMs: 1500, text: 'Hello' }]);
+  });
+
+  test('parseLrc: keeps overlapping timestamps in sorted output', () => {
+    const lines = parseLrc('[00:10.00]First\n[00:10.00]Second\n[00:12.00]Third');
+
+    expect(lines).toEqual([
+      { timeMs: 10_000, text: 'First' },
+      { timeMs: 10_000, text: 'Second' },
+      { timeMs: 12_000, text: 'Third' },
+    ]);
+  });
+
+  test('parseLrc: applies negative offset values', () => {
+    const lines = parseLrc('[offset:-1500]\n[00:01.00]Early line');
+
+    expect(lines).toEqual([{ timeMs: -500, text: 'Early line' }]);
   });
 
   test('parseLrc: skips metadata tags', () => {
@@ -116,6 +139,7 @@ describe('lyrics fetch lifecycle', () => {
     invokeMock.mockReset();
     lyricsData.set(null);
     lyricsStatus.set('idle');
+    currentTrack.set(null);
   });
 
   test('fetchLyricsForTrack: sets status to loading then ready', async () => {
@@ -188,5 +212,25 @@ describe('lyrics fetch lifecycle', () => {
 
     expect(get(lyricsStatus)).toBe('ready');
     expect(get(lyricsData)?.trackId).toBe(2);
+  });
+
+  test('currentTrack clear resets lyrics lifecycle state to idle', async () => {
+    invokeMock.mockResolvedValue({
+      trackId: 42,
+      syncedLyrics: '[00:01.00]Hello',
+      plainLyrics: null,
+      source: 'embedded',
+    });
+
+    currentTrack.set({ id: 42 });
+    await flushMicrotasks();
+
+    expect(get(lyricsStatus)).toBe('ready');
+    expect(get(lyricsData)?.trackId).toBe(42);
+
+    currentTrack.set(null);
+
+    expect(get(lyricsStatus)).toBe('idle');
+    expect(get(lyricsData)).toBeNull();
   });
 });
