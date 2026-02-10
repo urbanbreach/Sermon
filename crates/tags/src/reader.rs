@@ -1,6 +1,6 @@
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
-use lofty::tag::Accessor;
+use lofty::tag::{Accessor, ItemKey};
 use std::path::Path;
 use tracing::warn;
 
@@ -18,6 +18,7 @@ pub struct AudioMetadata {
     pub disc_no: Option<u32>,
     pub year: Option<u32>,
     pub genre: Option<String>,
+    pub lyricist: Option<String>,
     // Technical
     pub codec: Option<String>,
     pub container: Option<String>,
@@ -25,6 +26,7 @@ pub struct AudioMetadata {
     pub bit_depth: Option<u8>,
     pub channels: Option<u8>,
     pub duration_ms: Option<u64>,
+    pub loudness_db: Option<f32>,
     // DSD-specific
     pub dsd_rate_hz: Option<u32>,
     pub dsd_channels: Option<u8>,
@@ -124,34 +126,32 @@ fn read_metadata_inner(path: &Path) -> Result<AudioMetadata, lofty::error::Lofty
     let duration_ms = Some(properties.duration().as_millis() as u64);
 
     // Extract tags
-    let (title, artist, album, album_artist, track_no, disc_no, year, genre) = if let Some(t) = tag
-    {
-        (
-            t.title().map(|s| s.to_string()),
-            t.artist().map(|s| s.to_string()),
-            t.album().map(|s| s.to_string()),
-            t.get_string(&lofty::tag::ItemKey::AlbumArtist)
-                .map(|s| s.to_string()),
-            t.track(),
-            t.disk(),
-            t.year(),
-            t.genre().map(|s| s.to_string()),
-        )
-    } else {
-        (None, None, None, None, None, None, None, None)
-    };
+    let (title, artist, album, album_artist, track_no, disc_no, year, genre, lyricist) =
+        if let Some(t) = tag {
+            (
+                t.title().map(|s| s.to_string()),
+                t.artist().map(|s| s.to_string()),
+                t.album().map(|s| s.to_string()),
+                t.get_string(&lofty::tag::ItemKey::AlbumArtist)
+                    .map(|s| s.to_string()),
+                t.track(),
+                t.disk(),
+                t.year(),
+                t.genre().map(|s| s.to_string()),
+                t.get_string(&lofty::tag::ItemKey::Lyricist)
+                    .map(|s| s.to_string()),
+            )
+        } else {
+            (None, None, None, None, None, None, None, None, None)
+        };
 
     let (lyrics, synced_lyrics) = if let Some(t) = tag {
-        (
-            t.get_string(&lofty::tag::ItemKey::Lyrics)
-                .map(|s| s.to_string()),
-            // Synced lyrics (LRC format) are not standardized in most tag formats;
-            // if present they'd typically be in a custom field. Return None for now.
-            None,
-        )
+        extract_lyrics_fields(t)
     } else {
         (None, None)
     };
+
+    let loudness_db = tag.and_then(extract_replaygain_track_gain_db);
 
     Ok(AudioMetadata {
         title,
@@ -162,6 +162,7 @@ fn read_metadata_inner(path: &Path) -> Result<AudioMetadata, lofty::error::Lofty
         disc_no,
         year,
         genre,
+        lyricist,
         lyrics,
         synced_lyrics,
         codec,
@@ -170,8 +171,63 @@ fn read_metadata_inner(path: &Path) -> Result<AudioMetadata, lofty::error::Lofty
         bit_depth,
         channels,
         duration_ms,
+        loudness_db,
         dsd_rate_hz: None,
         dsd_channels: None,
+    })
+}
+
+fn extract_replaygain_track_gain_db(tag: &lofty::tag::Tag) -> Option<f32> {
+    tag.get_string(&ItemKey::ReplayGainTrackGain)
+        .or_else(|| tag.get_string(&ItemKey::ReplayGainAlbumGain))
+        .and_then(parse_db_value)
+}
+
+fn parse_db_value(value: &str) -> Option<f32> {
+    let normalized = value.trim();
+    if normalized.is_empty() {
+        return None;
+    }
+
+    let mut cleaned = normalized.replace(',', ".");
+    cleaned = cleaned.replace("dB", "");
+    cleaned = cleaned.replace("DB", "");
+    cleaned = cleaned.replace("db", "");
+
+    let cleaned = cleaned.trim();
+    if cleaned.is_empty() {
+        return None;
+    }
+
+    cleaned
+        .parse::<f32>()
+        .ok()
+        .filter(|value| value.is_finite())
+        .or_else(|| {
+            cleaned
+                .split_whitespace()
+                .next()
+                .and_then(|first| first.parse::<f32>().ok())
+                .filter(|value| value.is_finite())
+        })
+}
+
+fn extract_lyrics_fields(tag: &lofty::tag::Tag) -> (Option<String>, Option<String>) {
+    let generic = tag
+        .get_string(&lofty::tag::ItemKey::Lyrics)
+        .map(|s| s.to_string());
+
+    match generic {
+        Some(value) if looks_like_lrc(&value) => (None, Some(value)),
+        Some(value) => (Some(value), None),
+        None => (None, None),
+    }
+}
+
+fn looks_like_lrc(value: &str) -> bool {
+    value.lines().any(|line| {
+        let trimmed = line.trim_start();
+        trimmed.starts_with('[') && trimmed.contains(':') && trimmed.contains(']')
     })
 }
 
@@ -232,4 +288,30 @@ pub fn read_embedded_pictures(
     }
 
     Ok(pictures)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_db_value;
+
+    #[test]
+    fn parse_db_value_accepts_db_suffix() {
+        assert_eq!(parse_db_value("-11.35 dB"), Some(-11.35));
+    }
+
+    #[test]
+    fn parse_db_value_accepts_comma_decimal() {
+        assert_eq!(parse_db_value("-11,35 dB"), Some(-11.35));
+    }
+
+    #[test]
+    fn parse_db_value_accepts_positive_values() {
+        assert_eq!(parse_db_value("+1.50"), Some(1.5));
+    }
+
+    #[test]
+    fn parse_db_value_rejects_invalid_input() {
+        assert_eq!(parse_db_value(""), None);
+        assert_eq!(parse_db_value("n/a"), None);
+    }
 }

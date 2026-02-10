@@ -57,6 +57,7 @@ pub fn read_dsf_metadata(path: &Path) -> Result<AudioMetadata, DsdError> {
         disc_no,
         year,
         genre,
+        lyricist: None,
         lyrics: None,
         synced_lyrics: None,
         codec: Some("DSF".to_string()),
@@ -65,6 +66,7 @@ pub fn read_dsf_metadata(path: &Path) -> Result<AudioMetadata, DsdError> {
         bit_depth: Some(1),
         channels: Some(dsd_channels),
         duration_ms,
+        loudness_db: None,
         dsd_rate_hz: Some(dsd_rate_hz),
         dsd_channels: Some(dsd_channels),
     })
@@ -98,6 +100,7 @@ pub fn read_dff_metadata(path: &Path) -> Result<AudioMetadata, DsdError> {
         disc_no,
         year,
         genre,
+        lyricist: None,
         lyrics: None,
         synced_lyrics: None,
         codec: Some("DFF".to_string()),
@@ -106,6 +109,7 @@ pub fn read_dff_metadata(path: &Path) -> Result<AudioMetadata, DsdError> {
         bit_depth: Some(1),
         channels: Some(dsd_channels),
         duration_ms,
+        loudness_db: None,
         dsd_rate_hz: Some(dsd_rate_hz),
         dsd_channels: Some(dsd_channels),
     })
