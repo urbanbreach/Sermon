@@ -1,45 +1,17 @@
 <script lang="ts">
-  import { railMode, isRailOpen, setRailMode, toggleRail, albumTracks, albumTracksLoading } from '../state/rightRail';
-  import { currentTrack, currentTrackFull, playNow, queue, playNowWithQueue } from '../state/playback';
+  import { isRailOpen, toggleRail, albumTracks, albumTracksLoading } from '../state/rightRail';
+  import { currentTrack, currentTrackFull, playNow, queue } from '../state/playback';
   import ArtworkImage from './ArtworkImage.svelte';
-  import { currentLyrics, currentLineIndex, lyricsStatus, fetchLyricsForTrack } from '../state/lyrics';
   import { railSplitRatio } from '../state/effects';
-  import { navigate } from '../state/route';
-  import { Disc3, MicVocal, Maximize2, Volume2, ListMusic } from '@lucide/svelte';
+  import { Disc3, Volume2, ListMusic } from '@lucide/svelte';
   import { derived } from 'svelte/store';
   import { fade, slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import { fadeIn, pressScale } from '../utils/animations';
+  import { fadeIn } from '../utils/animations';
   import type { TrackRow } from '../types/library';
   import VerticalResizeHandle from './VerticalResizeHandle.svelte';
   
   let railContentHeight = $state(0);
-  let lyricsScrollEl: HTMLDivElement | undefined = $state(undefined);
-
-  // Auto-fetch lyrics when lyrics tab is opened and status is idle
-  $effect(() => {
-    const mode = $railMode;
-    const track = $currentTrack;
-    const status = $lyricsStatus;
-    if (mode === 'lyrics' && track && status === 'idle') {
-      fetchLyricsForTrack(track.id);
-    }
-  });
-
-  // Auto-scroll to active lyric line
-  $effect(() => {
-    const idx = $currentLineIndex;
-    if (!lyricsScrollEl || idx < 0) return;
-    const activeLine = lyricsScrollEl.querySelector('.lyric-line.active');
-    if (activeLine) {
-      activeLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  });
-
-  function goFullscreenLyrics() {
-    navigate({ name: 'lyrics-fullscreen' });
-  }
-
   // Helper: Format duration from ms to M:SS
   function formatDuration(ms: number | undefined): string {
     if (!ms) return '—';
@@ -223,7 +195,6 @@
   
   <aside 
     class="right-rail-panel"
-    class:lyrics-mode={$railMode === 'lyrics'}
     transition:slide={{ duration: 250, easing: cubicOut, axis: 'x' }}
   >
     <!-- Header with mode toggle -->
@@ -231,29 +202,13 @@
       <div class="header-pills">
         <!-- Mode icons pill -->
         <div class="mode-pill">
-          <button 
-            class="pill-icon"
-            class:active={$railMode === 'now-playing'}
-            onclick={() => setRailMode('now-playing')}
-            title="Queue"
-            use:pressScale={{ scale: 0.95 }}
-          >
+          <div class="pill-icon active" title="Queue">
             {#if $isAlbumQueue}
               <Disc3 size={16} />
             {:else}
               <ListMusic size={16} />
             {/if}
-          </button>
-
-          <button 
-            class="pill-icon"
-            class:active={$railMode === 'lyrics'}
-            onclick={() => setRailMode('lyrics')}
-            title="Lyrics"
-            use:pressScale={{ scale: 0.95 }}
-          >
-            <MicVocal size={16} />
-          </button>
+          </div>
         </div>
         
         <!-- Track count pill -->
@@ -263,215 +218,169 @@
       </div>
     </div>
     
-    <!-- Content based on mode -->
+    <!-- Content -->
     <div class="rail-content" bind:clientHeight={railContentHeight} use:fadeIn={{ duration: 200, delay: 100 }}>
-      {#if $railMode === 'now-playing'}
-        <!-- Playing Tracks Section -->
-        <div class="section playing-tracks-section" style="height: {Math.floor(railContentHeight * $railSplitRatio)}px;">
-          {#if $currentTrackFull || $queue.length > 0}
-            <!-- Album Info Card (Only show if we have current track info) -->
-            {#if $currentTrackFull}
-              {@const albumContext = normalizeAlbumContext(
-                $currentTrackFull.albumArtist,
-                $currentTrackFull.artist || $currentTrack?.artist,
-                $currentTrackFull.album || $currentTrack?.album
-              )}
-              <div class="album-info-card">
-                <div class="album-thumb-wrapper">
-                  <ArtworkImage
-                    artistSort={albumContext.artistSort}
-                    titleSort={albumContext.titleSort}
-                    size={128}
-                    class="album-thumb"
-                  />
-                </div>
-                <div class="album-info">
-                  <div class="album-artist">{$currentTrackFull.albumArtist || $currentTrackFull.artist || '—'}</div>
-                  <div class="album-title">{$currentTrackFull.album || 'Unknown Album'}</div>
-                  <div class="album-meta">
-                    {#if $currentTrackFull.year}
-                      <span>{$currentTrackFull.year}</span>
-                    {/if}
-                    {#if $currentTrackFull.year && $currentTrackFull.genre}
-                      <span class="meta-dot">•</span>
-                    {/if}
-                    {#if $currentTrackFull.genre}
-                      <span>{$currentTrackFull.genre}</span>
-                    {/if}
-                  </div>
-                </div>
-              </div>
-            {/if}
-
-            <!-- Track List -->
-            {#if $albumTracksLoading}
-              <div class="loading-state">Loading tracks...</div>
-            {:else if $isAlbumQueue}
-              <div class="track-list">
-                {#each $discGroups as group}
-                  {#if $showDiscDividers}
-                    <div class="disc-divider">Disc {group.discNo}</div>
-                  {/if}
-                  {#each group.tracks as track (track.id)}
-                    {@const isPlaying = track.id === $currentTrack?.id}
-                    {@const albumContext = normalizeAlbumContext(track.albumArtist, track.artist, track.album)}
-                    <div 
-                      class="track-row"
-                      class:playing={isPlaying}
-                      role="button"
-                      tabindex="0"
-                      ondblclick={() => track.id && playNow(track.id)}
-                      onkeydown={(e) => handleKeydown(e, track.id)}
-                    >
-                      <span class="track-no">
-                        {#if isPlaying}
-                          <Volume2 size={14} class="playing-icon" />
-                        {:else}
-                          {track.trackNo ?? '—'}
-                        {/if}
-                      </span>
-                      <span class="track-title">{track.title || '—'}</span>
-                      <span class="track-artist">{track.artist || '—'}</span>
-                    </div>
-                  {/each}
-                {/each}
-              </div>
-            {:else if $queue.length > 0}
-              <div class="track-list">
-                {#each $queue as item, i (item.track_id + '-' + i)}
-                  {@const isPlaying = item.track_id === $currentTrack?.id}
-                  {@const queueContext = normalizeAlbumContext(undefined, item.artist, item.album)}
-                  <div 
-                    class="track-row"
-                    class:playing={isPlaying}
-                    role="button"
-                    tabindex="0"
-                    ondblclick={() => playNow(item.track_id)}
-                    onkeydown={(e) => handleQueueKeydown(e, item.track_id, i)}
-                  >
-                    <span class="track-no">
-                      {#if isPlaying}
-                        <Volume2 size={14} class="playing-icon" />
-                      {:else}
-                        {i + 1}
-                      {/if}
-                    </span>
-                    <span class="track-title">{item.title || '—'}</span>
-                    <span class="track-artist">{item.artist || '—'}</span>
-                  </div>
-                {/each}
-              </div>
-            {:else}
-              <div class="empty-state" use:fadeIn={{ duration: 300 }}>
-                <Disc3 size={24} strokeWidth={1.5} />
-                <span>Nothing playing</span>
-              </div>
-            {/if}
-          {:else}
-            <div class="empty-state" use:fadeIn={{ duration: 300 }}>
-              <Disc3 size={24} strokeWidth={1.5} />
-              <span>Nothing playing</span>
-            </div>
-          {/if}
-        </div>
-
-        <VerticalResizeHandle containerHeight={railContentHeight} />
-
-        <!-- Track Information Section -->
-        <div class="section track-info-section">
+      <!-- Playing Tracks Section -->
+      <div class="section playing-tracks-section" style="height: {Math.floor(railContentHeight * $railSplitRatio)}px;">
+        {#if $currentTrackFull || $queue.length > 0}
+          <!-- Album Info Card (Only show if we have current track info) -->
           {#if $currentTrackFull}
             {@const albumContext = normalizeAlbumContext(
               $currentTrackFull.albumArtist,
               $currentTrackFull.artist || $currentTrack?.artist,
               $currentTrackFull.album || $currentTrack?.album
             )}
-            <div class="track-info-list">
-              <div class="info-row">
-                <span class="info-value title">{$currentTrackFull.title || '—'}</span>
+            <div class="album-info-card">
+              <div class="album-thumb-wrapper">
+                <ArtworkImage
+                  artistSort={albumContext.artistSort}
+                  titleSort={albumContext.titleSort}
+                  size={128}
+                  class="album-thumb"
+                />
               </div>
-              <div class="info-row">
-                <span class="info-value">{$currentTrackFull.artist || '—'}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-value">{$currentTrackFull.album || '—'}</span>
-              </div>
-              {#if $currentTrackFull.year}
-                <div class="info-row">
-                  <span class="info-value">{$currentTrackFull.year}</span>
+              <div class="album-info">
+                <div class="album-artist">{$currentTrackFull.albumArtist || $currentTrackFull.artist || '—'}</div>
+                <div class="album-title">{$currentTrackFull.album || 'Unknown Album'}</div>
+                <div class="album-meta">
+                  {#if $currentTrackFull.year}
+                    <span>{$currentTrackFull.year}</span>
+                  {/if}
+                  {#if $currentTrackFull.year && $currentTrackFull.genre}
+                    <span class="meta-dot">•</span>
+                  {/if}
+                  {#if $currentTrackFull.genre}
+                    <span>{$currentTrackFull.genre}</span>
+                  {/if}
                 </div>
-              {/if}
-              {#if $currentTrackFull.genre}
-                <div class="info-row">
-                  <span class="info-value">{$currentTrackFull.genre}</span>
-                </div>
-              {/if}
-              <div class="info-row loudness">
-                <span class="info-value">{formatLoudnessDb($currentTrackFull.loudnessDb)}</span>
-              </div>
-              <div class="info-row format">
-                <span class="info-value">{formatAudioInfo($currentTrackFull)}</span>
               </div>
             </div>
+          {/if}
 
-            <!-- Large Artwork -->
-            <div class="large-artwork-container">
-              <ArtworkImage 
-                artistSort={albumContext.artistSort}
-                titleSort={albumContext.titleSort}
-                size={0} 
-                class="large-artwork" 
-              />
+          <!-- Track List -->
+          {#if $albumTracksLoading}
+            <div class="loading-state">Loading tracks...</div>
+          {:else if $isAlbumQueue}
+            <div class="track-list">
+              {#each $discGroups as group}
+                {#if $showDiscDividers}
+                  <div class="disc-divider">Disc {group.discNo}</div>
+                {/if}
+                {#each group.tracks as track (track.id)}
+                  {@const isPlaying = track.id === $currentTrack?.id}
+                  <div 
+                    class="track-row"
+                    class:playing={isPlaying}
+                    role="button"
+                    tabindex="0"
+                    ondblclick={() => track.id && playNow(track.id)}
+                    onkeydown={(e) => handleKeydown(e, track.id)}
+                  >
+                    <span class="track-no">
+                      {#if isPlaying}
+                        <Volume2 size={14} class="playing-icon" />
+                      {:else}
+                        {track.trackNo ?? '—'}
+                      {/if}
+                    </span>
+                    <span class="track-title">{track.title || '—'}</span>
+                    <span class="track-artist">{track.artist || '—'}</span>
+                  </div>
+                {/each}
+              {/each}
+            </div>
+          {:else if $queue.length > 0}
+            <div class="track-list">
+              {#each $queue as item, i (item.track_id + '-' + i)}
+                {@const isPlaying = item.track_id === $currentTrack?.id}
+                <div 
+                  class="track-row"
+                  class:playing={isPlaying}
+                  role="button"
+                  tabindex="0"
+                  ondblclick={() => playNow(item.track_id)}
+                  onkeydown={(e) => handleQueueKeydown(e, item.track_id, i)}
+                >
+                  <span class="track-no">
+                    {#if isPlaying}
+                      <Volume2 size={14} class="playing-icon" />
+                    {:else}
+                      {i + 1}
+                    {/if}
+                  </span>
+                  <span class="track-title">{item.title || '—'}</span>
+                  <span class="track-artist">{item.artist || '—'}</span>
+                </div>
+              {/each}
             </div>
           {:else}
             <div class="empty-state" use:fadeIn={{ duration: 300 }}>
               <Disc3 size={24} strokeWidth={1.5} />
-              <span>No track information</span>
+              <span>Nothing playing</span>
             </div>
           {/if}
-        </div>
-        
-      {:else if $railMode === 'lyrics'}
-        <div class="section lyrics-section">
-          <div class="lyrics-header-row">
-            <h3 class="section-header">Lyrics</h3>
-            <button class="fullscreen-btn" onclick={goFullscreenLyrics} title="Fullscreen" use:pressScale={{ scale: 0.95 }}>
-              <Maximize2 size={16} />
-            </button>
+        {:else}
+            <div class="empty-state" use:fadeIn={{ duration: 300 }}>
+              <Disc3 size={24} strokeWidth={1.5} />
+              <span>Nothing playing</span>
+            </div>
+          {/if}
+      </div>
+
+      <VerticalResizeHandle containerHeight={railContentHeight} />
+
+      <!-- Track Information Section -->
+      <div class="section track-info-section">
+        {#if $currentTrackFull}
+          {@const albumContext = normalizeAlbumContext(
+            $currentTrackFull.albumArtist,
+            $currentTrackFull.artist || $currentTrack?.artist,
+            $currentTrackFull.album || $currentTrack?.album
+          )}
+          <div class="track-info-list">
+            <div class="info-row">
+              <span class="info-value title">{$currentTrackFull.title || '—'}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-value">{$currentTrackFull.artist || '—'}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-value">{$currentTrackFull.album || '—'}</span>
+            </div>
+            {#if $currentTrackFull.year}
+              <div class="info-row">
+                <span class="info-value">{$currentTrackFull.year}</span>
+              </div>
+            {/if}
+            {#if $currentTrackFull.genre}
+              <div class="info-row">
+                <span class="info-value">{$currentTrackFull.genre}</span>
+              </div>
+            {/if}
+            <div class="info-row loudness">
+              <span class="info-value">{formatLoudnessDb($currentTrackFull.loudnessDb)}</span>
+            </div>
+            <div class="info-row format">
+              <span class="info-value">{formatAudioInfo($currentTrackFull)}</span>
+            </div>
           </div>
 
-          {#if $lyricsStatus === 'loading'}
-            <div class="empty-state" data-testid="lyrics-loading" use:fadeIn={{ duration: 300 }}>
-              <MicVocal size={24} strokeWidth={1.5} />
-              <span>Loading lyrics…</span>
-            </div>
-          {:else if $lyricsStatus === 'error'}
-            <div class="empty-state" data-testid="lyrics-error" use:fadeIn={{ duration: 300 }}>
-              <MicVocal size={24} strokeWidth={1.5} />
-              <span>Failed to load lyrics</span>
-            </div>
-          {:else if $currentLyrics && $currentLyrics.length > 0}
-            <div class="lyrics-rail-content" data-testid="lyrics-lines">
-              <div class="lyrics-scroll-container" bind:this={lyricsScrollEl}>
-                {#each $currentLyrics as line, i}
-                  <p
-                    class="lyric-line"
-                    class:active={i === $currentLineIndex}
-                    class:before={i < $currentLineIndex}
-                    class:after={i > $currentLineIndex}
-                  >
-                    {line || '\u00A0'}
-                  </p>
-                {/each}
-              </div>
-            </div>
-          {:else}
-            <div class="empty-state" data-testid="lyrics-empty" use:fadeIn={{ duration: 300 }}>
-              <MicVocal size={24} strokeWidth={1.5} />
-              <span>Lyrics not available</span>
-            </div>
-          {/if}
-        </div>
-      {/if}
+          <!-- Large Artwork -->
+          <div class="large-artwork-container">
+            <ArtworkImage 
+              artistSort={albumContext.artistSort}
+              titleSort={albumContext.titleSort}
+              size={0} 
+              class="large-artwork" 
+            />
+          </div>
+        {:else}
+          <div class="empty-state" use:fadeIn={{ duration: 300 }}>
+            <Disc3 size={24} strokeWidth={1.5} />
+            <span>No track information</span>
+          </div>
+        {/if}
+      </div>
     </div>
     
   </aside>
@@ -491,14 +400,6 @@
     z-index: 90;
     position: relative;
     overflow: hidden;
-  }
-
-  .right-rail-panel.lyrics-mode {
-    border-left-color: transparent;
-  }
-
-  .right-rail-panel.lyrics-mode .rail-content {
-    padding-left: 14px;
   }
 
   /* Persistent mode (>=1280px) */
@@ -878,100 +779,8 @@
   }
 
   /* ============================================
-     LYRICS SECTION - APPLE-LIKE FLUID MOTION
-     ============================================ */
-  .lyrics-section {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
-
-  .lyrics-header-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-  }
-
-  .lyrics-header-row .section-header {
-    margin: 0;
-  }
-
-  .fullscreen-btn {
-    background: rgba(255, 255, 255, 0.08);
-    border: none;
-    color: rgba(255, 255, 255, 0.6);
-    padding: 6px;
-    border-radius: 6px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.15s ease;
-  }
-
-  .fullscreen-btn:hover {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.12);
-  }
-
-  .lyrics-rail-content {
-    flex: 1;
-    position: relative;
-    overflow: hidden;
-    min-height: 0;
-  }
-
-  .lyrics-scroll-container {
-    height: 100%;
-    overflow-y: auto;
-    padding: 48px 0;
-    scrollbar-width: none;
-    scroll-behavior: smooth;
-  }
-
-  .lyrics-scroll-container::-webkit-scrollbar {
-    display: none;
-  }
-
-  .lyric-line {
-    margin: 0;
-    padding: 8px 0;
-    font-size: 20px;
-    font-weight: 600;
-    line-height: 1.35;
-    color: rgba(255, 255, 255, 0.25);
-    transition: color 0.4s cubic-bezier(0.25, 0.1, 0.25, 1),
-                transform 0.4s cubic-bezier(0.25, 0.1, 0.25, 1),
-                opacity 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
-    transform-origin: left center;
-    opacity: 0.5;
-  }
-
-  .lyric-line.active {
-    color: #fff;
-    font-weight: 700;
-    transform: scale(1.03);
-    opacity: 1;
-  }
-
-  .lyric-line.before {
-    color: rgba(255, 255, 255, 0.2);
-    opacity: 0.4;
-  }
-
-  .lyric-line.after {
-    color: rgba(255, 255, 255, 0.35);
-    opacity: 0.6;
-  }
-
-  /* ============================================
      ANIMATIONS
      ============================================ */
-  .mode-pill button:nth-child(1) { animation-delay: 0ms; }
-  .mode-pill button:nth-child(2) { animation-delay: 30ms; }
-
   @keyframes fadeSlideIn {
     from {
       opacity: 0;
@@ -993,13 +802,6 @@
     }
     .pill-icon {
       animation: none;
-    }
-    .lyric-line {
-      transition: none;
-      transform: none !important;
-    }
-    .lyrics-scroll-container {
-      scroll-behavior: auto;
     }
   }
 </style>
