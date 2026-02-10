@@ -34,6 +34,70 @@ fn test_migration_idempotency() {
 }
 
 #[test]
+fn test_migration_second_run_preserves_existing_rows() {
+    let dir = tempdir().unwrap();
+    let db_path = dir.path().join("test_preserve_rows.db");
+    let conn = open_db(&db_path).unwrap();
+
+    apply_migrations(&conn).unwrap();
+
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?)",
+        ["audio.volume", "0.75"],
+    )
+    .unwrap();
+
+    conn.execute(
+        "INSERT INTO library_folders (path) VALUES (?)",
+        ["C:\\Music"],
+    )
+    .unwrap();
+
+    conn.execute(
+        "INSERT INTO tracks (library_folder_id, path, identity_source, mtime_ms, size_bytes, title)
+         VALUES (1, 'before_second_run.flac', 'fallback', 0, 1000, 'Before')",
+        [],
+    )
+    .unwrap();
+
+    let settings_before: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM settings WHERE key = 'audio.volume'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let tracks_before: i64 = conn
+        .query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))
+        .unwrap();
+
+    assert_eq!(settings_before, 1);
+    assert_eq!(tracks_before, 1);
+
+    // Second run should be a no-op for schema and preserve data.
+    apply_migrations(&conn).unwrap();
+
+    let version: i32 = conn
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 9);
+
+    let settings_after: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM settings WHERE key = 'audio.volume'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let tracks_after: i64 = conn
+        .query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))
+        .unwrap();
+
+    assert_eq!(settings_after, 1);
+    assert_eq!(tracks_after, 1);
+}
+
+#[test]
 fn test_in_memory_migration() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     apply_migrations(&conn).unwrap();

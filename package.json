@@ -11,7 +11,12 @@
   },
   "scripts": {
     "dev": "pnpm -C ui dev",
-    "ui:snapshots": "node ./scripts/ui-snapshots.mjs"
+    "ui:snapshots": "node ./scripts/ui-snapshots.mjs",
+    "check:ui": "pnpm -C ui check",
+    "test:ui": "pnpm -C ui test",
+    "test:rust": "cargo test --workspace",
+    "test:all": "pnpm run check:ui && pnpm run test:ui && pnpm run test:rust",
+    "ci:local": "pnpm run test:all"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

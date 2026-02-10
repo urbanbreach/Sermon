@@ -140,3 +140,69 @@ fn test_scan_marks_missing() {
     assert_eq!(tracks.len(), 1);
     assert!(tracks[0].is_missing);
 }
+
+#[test]
+fn test_scan_idempotent_results() {
+    let temp = tempdir().unwrap();
+    let db_path = temp.path().join("test.db");
+    let music_dir = temp.path().join("music");
+    std::fs::create_dir(&music_dir).unwrap();
+
+    create_test_wav(&music_dir.join("track1.wav"));
+    create_test_wav(&music_dir.join("track2.wav"));
+
+    let conn = open_db(&db_path).unwrap();
+    apply_migrations(&conn).unwrap();
+    drop(conn);
+
+    let first = scan_folder(&db_path, music_dir.to_str().unwrap(), |_| {}).unwrap();
+    let second = scan_folder(&db_path, music_dir.to_str().unwrap(), |_| {}).unwrap();
+
+    assert_eq!(first.total, 2);
+    assert_eq!(first.scanned, 2);
+    assert_eq!(first.skipped, 0);
+    assert_eq!(first.errors, 0);
+
+    assert_eq!(second.total, 2);
+    assert_eq!(second.scanned, 0);
+    assert_eq!(second.skipped, 2);
+    assert_eq!(second.errors, 0);
+
+    let conn = open_db(&db_path).unwrap();
+    let tracks = list_tracks(&conn, "id", "asc").unwrap();
+    assert_eq!(tracks.len(), 2);
+
+    let mut paths: Vec<_> = tracks.into_iter().map(|t| t.path).collect();
+    paths.sort();
+    assert_eq!(
+        paths[0],
+        music_dir.join("track1.wav").to_string_lossy().to_string()
+    );
+    assert_eq!(
+        paths[1],
+        music_dir.join("track2.wav").to_string_lossy().to_string()
+    );
+}
+
+#[test]
+fn test_scan_empty_folder() {
+    let temp = tempdir().unwrap();
+    let db_path = temp.path().join("test.db");
+    let music_dir = temp.path().join("music");
+    std::fs::create_dir(&music_dir).unwrap();
+
+    let conn = open_db(&db_path).unwrap();
+    apply_migrations(&conn).unwrap();
+    drop(conn);
+
+    let summary = scan_folder(&db_path, music_dir.to_str().unwrap(), |_| {}).unwrap();
+
+    assert_eq!(summary.total, 0);
+    assert_eq!(summary.scanned, 0);
+    assert_eq!(summary.skipped, 0);
+    assert_eq!(summary.errors, 0);
+
+    let conn = open_db(&db_path).unwrap();
+    let tracks = list_tracks(&conn, "id", "asc").unwrap();
+    assert!(tracks.is_empty());
+}

@@ -81,13 +81,25 @@ cargo tauri dev
 
 ### Testing
 ```bash
-# Run all Rust tests
-cargo test
+# Frontend static checks (Svelte + TypeScript)
+pnpm run check:ui
+
+# Frontend tests (Vitest)
+pnpm run test:ui
+
+# Rust workspace tests
+pnpm run test:rust
+
+# Full local parity with CI gate
+pnpm run test:all
+pnpm run ci:local
 
 # Run specific crate tests
 cargo test -p audio-engine
 cargo test -p library
 ```
+
+See [docs/testing-strategy.md](docs/testing-strategy.md) for local↔CI command mapping and parity policy.
 
 ### Project Structure
 ```

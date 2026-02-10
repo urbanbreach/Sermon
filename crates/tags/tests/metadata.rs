@@ -1,8 +1,8 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use tags::{NumberPatch, TagPatch, TagPatches, TagWriteOptions, write_tags};
 use tags::{read_metadata, read_metadata_result};
+use tags::{write_tags, NumberPatch, TagPatch, TagPatches, TagWriteOptions};
 use tempfile::tempdir;
 
 fn create_test_wav(path: &Path) {
@@ -50,6 +50,61 @@ fn test_read_wav_metadata() {
     assert_eq!(metadata.channels, Some(2));
     assert_eq!(metadata.bit_depth, Some(16));
     assert!(metadata.duration_ms.is_some());
+}
+
+#[test]
+fn test_read_wav_metadata_without_tags() {
+    let dir = tempdir().unwrap();
+    let wav_path = dir.path().join("no_tags.wav");
+    create_test_wav(&wav_path);
+
+    let metadata = read_metadata(&wav_path);
+
+    // Untagged file should still expose technical metadata.
+    assert_eq!(metadata.sample_rate, Some(44100));
+    assert_eq!(metadata.channels, Some(2));
+    assert_eq!(metadata.bit_depth, Some(16));
+    assert!(metadata.duration_ms.is_some());
+
+    // But editable text/number tag fields should be empty.
+    assert!(metadata.title.is_none());
+    assert!(metadata.artist.is_none());
+    assert!(metadata.album.is_none());
+    assert!(metadata.album_artist.is_none());
+    assert!(metadata.genre.is_none());
+    assert!(metadata.lyricist.is_none());
+    assert!(metadata.track_no.is_none());
+    assert!(metadata.disc_no.is_none());
+    assert!(metadata.year.is_none());
+}
+
+#[test]
+fn test_read_wav_metadata_with_minimal_tags() {
+    let dir = tempdir().unwrap();
+    let wav_path = dir.path().join("minimal_tags.wav");
+    create_test_wav(&wav_path);
+
+    let patches = TagPatches {
+        title: TagPatch::Set("Only Title".to_string()),
+        ..Default::default()
+    };
+    write_tags(&wav_path, &patches, &TagWriteOptions::new()).unwrap();
+
+    let metadata = read_metadata(&wav_path);
+
+    assert_eq!(metadata.title, Some("Only Title".to_string()));
+    assert!(metadata.artist.is_none());
+    assert!(metadata.album.is_none());
+    assert!(metadata.album_artist.is_none());
+    assert!(metadata.genre.is_none());
+    assert!(metadata.track_no.is_none());
+    assert!(metadata.disc_no.is_none());
+    assert!(metadata.year.is_none());
+
+    // Technical metadata should still be intact after write.
+    assert_eq!(metadata.sample_rate, Some(44100));
+    assert_eq!(metadata.channels, Some(2));
+    assert_eq!(metadata.bit_depth, Some(16));
 }
 
 #[test]
