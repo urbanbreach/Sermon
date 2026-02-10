@@ -5,17 +5,23 @@
   import { getDevArtworkUrl, retainDevArtworkUrl, releaseDevArtworkUrl } from '../utils/artworkDevUrls';
   import type { AlbumListItem, TrackRow } from '../types/library';
   import { getAlbumKey, getAlbumArtworkUrl } from '../state/albumArtwork';
+  import { shouldAnimateAlbumInlineEnter } from '../state/albumInlineAnimation';
   import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback';
   import * as ContextMenu from './primitives/ContextMenu.svelte';
   import ArtworkImage from './ArtworkImage.svelte';
 
   interface Props {
     album: AlbumListItem;
+    closing?: boolean;
+    animationNonce?: number;
+    selectedColumnIndex?: number;
+    totalColumns?: number;
+    sameRowSwitch?: boolean;
     onClose?: () => void;
     onedit?: (trackIds: number[]) => void;
   }
 
-  let { album, onClose, onedit }: Props = $props();
+  let { album, closing = false, animationNonce = 0, selectedColumnIndex = 0, totalColumns = 1, sameRowSwitch = false, onClose, onedit }: Props = $props();
 
   let tracks = $state<TrackRow[]>([]);
   let loading = $state(false);
@@ -29,6 +35,27 @@
   const PREVIEW_ART_SIZE = 256;
   const DETAIL_ART_SIZE = 256;
   const LQIP_ART_SIZE = 32;
+
+  let shouldAnimateEnter = $state(true);
+  let contentTransitioning = $state(false);
+  let animateTrackEntrance = $state(false);
+
+  $effect(() => {
+    if (closing) {
+      shouldAnimateEnter = false;
+      return;
+    }
+
+    shouldAnimateEnter = shouldAnimateAlbumInlineEnter(animationNonce);
+  });
+
+  let wrapperEl = $state<HTMLDivElement | null>(null);
+  let wrapperWidth = $state(0);
+
+  let caretX = $derived.by(() => {
+    if (totalColumns <= 0 || wrapperWidth <= 0) return 0;
+    return ((2 * selectedColumnIndex + 1) / (2 * totalColumns)) * (wrapperWidth + 16) - 8;
+  });
 
   async function resolveArtworkCacheKey(targetAlbum: AlbumListItem): Promise<string | null> {
     if (targetAlbum.artworkCacheKey) return targetAlbum.artworkCacheKey;
@@ -116,55 +143,120 @@
   const DEFAULT_ROW_HEIGHT = 22;
   const TARGET_MAX_ROWS = 6;
 
-  type TrackLayout = {
-    columns: number;
-    height: string;
-    columnCounts: number[];
-  };
+  interface DiscGroup {
+    discNo: number;
+    tracks: TrackRow[];
+  }
 
-  let trackLayout = $derived.by<TrackLayout>(() => {
-    const trackCount = tracks.length;
-    if (trackCount === 0) {
-      return { columns: 1, height: 'auto', columnCounts: [] };
+  interface DiscSection {
+    discNo: number;
+    columns: TrackRow[][];
+    height: string;
+    showLabel: boolean;
+  }
+
+  function hasMultipleDiscs(tracks: TrackRow[]): boolean {
+    const discs = new Set(tracks.map((track) => track.discNo ?? 1));
+    return discs.size > 1 || (discs.size === 1 && !discs.has(1));
+  }
+
+  function groupTracksByDisc(tracks: TrackRow[]): DiscGroup[] {
+    const groups = new Map<number, TrackRow[]>();
+
+    for (const track of tracks) {
+      const discNo = track.discNo ?? 1;
+      if (!groups.has(discNo)) {
+        groups.set(discNo, []);
+      }
+      groups.get(discNo)!.push(track);
     }
 
-    const availableWidth = trackColumnsWidth;
-    const effectiveRowHeight = trackRowHeight || DEFAULT_ROW_HEIGHT;
+    const sortedDiscs = Array.from(groups.keys()).sort((a, b) => a - b);
+    return sortedDiscs.map((discNo) => ({
+      discNo,
+      tracks: groups.get(discNo)!
+    }));
+  }
+
+  let discGroups = $derived.by(() => groupTracksByDisc(tracks));
+  let showDiscDividers = $derived.by(() => hasMultipleDiscs(tracks));
+
+  function estimateTrackColumnsWidth(width: number): number {
+    if (width <= 0) return 0;
+
+    const horizontalPadding = 40;
+    if (width <= 900) {
+      return Math.max(MIN_COLUMN_WIDTH, width - horizontalPadding);
+    }
+
+    const artworkWidth = width <= 1200 ? 180 : 200;
+    return Math.max(
+      MIN_COLUMN_WIDTH,
+      width - artworkWidth - COLUMN_GAP - horizontalPadding
+    );
+  }
+
+  let sectionColumnCount = $derived.by(() => {
+    const totalTracks = tracks.length;
+    if (totalTracks === 0) return 1;
+
+    const availableWidth = trackColumnsWidth > 0
+      ? trackColumnsWidth
+      : estimateTrackColumnsWidth(wrapperWidth);
     const maxColumnsByWidth = Math.max(
       1,
       Math.floor((availableWidth + COLUMN_GAP) / (MIN_COLUMN_WIDTH + COLUMN_GAP))
     );
     const maxColumns = Math.min(MAX_COLUMNS, maxColumnsByWidth);
-    const columnsTarget = Math.ceil(trackCount / TARGET_MAX_ROWS);
-    const columns = Math.max(1, Math.min(columnsTarget, maxColumns));
-    const baseRows = Math.floor(trackCount / columns);
-    const remainder = trackCount % columns;
-    const columnCounts = Array.from({ length: columns }, (_, index) =>
-      baseRows + (index < remainder ? 1 : 0)
-    );
-    const rowsPerColumn = baseRows + (remainder > 0 ? 1 : 0);
-    const height = rowsPerColumn * effectiveRowHeight;
-
-    return { columns, height: `${Math.round(height)}px`, columnCounts };
+    const columnsTarget = Math.ceil(totalTracks / TARGET_MAX_ROWS);
+    return Math.max(1, Math.min(columnsTarget, maxColumns));
   });
 
-  let trackColumns = $derived.by<TrackRow[][]>(() => {
-    if (tracks.length === 0) {
-      return [];
-    }
+  let discSections = $derived.by<DiscSection[]>(() => {
+    if (tracks.length === 0) return [];
 
-    const { columns, columnCounts } = trackLayout;
-    if (columns <= 1) {
-      return [tracks];
-    }
+    const columns = sectionColumnCount;
+    const effectiveRowHeight = trackRowHeight || DEFAULT_ROW_HEIGHT;
+    const multiDisc = showDiscDividers;
+    const groups = multiDisc ? discGroups : [{ discNo: 1, tracks }];
 
-    const groups: TrackRow[][] = [];
-    let startIndex = 0;
-    for (const count of columnCounts) {
-      groups.push(tracks.slice(startIndex, startIndex + count));
-      startIndex += count;
-    }
-    return groups;
+    return groups.map((group) => {
+      const trackCount = group.tracks.length;
+      const cols = Math.min(columns, trackCount);
+
+      if (cols <= 1) {
+        const height = trackCount * effectiveRowHeight;
+        return {
+          discNo: group.discNo,
+          columns: [group.tracks],
+          height: `${Math.round(height)}px`,
+          showLabel: multiDisc
+        };
+      }
+
+      const baseRows = Math.floor(trackCount / cols);
+      const remainder = trackCount % cols;
+      const columnCounts = Array.from({ length: cols }, (_, i) =>
+        baseRows + (i < remainder ? 1 : 0)
+      );
+
+      const sectionColumns: TrackRow[][] = [];
+      let startIndex = 0;
+      for (const count of columnCounts) {
+        sectionColumns.push(group.tracks.slice(startIndex, startIndex + count));
+        startIndex += count;
+      }
+
+      const rowsPerColumn = baseRows + (remainder > 0 ? 1 : 0);
+      const height = rowsPerColumn * effectiveRowHeight;
+
+      return {
+        discNo: group.discNo,
+        columns: sectionColumns,
+        height: `${Math.round(height)}px`,
+        showLabel: multiDisc
+      };
+    });
   });
 
   let albumTitle = $derived(album.albumTitleDisplay || 'Unknown Album');
@@ -182,9 +274,19 @@
   $effect(() => {
     const key = getAlbumKey(album);
     if (key === activeAlbumKey) return;
+    const hadPreviousAlbum = activeAlbumKey !== '';
     activeAlbumKey = key;
-    tracks = [];
-    loadTracks(key);
+
+    if (!hadPreviousAlbum) {
+      tracks = [];
+    }
+
+    loadTracks(key, hadPreviousAlbum);
+
+    if (hadPreviousAlbum) {
+      contentTransitioning = true;
+      setTimeout(() => { contentTransitioning = false; }, 200);
+    }
   });
 
 
@@ -198,6 +300,15 @@
       }
     });
     observer.observe(trackColumnsEl);
+    return () => observer.disconnect();
+  });
+
+  $effect(() => {
+    if (!wrapperEl) return;
+    const observer = new ResizeObserver((entries) => {
+      wrapperWidth = entries[0]?.contentRect.width ?? 0;
+    });
+    observer.observe(wrapperEl);
     return () => observer.disconnect();
   });
 
@@ -220,9 +331,11 @@
   });
 
 
-  async function loadTracks(albumKey: string) {
+  async function loadTracks(albumKey: string, skipLoadingState: boolean = false) {
     if (!album.albumArtistSort || !album.albumTitleSort) return;
-    loading = true;
+    if (!skipLoadingState) {
+      loading = true;
+    }
     loadError = null;
 
     try {
@@ -235,6 +348,10 @@
 
       if (albumKey !== activeAlbumKey) return;
       tracks = page.items;
+      requestAnimationFrame(() => {
+        animateTrackEntrance = true;
+        setTimeout(() => { animateTrackEntrance = false; }, 300);
+      });
     } catch (e) {
       console.error('Failed to load album tracks:', e);
       if (albumKey === activeAlbumKey) {
@@ -306,9 +423,19 @@
 </script>
 
 <div
-  class="inline-detail"
-  style={backgroundArtUrl ? `--album-art: url('${backgroundArtUrl}')` : ''}
+  class="inline-detail-wrapper"
+  class:animate-in={shouldAnimateEnter && !sameRowSwitch}
+  class:closing
+  bind:this={wrapperEl}
 >
+  <div class="caret-indicator" style="transform: translateX({caretX}px)"></div>
+  <div
+    class="inline-detail"
+    class:animate-enter={shouldAnimateEnter && !sameRowSwitch}
+    class:content-switch={contentTransitioning}
+    class:closing
+    style={backgroundArtUrl ? `--album-art: url('${backgroundArtUrl}')` : ''}
+  >
   <button class="close-btn" onclick={handleClose} aria-label="Close album details">
     <X size={16} />
   </button>
@@ -348,53 +475,73 @@
       </div>
 
       <div class="track-list">
-        {#if loading}
-          <div class="loading">Loading tracks...</div>
+        {#if loading && tracks.length === 0}
+          <div class="track-columns-skeleton">
+            {#each Array(6) as _, i}
+              <div class="track-row-skeleton" style="--skel-index: {i}">
+                <div class="skel skel-number"></div>
+                <div class="skel skel-title" style="width: {55 + (i * 7) % 30}%"></div>
+                <div class="skel skel-duration"></div>
+              </div>
+            {/each}
+          </div>
         {:else if loadError}
           <div class="error">{loadError}</div>
         {:else if tracks.length === 0}
           <div class="empty">No tracks found</div>
         {:else}
           <div
-            class="track-columns"
+            class="disc-sections"
+            class:animate-track-entrance={animateTrackEntrance}
             bind:this={trackColumnsEl}
-            style={`--track-columns: ${trackLayout.columns}; --track-columns-height: ${trackLayout.height}`}
           >
-            {#each trackColumns as column, columnIndex (columnIndex)}
-              <div class="track-column">
-                {#each column as track (track.id)}
-                  <ContextMenu.Root>
-                    <ContextMenu.Trigger asChild>
-                      {#snippet child({ props })}
-                        <div
-                          {...props}
-                          class="track-row"
-                          class:missing={track.isMissing}
-                          class:selected={track.id === selectedTrackId}
-                          role="button"
-                          tabindex={track.isMissing ? -1 : 0}
-                          aria-disabled={track.isMissing}
-                          onclick={() => handleTrackSelect(track)}
-                          ondblclick={() => handleTrackActivate(track)}
-                          onfocus={() => handleTrackSelect(track)}
-                          onkeydown={(event) => handleTrackKeydown(event, track)}
-                        >
-                          <div class="track-number">{track.trackNo || '-'}</div>
-                          <div class="track-title">{track.title || '—'}</div>
-                          <div class="track-duration">{formatDuration(track.durationMs)}</div>
-                        </div>
-                      {/snippet}
-                    </ContextMenu.Trigger>
-                    <ContextMenu.Portal>
-                      <ContextMenu.Content class="dropdown-content" data-testid="track-context-menu">
-                        <ContextMenu.Item class="dropdown-item" onclick={() => handleTrackActivate(track)}>Play Now</ContextMenu.Item>
-                        <ContextMenu.Item class="dropdown-item" onclick={() => handleQueueNext(track)}>Queue Next</ContextMenu.Item>
-                        <ContextMenu.Item class="dropdown-item" onclick={() => handleQueueLast(track)}>Queue Last</ContextMenu.Item>
-                        <ContextMenu.Separator class="dropdown-separator" />
-                        <ContextMenu.Item class="dropdown-item" onclick={() => handleEditTrack(track)}>Edit</ContextMenu.Item>
-                      </ContextMenu.Content>
-                    </ContextMenu.Portal>
-                  </ContextMenu.Root>
+            {#each discSections as section, sectionIndex (section.discNo)}
+              {#if section.showLabel}
+                <div class="disc-divider" aria-hidden="true">
+                  <span class="disc-label">Disc {section.discNo}</span>
+                </div>
+              {/if}
+              <div
+                class="track-columns"
+                style={`--track-columns: ${section.columns.length}; --track-columns-height: ${section.height}; --section-index: ${sectionIndex}`}
+              >
+                {#each section.columns as column, columnIndex (columnIndex)}
+                  <div class="track-column" style="--col-index: {columnIndex}">
+                    {#each column as track, trackIndex (track.id ?? `${sectionIndex}-${columnIndex}-${trackIndex}`)}
+                      <ContextMenu.Root>
+                        <ContextMenu.Trigger>
+                          {#snippet child({ props })}
+                            <div
+                              {...props}
+                              class="track-row"
+                              class:missing={track.isMissing}
+                              class:selected={track.id === selectedTrackId}
+                              role="button"
+                              tabindex={track.isMissing ? -1 : 0}
+                              aria-disabled={track.isMissing}
+                              onclick={() => handleTrackSelect(track)}
+                              ondblclick={() => handleTrackActivate(track)}
+                              onfocus={() => handleTrackSelect(track)}
+                              onkeydown={(event) => handleTrackKeydown(event, track)}
+                            >
+                              <div class="track-number">{track.trackNo || '-'}</div>
+                              <div class="track-title">{track.title || '—'}</div>
+                              <div class="track-duration">{formatDuration(track.durationMs)}</div>
+                            </div>
+                          {/snippet}
+                        </ContextMenu.Trigger>
+                        <ContextMenu.Portal>
+                          <ContextMenu.Content class="dropdown-content" data-testid="track-context-menu">
+                            <ContextMenu.Item class="dropdown-item" onclick={() => handleTrackActivate(track)}>Play Now</ContextMenu.Item>
+                            <ContextMenu.Item class="dropdown-item" onclick={() => handleQueueNext(track)}>Queue Next</ContextMenu.Item>
+                            <ContextMenu.Item class="dropdown-item" onclick={() => handleQueueLast(track)}>Queue Last</ContextMenu.Item>
+                            <ContextMenu.Separator class="dropdown-separator" />
+                            <ContextMenu.Item class="dropdown-item" onclick={() => handleEditTrack(track)}>Edit</ContextMenu.Item>
+                          </ContextMenu.Content>
+                        </ContextMenu.Portal>
+                      </ContextMenu.Root>
+                    {/each}
+                  </div>
                 {/each}
               </div>
             {/each}
@@ -403,6 +550,7 @@
       </div>
     </div>
   </div>
+</div>
 </div>
 
 <style>
@@ -415,6 +563,45 @@
     box-shadow: var(--shadow-3);
     color: var(--text-primary);
     --artwork-size: 200px;
+    --inline-detail-enter-duration: 200ms;
+    --inline-detail-exit-duration: 130ms;
+    --inline-detail-exit-ease: cubic-bezier(0.5, 0, 1, 1);
+    transform-origin: center top;
+  }
+
+  .inline-detail.animate-enter {
+    animation: inline-detail-enter var(--inline-detail-enter-duration) var(--ease-out) both;
+    will-change: transform, opacity;
+  }
+
+  .inline-detail.closing {
+    animation: inline-detail-exit var(--inline-detail-exit-duration) var(--inline-detail-exit-ease) both;
+    pointer-events: none;
+    will-change: transform, opacity;
+  }
+
+  @keyframes inline-detail-enter {
+    from {
+      opacity: 0;
+      transform: translateY(-8px) scale(0.988);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes inline-detail-exit {
+    from {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+
+    to {
+      opacity: 0;
+      transform: translateY(-5px) scale(0.99);
+    }
   }
 
   .inline-detail::before {
@@ -427,6 +614,25 @@
     filter: blur(36px) saturate(0.95);
     opacity: 0.5;
     transform: scale(1.1);
+  }
+
+  .inline-detail.animate-enter::before {
+    animation: inline-detail-bg-enter 220ms var(--ease-out) 40ms both;
+    will-change: opacity;
+  }
+
+  .inline-detail.closing::before {
+    animation: none;
+  }
+
+  @keyframes inline-detail-bg-enter {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 0.5;
+    }
   }
 
   .inline-detail::after {
@@ -453,6 +659,27 @@
     cursor: pointer;
   }
 
+  .inline-detail.animate-enter .close-btn {
+    animation: inline-detail-close-btn-enter 130ms var(--ease-out) 100ms both;
+    will-change: transform, opacity;
+  }
+
+  .inline-detail.closing .close-btn {
+    animation: none;
+  }
+
+  @keyframes inline-detail-close-btn-enter {
+    from {
+      opacity: 0;
+      transform: scale(0.82);
+    }
+
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
   .close-btn:hover {
     color: var(--text-primary);
     background: rgba(0, 0, 0, 0.6);
@@ -471,6 +698,28 @@
   .artwork-column {
     display: flex;
     align-items: flex-start;
+  }
+
+  .inline-detail.animate-enter .artwork-column {
+    animation: inline-detail-artwork-enter 170ms var(--ease-out) 30ms both;
+    transform-origin: center;
+    will-change: transform, opacity;
+  }
+
+  .inline-detail.closing .artwork-column {
+    animation: none;
+  }
+
+  @keyframes inline-detail-artwork-enter {
+    from {
+      opacity: 0;
+      transform: scale(0.94);
+    }
+
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
   }
 
   .artwork,
@@ -501,6 +750,27 @@
     justify-content: space-between;
     align-items: flex-start;
     gap: 16px;
+  }
+
+  .inline-detail.animate-enter .header-row {
+    animation: inline-detail-content-enter 140ms var(--ease-out) 50ms both;
+    will-change: transform, opacity;
+  }
+
+  .inline-detail.closing .header-row {
+    animation: none;
+  }
+
+  @keyframes inline-detail-content-enter {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .album-title {
@@ -540,6 +810,33 @@
     overflow: visible;
   }
 
+  .inline-detail.animate-enter .track-list {
+    animation: inline-detail-tracks-enter 150ms var(--ease-out) 80ms both;
+    will-change: transform, opacity;
+  }
+
+  .inline-detail.closing .track-list {
+    animation: none;
+  }
+
+  @keyframes inline-detail-tracks-enter {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .disc-sections {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+
   .track-columns {
     display: grid;
     grid-template-columns: repeat(var(--track-columns, 2), minmax(0, 1fr));
@@ -547,12 +844,36 @@
     height: var(--track-columns-height, auto);
     min-height: 0;
     width: 100%;
+    transition: height 180ms var(--ease-out);
   }
 
   .track-column {
     display: flex;
     flex-direction: column;
     min-width: 0;
+  }
+
+  .disc-divider {
+    display: flex;
+    align-items: center;
+    padding: 2px 0;
+    margin-top: 4px;
+    user-select: none;
+  }
+
+  .disc-divider:first-child {
+    margin-top: 0;
+  }
+
+  .disc-label {
+    font-size: 9.5px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+    color: var(--text-tertiary);
+    opacity: 0.55;
+    padding-left: 2px;
   }
 
   .track-row {
@@ -648,5 +969,174 @@
     .info-column {
       height: auto;
     }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .inline-detail,
+    .inline-detail::before,
+    .inline-detail .close-btn,
+    .inline-detail .artwork-column,
+    .inline-detail .header-row,
+    .inline-detail .track-list,
+    .caret-indicator,
+    .track-row-skeleton,
+    .skel,
+    .inline-detail.content-switch .artwork-column,
+    .inline-detail.content-switch .header-row,
+    .inline-detail.content-switch .track-list {
+      animation-duration: 1ms !important;
+      animation-delay: 0ms !important;
+    }
+
+    .disc-sections.animate-track-entrance .track-column {
+      animation: none !important;
+    }
+
+    .caret-indicator {
+      transition: none !important;
+    }
+  }
+
+  /* ===== WRAPPER ===== */
+  .inline-detail-wrapper {
+    position: relative;
+    padding-top: 10px;
+  }
+
+  /* ===== CARET INDICATOR ===== */
+  .caret-indicator {
+    position: absolute;
+    top: 0;
+    left: -9px;
+    z-index: 3;
+    width: 18px;
+    height: 10px;
+    will-change: transform, opacity;
+    pointer-events: none;
+    opacity: 0;
+  }
+
+  .caret-indicator::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    border-left: 9px solid transparent;
+    border-right: 9px solid transparent;
+    border-bottom: 10px solid rgba(255, 255, 255, 0.18);
+  }
+
+  .inline-detail-wrapper.animate-in .caret-indicator {
+    animation: caret-enter 160ms var(--ease-out) 60ms both;
+  }
+
+  .inline-detail-wrapper:not(.animate-in):not(.closing) .caret-indicator {
+    opacity: 1;
+    transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .inline-detail-wrapper.closing .caret-indicator {
+    animation: caret-exit 130ms cubic-bezier(0.5, 0, 1, 1) both;
+  }
+
+  @keyframes caret-enter {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes caret-exit {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+
+  /* ===== CONTENT SWITCH (same-row album change) ===== */
+  .inline-detail.content-switch .artwork-column {
+    animation: inline-content-artwork 170ms var(--ease-out) both;
+    will-change: transform, opacity;
+  }
+
+  .inline-detail.content-switch .header-row {
+    animation: inline-content-header 150ms var(--ease-out) 25ms both;
+    will-change: transform, opacity;
+  }
+
+  .inline-detail.content-switch .track-list {
+    animation: inline-content-tracks 150ms var(--ease-out) 40ms both;
+    will-change: transform, opacity;
+  }
+
+  @keyframes inline-content-artwork {
+    from { opacity: 0.3; transform: scale(0.97); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  @keyframes inline-content-header {
+    from { opacity: 0.2; transform: translateY(3px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes inline-content-tracks {
+    from { opacity: 0.2; transform: translateY(2px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ===== SKELETON LOADING ===== */
+  .track-columns-skeleton {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .track-row-skeleton {
+    display: grid;
+    grid-template-columns: 22px 1fr auto;
+    gap: 10px;
+    padding: 4px 0;
+    animation: skeleton-fade-in 150ms var(--ease-out) both;
+    animation-delay: calc(var(--skel-index, 0) * 20ms);
+  }
+
+  .skel {
+    border-radius: 4px;
+    height: 12px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.04) 0%,
+      rgba(255, 255, 255, 0.08) 50%,
+      rgba(255, 255, 255, 0.04) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  .skel-number {
+    width: 16px;
+    justify-self: end;
+  }
+
+  .skel-duration {
+    width: 32px;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  @keyframes skeleton-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  /* ===== TRACK LIST COLUMN CASCADE ENTRANCE ===== */
+  .disc-sections.animate-track-entrance .track-column {
+    animation: column-cascade-enter 120ms cubic-bezier(0.25, 1, 0.5, 1) both;
+    animation-delay: calc(var(--col-index, 0) * 35ms);
+  }
+
+  @keyframes column-cascade-enter {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 </style>

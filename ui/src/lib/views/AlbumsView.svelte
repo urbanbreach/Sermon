@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { getLibraryStats, listAlbumsPage, listAlbumTracksPage } from '../api/library';
-  import type { AlbumListItem } from '../types/library';
+  import type { AlbumListItem, LibraryStats } from '../types/library';
   import { setViewTitle } from '../state/viewTitle';
   import { setAlphabetSelector, clearAlphabetSelector } from '../state/alphabetSelector';
   import {
@@ -10,14 +10,27 @@
     bumpAlbumArtworkVersion,
     resetAlbumArtworkCache
   } from '../state/albumArtwork';
+  import {
+    clearAlbumsViewCache,
+    isAlbumsViewCacheFresh,
+    readAlbumsViewCache,
+    writeAlbumsViewCache
+  } from '../state/albumsViewCache';
   import ArtworkPickerModal from '../components/ArtworkPickerModal.svelte';
-  import TagEditor from '../components/TagEditor.svelte';
+  import { openTagEditorWindow } from '../state/tagEditorWindow';
   import * as ContextMenu from '../components/primitives/ContextMenu.svelte';
 import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback';
+  import { selectAlbumSummary } from '../state/albumSelection';
   import AlbumInlineDetail from '../components/AlbumInlineDetail.svelte';
   import ArtworkImage from '../components/ArtworkImage.svelte';
   import AlbumsArtworkSurface from '../components/AlbumsArtworkSurface.svelte';
-  import { expandedAlbum, toggleAlbumInline, openAlbumInlineFromItem, clearAlbumInline } from '../state/albumInline';
+  import {
+    ALBUM_INLINE_CLOSE_DURATION_MS,
+    expandedAlbum,
+    toggleAlbumInline,
+    openAlbumInlineFromItem,
+    clearAlbumInline
+  } from '../state/albumInline';
   import SkeletonCard from '../components/SkeletonCard.svelte';
   import { Disc3 } from '@lucide/svelte';
   import { fadeIn } from '../utils/animations';
@@ -36,9 +49,6 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
   let pickerOpen = $state(false);
   let pickerAlbum: AlbumListItem | null = $state(null);
 
-  // Tag editor state
-  let tagEditorOpen = $state(false);
-  let editingTrackIds = $state<number[]>([]);
   let useArtworkSurface = $state(false);
 
   // Virtualization state
@@ -66,9 +76,9 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
   const HIGH_VELOCITY_CONFIRM_MS = 120;
   let activeBufferSize = $derived(ultraFastScroll ? 220 : deferHighRes ? 300 : 700);
   
-  // Compute columns based on container width (min 160px + 20px gap)
+  // Compute columns based on container width (min 160px + 16px gap)
   // containerWidth - 32 accounts for 1rem (16px) padding on each side
-  let columns = $derived(Math.max(1, Math.floor((containerWidth - 32 + 20) / 180)));
+  let columns = $derived(Math.max(1, Math.floor((containerWidth - 32 + 16) / 176)));
   
   // Chunk albums into rows
   let rows = $derived.by(() => {
@@ -92,6 +102,18 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
     return Math.floor(index / columns);
   });
 
+  let expandedAlbumIndex = $derived.by(() => {
+    const target = $expandedAlbum;
+    if (!target) return -1;
+    return albums.findIndex(
+      (album) =>
+        album.albumArtistSort === target.albumArtistSort &&
+        album.albumTitleSort === target.albumTitleSort
+    );
+  });
+
+  let expandedColumnIndex = $derived(expandedAlbumIndex >= 0 ? expandedAlbumIndex % columns : -1);
+
   let expandedAlbumItem = $derived.by(() => {
     const target = $expandedAlbum;
     if (!target) return null;
@@ -103,6 +125,56 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
       ) || null
     );
   });
+
+  // Same-row switch detection
+  let sameRowSwitch = $state(false);
+  let detailRowOpening = $state(false);
+  let _prevExpandedRowIndex = -1;
+  let _prevExpandedKey = '';
+  let _lastDetailOpenNonce = -1;
+
+  $effect(() => {
+    const target = $expandedAlbum;
+    const currentRow = expandedRowIndex;
+    const currentKey = target && !target.isClosing
+      ? `${target.albumArtistSort}||${target.albumTitleSort}`
+      : '';
+
+    const isSameRow = (
+      currentRow >= 0 &&
+      currentRow === _prevExpandedRowIndex &&
+      currentKey !== '' &&
+      _prevExpandedKey !== '' &&
+      currentKey !== _prevExpandedKey
+    );
+
+    sameRowSwitch = isSameRow;
+    _prevExpandedRowIndex = currentRow;
+    _prevExpandedKey = currentKey;
+  });
+
+  $effect(() => {
+    const target = $expandedAlbum;
+    if (!target || target.isClosing) {
+      detailRowOpening = false;
+      return;
+    }
+
+    const nonce = target.animationNonce ?? 0;
+    if (nonce === _lastDetailOpenNonce) {
+      return;
+    }
+
+    _lastDetailOpenNonce = nonce;
+    detailRowOpening = true;
+  });
+
+  function handleDetailRowAnimationEnd(event: AnimationEvent) {
+    if (!event.animationName.includes('detail-row-open')) {
+      return;
+    }
+    detailRowOpening = false;
+  }
 
 
   let displayRows = $derived.by(() => {
@@ -225,13 +297,18 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
 
   async function loadAllAlbums() {
     if (loading) return;
+
+    const hadAlbums = albums.length > 0;
     loading = true;
-    initialLoadComplete = false;
+    if (!hadAlbums) {
+      initialLoadComplete = false;
+    }
 
     try {
-      const { albumCount } = await getLibraryStats();
-      const page = await listAlbumsPage(albumCount + 10, undefined);
+      const stats = await getLibraryStats();
+      const page = await listAlbumsPage(stats.albumCount + 10, undefined);
       albums = page.items;
+      writeAlbumsViewCache(albums, stats);
     } catch (e) {
       console.error('Failed to load albums:', e);
     } finally {
@@ -240,15 +317,39 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
     }
   }
 
+  async function validateAlbumsCache(): Promise<void> {
+    const cache = readAlbumsViewCache();
+    if (!cache.hydrated) {
+      return;
+    }
+
+    try {
+      const stats: Pick<LibraryStats, 'albumCount' | 'lastScanCompletedMs'> = await getLibraryStats();
+      if (isAlbumsViewCacheFresh(stats)) {
+        return;
+      }
+      await loadAllAlbums();
+    } catch (e) {
+      console.warn('Failed to validate albums cache:', e);
+    }
+  }
+
   onMount(() => {
     setViewTitle('Albums');
-    void loadAllAlbums();
+
+    const cache = readAlbumsViewCache();
+    if (cache.hydrated) {
+      albums = cache.items;
+      initialLoadComplete = true;
+      void validateAlbumsCache();
+    } else {
+      void loadAllAlbums();
+    }
     
     // Listen for library changes (after scan) to refresh artwork cache
     const handleLibraryChange = () => {
-      // Reset album list to reload from scratch
-      albums = [];
       resetAlbumArtworkCache();
+      clearAlbumsViewCache();
       void loadAllAlbums();
     };
     window.addEventListener('sermon:library-changed', handleLibraryChange);
@@ -274,6 +375,7 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
   function handleAlbumClick(album: AlbumListItem, event?: Event) {
     const clickCount = event instanceof MouseEvent ? event.detail : 1;
     if (clickCount > 1) return;
+    selectAlbumSummary(album);
     toggleAlbumInline({
       albumArtistSort: album.albumArtistSort,
       albumTitleSort: album.albumTitleSort
@@ -281,6 +383,7 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
   }
 
   function handleAlbumDoubleClick(album: AlbumListItem) {
+    selectAlbumSummary(album);
     openAlbumInlineFromItem(album);
   }
 
@@ -299,16 +402,10 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
     try {
       // Fetch all tracks for the album to edit
       const page = await listAlbumTracksPage(album.albumArtistSort, album.albumTitleSort, 10000);
-      editingTrackIds = page.items.map(t => t.id);
-      tagEditorOpen = true;
+      await openTagEditorWindow(page.items.map((track) => track.id));
     } catch (e) {
       console.error('Failed to load album tracks for editing', e);
     }
-  }
-
-  function closeTagEditor() {
-    tagEditorOpen = false;
-    editingTrackIds = [];
   }
 
   function handleArtworkSurfaceUnsupported() {
@@ -362,7 +459,7 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
       <p class="empty-hint">Add a library folder in Preferences to see your music</p>
     </div>
   {:else}
-    <div class="list-wrapper" bind:this={listWrapperEl}>
+    <div class="list-wrapper" bind:this={listWrapperEl} use:fadeIn={{ duration: 220, y: 6 }}>
       <VList
         bind:this={vlistRef}
         data={displayRows}
@@ -383,6 +480,7 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
                       <div
                         {...props}
                         class="card"
+                        class:expanded={$expandedAlbum != null && !$expandedAlbum.isClosing && album.albumArtistSort === $expandedAlbum.albumArtistSort && album.albumTitleSort === $expandedAlbum.albumTitleSort}
                         role="button"
                         tabindex="0"
                         onkeydown={(e) => e.key === 'Enter' && handleAlbumClick(album)}
@@ -438,13 +536,23 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
               {/each}
             </div>
           {:else}
-            <div class="detail-row">
+            <div
+              class="detail-row"
+              class:opening={detailRowOpening && !sameRowSwitch && !($expandedAlbum?.isClosing ?? false)}
+              class:closing={$expandedAlbum?.isClosing ?? false}
+              style={`--inline-detail-close-duration: ${ALBUM_INLINE_CLOSE_DURATION_MS}ms`}
+              onanimationend={handleDetailRowAnimationEnd}
+            >
               <AlbumInlineDetail
                 album={item.album}
+                closing={$expandedAlbum?.isClosing ?? false}
+                animationNonce={$expandedAlbum?.animationNonce ?? 0}
+                selectedColumnIndex={expandedColumnIndex}
+                totalColumns={columns}
+                sameRowSwitch={sameRowSwitch}
                 onClose={() => clearAlbumInline()}
                 onedit={(trackIds) => {
-                  editingTrackIds = trackIds;
-                  tagEditorOpen = true;
+                  void openTagEditorWindow(trackIds);
                 }}
               />
             </div>
@@ -476,8 +584,6 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
   onselect={handleArtworkSelected}
 />
 
-<TagEditor trackIds={editingTrackIds} open={tagEditorOpen} onclose={closeTagEditor} />
-
 <style>
   .view-container {
     padding: 1rem;
@@ -497,7 +603,7 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
   .albums-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 20px;
+    gap: 16px;
     padding-right: 1rem;
   }
   
@@ -509,8 +615,8 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
   
   .grid-row {
     display: grid;
-    gap: 20px;
-    margin-bottom: 20px;
+    gap: 16px;
+    margin-bottom: 16px;
     padding-right: 1rem;
     overflow: visible;
   }
@@ -521,24 +627,67 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
   }
 
   .detail-row {
+    margin-top: -6px;
     padding-right: 1rem;
     margin-bottom: 24px;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    transition:
+      grid-template-rows var(--inline-detail-close-duration, 180ms) cubic-bezier(0.5, 0, 1, 1),
+      margin-bottom var(--inline-detail-close-duration, 180ms) cubic-bezier(0.5, 0, 1, 1);
+  }
+
+  .detail-row.closing {
+    grid-template-rows: minmax(0, 0fr);
+    margin-bottom: 0;
+    will-change: grid-template-rows, margin-bottom;
+  }
+
+  .detail-row.opening {
+    animation: detail-row-open 180ms var(--ease-out) both;
+  }
+
+  @keyframes detail-row-open {
+    from {
+      grid-template-rows: minmax(0, 0fr);
+      margin-bottom: 0;
+    }
+  }
+
+  .detail-row > :global(.inline-detail-wrapper) {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .detail-row.opening {
+      animation-duration: 1ms;
+    }
   }
 
   .card {
     background: transparent;
     border-radius: var(--artwork-radius-albums, 10px);
-    border: none;
+    border: 2px solid transparent;
     box-shadow: none;
     overflow: hidden;
     display: flex;
     flex-direction: column;
     cursor: pointer;
     position: relative;
-    transition: background var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
+    transition: background var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out), filter var(--motion-medium) var(--ease-out);
     padding: 0;
     width: 100%;
     box-sizing: border-box;
+  }
+
+  .card.expanded {
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .card.expanded:hover {
+    border-color: rgba(255, 255, 255, 0.25);
+    box-shadow: var(--shadow-2);
   }
 
   .card:hover {
@@ -577,11 +726,11 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
   }
 
   .info {
-    padding: 10px 0 0 0;
+    padding: 8px 2px 4px 2px;
     min-height: auto;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 1px;
     align-items: center;
     text-align: center;
   }
@@ -592,14 +741,14 @@ import { playNowWithQueue, addToQueue, addToQueueNext } from '../state/playback'
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: 14px;
+    font-size: 13px;
     line-height: 1.3;
     color: var(--text-primary);
     width: 100%;
   }
 
   .artist {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--text-secondary);
     font-weight: 400;
     white-space: nowrap;
