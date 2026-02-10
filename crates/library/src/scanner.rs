@@ -1,9 +1,9 @@
 use crate::db::{self, open_db};
 use crate::error::LibraryError;
-use crate::identity::{IdentitySource, compute_partial_hash, get_file_identity};
+use crate::identity::{compute_partial_hash, get_file_identity, IdentitySource};
 use crate::models::{FolderOptions, QuickScanSummary, ScanProgress, ScanSummary, TrackRow};
 use globset::{Glob, GlobSetBuilder};
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use std::collections::HashSet;
 use std::path::Path;
 use std::time::Instant;
@@ -194,6 +194,7 @@ fn process_file(
         bit_depth: metadata.bit_depth.map(|v| v as i32),
         channels: metadata.channels.map(|v| v as i32),
         duration_ms: metadata.duration_ms.map(|v| v as i64),
+        loudness_db: metadata.loudness_db.map(|v| v as f64),
         dsd_rate_hz: metadata.dsd_rate_hz.map(|v| v as i32),
         dsd_channels: metadata.dsd_channels.map(|v| v as i32),
         is_missing: false,
@@ -518,6 +519,66 @@ pub fn quick_scan(db_path: &Path) -> Result<QuickScanSummary, LibraryError> {
     Ok(summary)
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LoudnessBackfillSummary {
+    pub candidates: u64,
+    pub checked: u64,
+    pub updated: u64,
+    pub skipped: bool,
+}
+
+/// One-time backfill for tracks that predate loudness_db extraction.
+///
+/// This reads metadata for tracks with NULL loudness_db and writes parsed
+/// ReplayGain values when available. The operation is guarded by a setting
+/// key so it runs at most once per database.
+pub fn backfill_loudness_metadata_once(
+    db_path: &Path,
+) -> Result<LoudnessBackfillSummary, LibraryError> {
+    let conn = open_db(db_path)?;
+    let marker_key = "library.loudness_backfill_v1_done";
+
+    if matches!(db::get_setting(&conn, marker_key)?, Some(v) if v == "on") {
+        return Ok(LoudnessBackfillSummary {
+            skipped: true,
+            ..Default::default()
+        });
+    }
+
+    let candidates = get_tracks_without_loudness(&conn)?;
+    let mut summary = LoudnessBackfillSummary {
+        candidates: candidates.len() as u64,
+        checked: 0,
+        updated: 0,
+        skipped: false,
+    };
+
+    for (track_id, track_path) in candidates {
+        let path = Path::new(&track_path);
+        if !path.exists() {
+            continue;
+        }
+
+        summary.checked += 1;
+        let metadata = tags::read_metadata(path);
+        if let Some(loudness_db) = metadata.loudness_db {
+            db::update_track_loudness(&conn, track_id, loudness_db as f64)?;
+            summary.updated += 1;
+        }
+    }
+
+    db::set_setting(&conn, marker_key, "on")?;
+
+    info!(
+        candidates = summary.candidates,
+        checked = summary.checked,
+        updated = summary.updated,
+        "loudness_backfill_complete"
+    );
+
+    Ok(summary)
+}
+
 /// Get all tracks for a folder with their paths and missing status
 fn get_folder_tracks(
     conn: &Connection,
@@ -529,6 +590,20 @@ fn get_folder_tracks(
     let rows = stmt.query_map(params![folder_id], |row| {
         Ok((row.get(0)?, row.get(1)?, row.get(2)?))
     })?;
+
+    let mut tracks = Vec::new();
+    for row in rows {
+        tracks.push(row?);
+    }
+
+    Ok(tracks)
+}
+
+fn get_tracks_without_loudness(conn: &Connection) -> Result<Vec<(i64, String)>, LibraryError> {
+    let mut stmt =
+        conn.prepare("SELECT id, path FROM tracks WHERE is_missing = 0 AND loudness_db IS NULL")?;
+
+    let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
 
     let mut tracks = Vec::new();
     for row in rows {

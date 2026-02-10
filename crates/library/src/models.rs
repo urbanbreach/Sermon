@@ -40,6 +40,7 @@ pub struct TrackRow {
     pub bit_depth: Option<i32>,
     pub channels: Option<i32>,
     pub duration_ms: Option<i64>,
+    pub loudness_db: Option<f64>,
     // DSD-specific
     pub dsd_rate_hz: Option<i32>,
     pub dsd_channels: Option<i32>,

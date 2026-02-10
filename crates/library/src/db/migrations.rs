@@ -59,6 +59,12 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), LibraryError> {
         version = 9;
     }
 
+    if version < 10 {
+        info!("Applying migration 0010_loudness_metadata");
+        conn.execute_batch(include_str!("../../migrations/0010_loudness_metadata.sql"))?;
+        version = 10;
+    }
+
     let _ = version;
 
     Ok(())

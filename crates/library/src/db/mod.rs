@@ -5,7 +5,7 @@ use crate::models::{
     AlbumCursor, AlbumListItem, ArtistCursor, ArtistListItem, LibraryFolder, LibraryStats,
     OffsetCursor, Page, SearchHit, SearchSuggestResponse, TrackRow,
 };
-use rusqlite::{Connection, OptionalExtension, Row, params};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 use std::path::Path;
 
 pub fn open_db(path: &Path) -> Result<Connection, LibraryError> {
@@ -57,6 +57,7 @@ fn map_track(row: &Row) -> rusqlite::Result<TrackRow> {
         bit_depth: row.get("bit_depth")?,
         channels: row.get("channels")?,
         duration_ms: row.get("duration_ms")?,
+        loudness_db: row.get("loudness_db")?,
         dsd_rate_hz: row.get("dsd_rate_hz")?,
         dsd_channels: row.get("dsd_channels")?,
         is_missing: row.get("is_missing")?,
@@ -118,7 +119,7 @@ pub fn upsert_track(conn: &Connection, track: &TrackRow) -> Result<i64, LibraryE
                 library_folder_id = ?, path = ?, path_display = ?, path_lossy = ?,
                 hash = ?, title = ?, artist = ?, album = ?, album_artist = ?,
                 track_no = ?, disc_no = ?, year = ?, genre = ?,
-                codec = ?, container = ?, sample_rate = ?, bit_depth = ?, channels = ?, duration_ms = ?,
+                codec = ?, container = ?, sample_rate = ?, bit_depth = ?, channels = ?, duration_ms = ?, loudness_db = ?,
                 dsd_rate_hz = ?, dsd_channels = ?,
                 is_missing = ?, missing_since_ms = ?
              WHERE id = ?",
@@ -126,7 +127,7 @@ pub fn upsert_track(conn: &Connection, track: &TrackRow) -> Result<i64, LibraryE
                 track.library_folder_id, track.path, track.path_display, track.path_lossy,
                 track.hash, track.title, track.artist, track.album, track.album_artist,
                 track.track_no, track.disc_no, track.year, track.genre,
-                track.codec, track.container, track.sample_rate, track.bit_depth, track.channels, track.duration_ms,
+                track.codec, track.container, track.sample_rate, track.bit_depth, track.channels, track.duration_ms, track.loudness_db,
                 track.dsd_rate_hz, track.dsd_channels,
                 track.is_missing, track.missing_since_ms,
                 id
@@ -140,15 +141,15 @@ pub fn upsert_track(conn: &Connection, track: &TrackRow) -> Result<i64, LibraryE
                 library_folder_id, path, path_display, path_lossy, identity_source,
                 volume_serial, file_id, mtime_ms, size_bytes, hash,
                 title, artist, album, album_artist, track_no, disc_no, year, genre,
-                codec, container, sample_rate, bit_depth, channels, duration_ms,
+                codec, container, sample_rate, bit_depth, channels, duration_ms, loudness_db,
                 dsd_rate_hz, dsd_channels,
                 is_missing, missing_since_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 track.library_folder_id, track.path, track.path_display, track.path_lossy, track.identity_source,
                 track.volume_serial, track.file_id, track.mtime_ms, track.size_bytes, track.hash,
                 track.title, track.artist, track.album, track.album_artist, track.track_no, track.disc_no, track.year, track.genre,
-                track.codec, track.container, track.sample_rate, track.bit_depth, track.channels, track.duration_ms,
+                track.codec, track.container, track.sample_rate, track.bit_depth, track.channels, track.duration_ms, track.loudness_db,
                 track.dsd_rate_hz, track.dsd_channels,
                 track.is_missing, track.missing_since_ms
             ]
@@ -230,6 +231,18 @@ pub fn get_folder_by_path(
     .map_err(LibraryError::from)
 }
 
+pub fn update_track_loudness(
+    conn: &Connection,
+    track_id: i64,
+    loudness_db: f64,
+) -> Result<(), LibraryError> {
+    conn.execute(
+        "UPDATE tracks SET loudness_db = ? WHERE id = ?",
+        params![loudness_db, track_id],
+    )?;
+    Ok(())
+}
+
 // Settings helpers
 
 pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>, LibraryError> {
@@ -265,16 +278,41 @@ pub fn get_audio_device_preference(conn: &Connection) -> String {
     }
 }
 
+fn normalize_output_mode(value: &str) -> &str {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "exclusive" => "exclusive",
+        "shared" => "shared",
+        "asio" => "asio",
+        _ => "exclusive",
+    }
+}
+
+fn normalize_output_policy(value: &str) -> &str {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "strict" => "strict",
+        "compatibility" => "compatibility",
+        _ => "strict",
+    }
+}
+
+fn normalize_output_timing(value: &str) -> &str {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "event" => "event",
+        "polling" => "polling",
+        _ => "polling",
+    }
+}
+
 pub fn get_audio_output_mode(conn: &Connection) -> String {
     match get_setting(conn, "audio.output.mode") {
-        Ok(Some(v)) => v,
+        Ok(Some(v)) => normalize_output_mode(&v).to_string(),
         _ => "exclusive".to_string(),
     }
 }
 
 pub fn get_audio_output_policy(conn: &Connection) -> String {
     match get_setting(conn, "audio.output.policy") {
-        Ok(Some(v)) => v,
+        Ok(Some(v)) => normalize_output_policy(&v).to_string(),
         _ => "strict".to_string(),
     }
 }
@@ -288,7 +326,7 @@ pub fn get_audio_output_fade(conn: &Connection) -> bool {
 
 pub fn get_audio_output_timing(conn: &Connection) -> String {
     match get_setting(conn, "audio.output.timing") {
-        Ok(Some(v)) => v,
+        Ok(Some(v)) => normalize_output_timing(&v).to_string(),
         _ => "polling".to_string(),
     }
 }
