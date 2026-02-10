@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  frontend:
+    name: Frontend Checks & Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Get pnpm store directory
+        id: pnpm-store
+        shell: bash
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Run frontend checks
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm run check:ui 2>&1 | tee frontend-check.log
+
+      - name: Run frontend tests
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm run test:ui 2>&1 | tee frontend-test.log
+
+      - name: Upload frontend logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-test-logs
+          path: |
+            frontend-check.log
+            frontend-test.log
+          if-no-files-found: warn
+
+  rust:
+    name: Rust Workspace Tests (Windows + LLVM)
+    runs-on: windows-latest
+    needs: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install LLVM/Clang
+        id: llvm
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: '18'
+
+      - name: Set LIBCLANG_PATH
+        shell: pwsh
+        run: |
+          "LIBCLANG_PATH=$env:LLVM_PATH\bin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "$env:LLVM_PATH\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust target and cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run Rust tests
+        shell: pwsh
+        run: cargo test --workspace 2>&1 | Tee-Object -FilePath rust-test.log
+
+      - name: Upload Rust logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-test-logs
+          path: rust-test.log
+          if-no-files-found: warn
