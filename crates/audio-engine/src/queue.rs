@@ -198,4 +198,67 @@ mod tests {
         assert_eq!(ids, vec![1, 2, 20, 3]);
         assert_eq!(queue.current_index(), Some(1));
     }
+
+    #[test]
+    fn test_play_now_replaces_existing_queue_and_resets_current_index() {
+        let mut queue = PlaybackQueue::new();
+        queue.add_to_queue(make_track(1));
+        queue.add_to_queue(make_track(2));
+        let _ = queue.next();
+        assert_eq!(queue.current_index(), Some(1));
+
+        queue.play_now(make_track(99));
+
+        let ids: Vec<i64> = queue.items().iter().map(|i| i.track.id).collect();
+        assert_eq!(ids, vec![99]);
+        assert_eq!(queue.current_index(), Some(0));
+        assert_eq!(queue.current().map(|item| item.track.id), Some(99));
+    }
+
+    #[test]
+    fn test_set_and_play_clamps_start_index_and_uses_given_order() {
+        let mut queue = PlaybackQueue::new();
+
+        queue.set_and_play(vec![make_track(3), make_track(1), make_track(2)], 99);
+
+        let ids: Vec<i64> = queue.items().iter().map(|i| i.track.id).collect();
+        assert_eq!(ids, vec![3, 1, 2]);
+        assert_eq!(queue.current_index(), Some(2));
+        assert_eq!(queue.current().map(|item| item.track.id), Some(2));
+    }
+
+    #[test]
+    fn test_set_and_play_empty_tracks_clears_queue() {
+        let mut queue = PlaybackQueue::new();
+        queue.add_to_queue(make_track(1));
+        queue.add_to_queue(make_track(2));
+
+        queue.set_and_play(Vec::new(), 0);
+
+        assert!(queue.items().is_empty());
+        assert_eq!(queue.current_index(), None);
+        assert!(queue.current().is_none());
+    }
+
+    #[test]
+    fn test_clear_removes_items_and_next_is_none() {
+        let mut queue = PlaybackQueue::new();
+        queue.add_to_queue(make_track(1));
+        queue.add_to_queue(make_track(2));
+
+        queue.clear();
+
+        assert!(queue.items().is_empty());
+        assert!(queue.current().is_none());
+        assert_eq!(queue.current_index(), None);
+        assert!(queue.next().is_none());
+    }
+
+    #[test]
+    fn test_previous_on_empty_queue_returns_at_start() {
+        let mut queue = PlaybackQueue::new();
+
+        let action = queue.previous(0);
+        assert_eq!(action, PreviousAction::AtStart);
+    }
 }

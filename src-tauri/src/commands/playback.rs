@@ -873,3 +873,96 @@ pub fn cmd_output_set_settings(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_audio_output_settings_deserializes_camel_case_payload() {
+        let payload = r#"{
+            "mode": "exclusive",
+            "policy": "strict",
+            "fade": true,
+            "timing": "event",
+            "asioDriver": "Example Driver"
+        }"#;
+
+        let parsed: AudioOutputSettings =
+            serde_json::from_str(payload).expect("valid command payload should deserialize");
+
+        assert_eq!(
+            parsed.mode, "exclusive",
+            "mode should deserialize from command payload"
+        );
+        assert_eq!(
+            parsed.policy, "strict",
+            "policy should deserialize from command payload"
+        );
+        assert!(
+            parsed.fade,
+            "fade should deserialize as boolean true from command payload"
+        );
+        assert_eq!(
+            parsed.timing, "event",
+            "timing should deserialize from command payload"
+        );
+        assert_eq!(
+            parsed.asio_driver.as_deref(),
+            Some("Example Driver"),
+            "asioDriver camelCase field should map to asio_driver"
+        );
+    }
+
+    #[test]
+    fn test_audio_output_settings_rejects_invalid_fade_type() {
+        let payload = r#"{
+            "mode": "exclusive",
+            "policy": "strict",
+            "fade": "yes",
+            "timing": "event"
+        }"#;
+
+        let error = serde_json::from_str::<AudioOutputSettings>(payload)
+            .expect_err("invalid fade type should be rejected by the command contract");
+        let error_text = error.to_string();
+
+        assert!(
+            error_text.contains("boolean") || error_text.contains("bool"),
+            "serde error should explain that fade must be a boolean, got: {}",
+            error_text
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_cmd_list_asio_drivers_is_empty_off_windows() {
+        let drivers = cmd_list_asio_drivers();
+        assert!(
+            drivers.is_empty(),
+            "ASIO driver listing should be empty on non-Windows targets"
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_probe_wasapi_capabilities_reports_platform_error() {
+        let result = probe_wasapi_capabilities(None, 2, &[44_100], &[16]);
+        let error = result.expect_err("WASAPI probe should fail on non-Windows targets");
+        assert_eq!(
+            error, "WASAPI is only available on Windows",
+            "WASAPI probe error should communicate unsupported platform"
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_probe_asio_capabilities_reports_platform_error() {
+        let result = probe_asio_capabilities("Example Driver", 2, &[44_100], &[16, 24]);
+        let error = result.expect_err("ASIO probe should fail on non-Windows targets");
+        assert_eq!(
+            error, "ASIO is only available on Windows",
+            "ASIO probe error should communicate unsupported platform"
+        );
+    }
+}

@@ -1021,4 +1021,91 @@ mod tests {
         decoder.seek(500).expect("seek failed");
         assert!(!decoder.take_just_transitioned());
     }
+
+    #[test]
+    fn test_gapless_decoder_transition_updates_current_format_after_format_change() {
+        let samples1: Vec<i16> = (0..200).collect();
+        let samples2: Vec<i16> = (0..200).collect();
+        let wav_file1 = create_test_wav_with_format(&samples1, 44100, 1);
+        let wav_file2 = create_test_wav_with_format(&samples2, 48000, 1);
+
+        let mut decoder = GaplessDecoder::new(wav_file1.path()).expect("failed");
+        decoder
+            .preload_next(wav_file2.path())
+            .expect("failed to preload");
+
+        assert_eq!(decoder.transition_type(), TransitionType::FormatChange);
+        assert_eq!(decoder.format().sample_rate, 44100);
+
+        let mut transitioned = false;
+        while let Some(_chunk) = decoder.decode_next().expect("decode failed") {
+            if decoder.take_just_transitioned() {
+                transitioned = true;
+                break;
+            }
+        }
+
+        assert!(transitioned, "expected transition into preloaded track");
+        assert_eq!(decoder.format().sample_rate, 48000);
+        assert_eq!(decoder.transition_type(), TransitionType::EndOfQueue);
+    }
+
+    #[test]
+    fn test_gapless_decoder_seek_during_preload_resets_transition_plan() {
+        let samples: Vec<i16> = (0..44100).map(|i| (i % 1000) as i16).collect();
+        let wav_file1 = create_test_wav(&samples);
+        let wav_file2 = create_test_wav(&samples);
+
+        let mut decoder = GaplessDecoder::new(wav_file1.path()).expect("failed");
+        decoder
+            .preload_next(wav_file2.path())
+            .expect("failed to preload");
+        assert_eq!(decoder.transition_type(), TransitionType::Gapless);
+
+        decoder.seek(250).expect("seek failed");
+
+        assert!(!decoder.has_preloaded_next());
+        assert_eq!(decoder.transition_type(), TransitionType::EndOfQueue);
+        assert!(decoder.next_format().is_none());
+        assert!(!decoder.take_just_transitioned());
+
+        let decoded = decoder
+            .decode_next()
+            .expect("decode failed")
+            .expect("expected samples after seek");
+        assert!(!decoded.is_empty());
+    }
+
+    #[test]
+    fn test_gapless_decoder_short_track_single_sample_transition() {
+        let wav_file1 = create_test_wav(&[123]);
+        let wav_file2 = create_test_wav(&[456]);
+
+        let mut decoder = GaplessDecoder::new(wav_file1.path()).expect("failed");
+        decoder
+            .preload_next(wav_file2.path())
+            .expect("failed to preload");
+
+        let mut all_samples = Vec::new();
+        while let Some(chunk) = decoder.decode_next().expect("decode failed") {
+            all_samples.extend(chunk);
+        }
+
+        assert_eq!(all_samples.len(), 2);
+        assert!(!decoder.has_preloaded_next());
+        assert_eq!(decoder.transition_type(), TransitionType::EndOfQueue);
+    }
+
+    #[test]
+    fn test_preload_next_from_invalid_bytes_keeps_end_of_queue_state() {
+        let samples: Vec<i16> = (0..100).collect();
+        let wav_file = create_test_wav(&samples);
+
+        let mut decoder = GaplessDecoder::new(wav_file.path()).expect("failed");
+
+        let result = decoder.preload_next_from_bytes(vec![0x00, 0x01, 0x02, 0x03]);
+        assert!(result.is_err());
+        assert!(!decoder.has_preloaded_next());
+        assert_eq!(decoder.transition_type(), TransitionType::EndOfQueue);
+    }
 }

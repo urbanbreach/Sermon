@@ -241,4 +241,44 @@ mod tests {
         packer.reset();
         assert_eq!(packer.frame_index(), 0);
     }
+
+    #[test]
+    fn test_pack_ignores_incomplete_trailing_frame() {
+        let mut packer = DopPacker::new(2);
+        let input = [0x10u8, 0x20, 0x30, 0x40, 0x50, 0x60];
+
+        let output = packer.pack(&input);
+
+        assert_eq!(output.len(), 2);
+        assert_eq!(output[0], 0x051030);
+        assert_eq!(output[1], 0x052040);
+        assert_eq!(packer.frame_index(), 1);
+    }
+
+    #[test]
+    fn test_pack_marker_continues_across_multiple_calls() {
+        let mut packer = DopPacker::new(2);
+
+        let first = packer.pack(&[0x11u8, 0x22, 0x33, 0x44]);
+        let second = packer.pack(&[0x55u8, 0x66, 0x77, 0x88]);
+
+        assert_eq!(first, vec![0x051133, 0x052244]);
+        assert_eq!(second, vec![0xFA5577, 0xFA6688]);
+        assert_eq!(packer.frame_index(), 2);
+    }
+
+    #[test]
+    fn test_pack_with_zero_channels_panics() {
+        let result = std::panic::catch_unwind(|| {
+            let mut packer = DopPacker::new(0);
+            let _ = packer.pack(&[0x11u8, 0x22]);
+        });
+
+        assert!(result.is_err(), "zero channels should be invalid");
+    }
+
+    #[test]
+    fn test_dop_sample_rate_non_multiple_of_16_truncates() {
+        assert_eq!(dop_sample_rate(2_822_401), 176_400);
+    }
 }
