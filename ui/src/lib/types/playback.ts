@@ -8,6 +8,7 @@ export interface PlaybackStateEvent {
 
 export interface TrackEventData {
   id: number;
+  artworkCacheKey?: string;
   title?: string;
   artist?: string;
   album?: string;
@@ -95,5 +96,4 @@ export interface TrackMarkedMissingEvent {
   track_id: number;
   path: string;
 }
-
 

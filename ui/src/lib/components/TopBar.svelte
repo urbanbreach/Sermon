@@ -9,9 +9,7 @@
   import AlphabetSelector from './AlphabetSelector.svelte';
   import { SegmentedControl } from './primitives';
   import WindowControls from './WindowControls.svelte';
-  import DiagnosticsHoverCard from './DiagnosticsHoverCard.svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-
   const appWindow = getCurrentWindow();
 
   async function handleDoubleClick() {
@@ -19,6 +17,10 @@
   }
 
   function handleTopBarKeydown(event: KeyboardEvent) {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       void handleDoubleClick();
@@ -85,9 +87,9 @@
     {/if}
   </div>
 
-  <!-- Center Region: Title OR Alphabet (Mutually Exclusive) -->
+  <!-- Center Region: title/alphabet -->
   <div class="region-center">
-    {#if $currentRouteName !== 'now-playing' && $alphabetSelector.items.length > 0 && $alphabetSelector.onSelect}
+    {#if $alphabetSelector.items.length > 0 && $alphabetSelector.onSelect}
       <div class="alphabet-wrapper" data-testid="topbar-alphabet">
         <AlphabetSelector items={$alphabetSelector.items} onSelect={$alphabetSelector.onSelect} />
       </div>
@@ -98,8 +100,6 @@
 
   <!-- Right Region: Status Cluster -->
   <div class="region-right">
-    <DiagnosticsHoverCard />
-
     {#if !$sidebarVisible}
       <div class="system-controls">
         {#each systemItems as item (item.routeName)}
@@ -117,15 +117,17 @@
       <div class="divider"></div>
     {/if}
 
-    <button 
-      class="nav-btn rail-toggle" 
-      class:active={$isRailOpen}
-      onclick={toggleRail} 
-      title="Toggle Queue" 
-      use:pressScale
-    >
-      <PanelRight size={20} strokeWidth={1.5} />
-    </button>
+    {#if $currentRouteName !== 'now-playing'}
+      <button 
+        class="nav-btn rail-toggle" 
+        class:active={$isRailOpen}
+        onclick={toggleRail} 
+        title="Toggle Queue" 
+        use:pressScale
+      >
+        <PanelRight size={20} strokeWidth={1.5} />
+      </button>
+    {/if}
 
     <WindowControls />
   </div>
@@ -264,4 +266,5 @@
     background: rgba(18, 18, 18, 0.85);
     border-bottom-color: rgba(255, 255, 255, 0.05);
   }
+
 </style>

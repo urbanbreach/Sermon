@@ -6,15 +6,18 @@
     id: string;
     label: string;
     icon?: Component;
+    tabId?: string;
+    controlsId?: string;
   }
 
   interface Props {
     items: Item[];
     value: string;
     onchange: (id: string) => void;
+    ariaLabel?: string;
   }
 
-  let { items, value, onchange }: Props = $props();
+  let { items, value, onchange, ariaLabel }: Props = $props();
 
   function handleKeydown(event: KeyboardEvent, id: string) {
     const currentIndex = items.findIndex(item => item.id === id);
@@ -38,11 +41,13 @@
   }
 </script>
 
-<div class="segmented-control" role="tablist">
+<div class="segmented-control" role="tablist" aria-label={ariaLabel}>
   {#each items as item}
     <button
       role="tab"
+      id={item.tabId}
       aria-selected={value === item.id}
+      aria-controls={item.controlsId}
       tabindex={value === item.id ? 0 : -1}
       class:active={value === item.id}
       onclick={() => onchange(item.id)}

@@ -119,7 +119,7 @@ onMount(async () => {
 
     <TopBar />
 
-    <div class="main-body">
+    <div class="main-body" class:np-full-bleed={$currentRouteName === 'now-playing'}>
       {#if $sidebarVisible}
         <LeftNav />
         <ResizeHandle side="left" minWidth={180} maxWidth={450} />
@@ -151,8 +151,10 @@ onMount(async () => {
             {/if}
           </div>
 
-          <ResizeHandle side="right" minWidth={280} maxWidth={500} />
-          <RightRail />
+          {#if $currentRouteName !== 'now-playing'}
+            <ResizeHandle side="right" minWidth={280} maxWidth={500} />
+            <RightRail />
+          {/if}
         </div>
       </main>
     </div>
@@ -182,6 +184,10 @@ onMount(async () => {
     position: relative;
     z-index: 10;
     margin-bottom: var(--layout-player-height, 88px);
+  }
+
+  .main-body.np-full-bleed {
+    margin-bottom: 0;
   }
 
   .content-area {

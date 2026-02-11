@@ -261,8 +261,8 @@
 
   .preview-popover {
     position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
+    bottom: calc(100% + 8px);
+    left: 0;
     width: 256px;
     border-radius: var(--radius-md);
     border: 1px solid var(--divider-color);
@@ -270,8 +270,8 @@
     box-shadow: var(--shadow-3);
     padding: 14px;
     opacity: 0;
-    transform: translateY(-5px) scale(0.98);
-    transform-origin: top right;
+    transform: translateY(5px) scale(0.98);
+    transform-origin: bottom left;
     pointer-events: none;
     transition:
       opacity var(--motion-fast) var(--ease-out),

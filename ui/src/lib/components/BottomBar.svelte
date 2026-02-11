@@ -1,17 +1,16 @@
 <script lang="ts">
-  import { navigate } from '../state/route';
   import { 
     currentTrack, playbackState, togglePlayPause, next, previous, 
     volume, setVolume, playbackError, switchToDefault, progress, audioDebug,
     positionMs, durationMs, queue, currentTrackFull
   } from '../state/playback';
   import { seek } from '../state/playback';
-  import ArtworkImage from './ArtworkImage.svelte';
   import { selectedSummary } from '../state/albumSelection';
   import { pressScale } from '../utils/animations';
   import { SkipBack, Pause, Play, SkipForward, Volume2 } from '@lucide/svelte';
   import WaveformSeekbar from './WaveformSeekbar.svelte';
   import { waveformPeaks, loadWaveformPeaks, clearWaveformPeaks } from '../state/waveform';
+  import DiagnosticsHoverCard from './DiagnosticsHoverCard.svelte';
 
   // Load waveform when track changes
   $effect(() => {
@@ -145,15 +144,7 @@
   let detailTrackDisplay = $derived(nowPlayingLabel.trim().length > 0 ? nowPlayingLabel : 'Loading track details…');
   let detailMetaDisplay = $derived(rightMetaLabel.trim().length > 0 ? rightMetaLabel : 'selected: … / queued: …');
 
-  function openNowPlaying() {
-    navigate({ name: 'now-playing' });
-  }
 
-  function handleKey(e: KeyboardEvent) {
-    if (e.key === 'Enter' || e.key === ' ') {
-      openNowPlaying();
-    }
-  }
 </script>
 
 {#if $playbackError}
@@ -173,25 +164,8 @@
 
   <div class="bottom-bar">
     <div class="waveform-single-row" class:empty={isEmpty}>
-      <!-- Compact Now Playing -->
-      <div 
-        class="compact-now-playing"
-        onclick={openNowPlaying}
-        role="button"
-        tabindex="0"
-        onkeypress={handleKey}
-      >
-        {#if ($currentTrack as any)?.artworkCacheKey}
-          <ArtworkImage 
-            cacheKey={($currentTrack as any)?.artworkCacheKey} 
-            size={128} 
-            class="compact-artwork" 
-          />
-        {:else}
-          <div class="compact-artwork-placeholder"></div>
-        {/if}
-        <span class="compact-title">{$currentTrack?.title || 'Nothing Playing'}</span>
-      </div>
+      <!-- Diagnostics Pill -->
+      <DiagnosticsHoverCard />
 
       <!-- Transport Controls -->
       <div class="waveform-transport">
@@ -286,19 +260,22 @@
     isolation: isolate;
     display: flex;
     flex-direction: column;
-    border-top: 1px solid var(--divider-color);
-    box-shadow: var(--shadow-3);
+    border-top: 0.5px solid rgba(255, 255, 255, 0.06);
+    box-shadow: none;
+
+    /* Unified glass material — matches top-bar.np-transparent */
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
   }
 
-  /* Glass effect using CSS backdrop-filter */
+  /* Transparent — inherits glass from .bottom-bar-wrapper */
   .bottom-bar {
     height: 100%;
     width: 100%;
     display: flex;
     flex-direction: column;
-    
-    /* Matte styling */
-    background: #000;
+    background: transparent;
   }
 
   .ctrl-btn {
@@ -321,14 +298,14 @@
   .ctrl-btn.play { 
     width: 36px; 
     height: 36px; 
-    background: var(--surface-2);
+    background: rgba(255, 255, 255, 0.12);
     border-radius: 50%;
-    box-shadow: var(--shadow-1);
+    box-shadow: var(--shadow-1), 0 0 0 1px rgba(255, 255, 255, 0.06);
     color: var(--text-primary);
   }
   .ctrl-btn.play:hover { 
-    background: var(--surface-hover); 
-    box-shadow: var(--shadow-2);
+    background: rgba(255, 255, 255, 0.18); 
+    box-shadow: var(--shadow-2), 0 0 0 1px rgba(255, 255, 255, 0.10);
     transform: scale(1.05);
   }
   .ctrl-btn.play:active {
@@ -360,7 +337,7 @@
     line-height: var(--layout-bottom-bar-meta-height, 14px);
     color: var(--text-tertiary);
     border-bottom: none;
-    background: #000;
+    background: transparent;
     pointer-events: none;
   }
 
@@ -399,51 +376,6 @@
     pointer-events: none;
   }
 
-  /* Compact Now Playing */
-  .compact-now-playing {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 3px 10px 3px 3px;
-    background: var(--surface-1);
-    border: 1px solid var(--divider-color);
-    border-radius: 999px;
-    cursor: pointer;
-    transition: all var(--motion-fast) var(--ease-out);
-    min-width: 112px;
-    max-width: 170px;
-    flex-shrink: 0;
-  }
-  .compact-now-playing:hover {
-    background: var(--surface-hover);
-    border-color: var(--divider-color);
-  }
-
-  :global(.compact-artwork) {
-    width: 24px;
-    height: 24px;
-    border-radius: 4px;
-    object-fit: cover;
-    flex-shrink: 0;
-  }
-
-  .compact-artwork-placeholder {
-    width: 24px;
-    height: 24px;
-    border-radius: 4px;
-    background: var(--surface-2);
-    flex-shrink: 0;
-  }
-
-  .compact-title {
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
   /* Waveform Transport */
   .waveform-transport {
     display: flex;
@@ -453,8 +385,8 @@
   }
 
   .ctrl-btn.waveform-play {
-    width: 30px;
-    height: 30px;
+    width: 34px;
+    height: 34px;
   }
 
   /* Waveform Center (flexible) */
