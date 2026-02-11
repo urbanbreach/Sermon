@@ -40,8 +40,8 @@ struct ResolvedLyrics {
 }
 
 impl ResolvedLyrics {
-    fn has_any(&self) -> bool {
-        self.synced_lyrics.is_some() || self.plain_lyrics.is_some() || self.lyricist.is_some()
+    fn has_lyrics(&self) -> bool {
+        self.synced_lyrics.is_some() || self.plain_lyrics.is_some()
     }
 
     fn into_response(self, track_id: i64, source: &str) -> LyricsResponse {
@@ -156,7 +156,7 @@ fn read_embedded_lyrics(track_path: &str) -> Option<ResolvedLyrics> {
         lyricist: sanitize_optional_text(tags.lyricist),
     };
 
-    resolved.has_any().then_some(resolved)
+    resolved.has_lyrics().then_some(resolved)
 }
 
 fn load_cached_lyrics_response(
@@ -180,7 +180,7 @@ fn load_cached_lyrics_response(
             lyricist: None,
         };
 
-        if resolved.has_any() {
+        if resolved.has_lyrics() {
             return Some(resolved.into_response(track_id, &source_value));
         }
 
@@ -365,7 +365,7 @@ fn lyrics_from_candidate(candidate: LrclibCandidate) -> Option<ResolvedLyrics> {
         lyricist: None,
     };
 
-    resolved.has_any().then_some(resolved)
+    resolved.has_lyrics().then_some(resolved)
 }
 
 fn score_candidate(candidate: &LrclibCandidate, track: &TrackLookup) -> i32 {
@@ -712,6 +712,20 @@ mod tests {
         assert!(
             response.synced_lyrics.is_none() && response.plain_lyrics.is_none(),
             "none source should not carry any lyric payload"
+        );
+    }
+
+    #[test]
+    fn test_resolved_lyrics_has_lyrics_ignores_lyricist_only_payload() {
+        let lyricist_only = ResolvedLyrics {
+            synced_lyrics: None,
+            plain_lyrics: None,
+            lyricist: Some("Composer".to_string()),
+        };
+
+        assert!(
+            !lyricist_only.has_lyrics(),
+            "lyricist-only embedded tags must not block cache/lrclib lyrics lookup"
         );
     }
 }
