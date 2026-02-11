@@ -13,8 +13,6 @@ export type Route =
   | { name: 'artist-detail'; artistSort: string }
   | { name: 'search-results'; query: string };
 
-type LegacyRoute = { name: 'lyrics-fullscreen' };
-
 // Route stack for back navigation
 const routeStack = writable<Route[]>([{ name: 'albums' }]);
 
@@ -27,22 +25,19 @@ export const currentRoute = derived(routeStack, ($stack) =>
 );
 
 // Helper to get route name for simple comparisons
-export const currentRouteName = derived(currentRoute, ($route): string => $route.name);
+export const currentRouteName = derived(currentRoute, ($route): Route['name'] => $route.name);
 
 // Navigate to a new route (push to stack)
-export function navigate(route: Route): void;
-export function navigate(route: LegacyRoute): void;
-export function navigate(route: Route | LegacyRoute): void {
-  const typedRoute = route as Route;
+export function navigate(route: Route): void {
   forwardStack.set([]); // Clear forward history on new navigation
   routeStack.update((stack) => {
     // Don't push duplicate routes
     const current = stack[stack.length - 1];
-    if (current && routesEqual(current, typedRoute)) {
+    if (current && routesEqual(current, route)) {
       return stack;
     }
     // Limit stack size to prevent memory issues
-    const newStack = [...stack, typedRoute];
+    const newStack = [...stack, route];
     if (newStack.length > 20) {
       newStack.shift();
     }

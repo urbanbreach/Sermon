@@ -121,6 +121,12 @@
     flex-direction: column;
     color: #fff;
     background: var(--surface-0, #0a0a0a);
+    animation: np-fade-in 0.35s ease-out;
+  }
+
+  @keyframes np-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
 
   /* Blurred album art background */
@@ -178,7 +184,7 @@
   .np-artwork-frame {
     width: 100%;
     aspect-ratio: 1;
-    border-radius: 6px;
+    border-radius: var(--artwork-radius-album-detail, 12px);
     overflow: hidden;
     box-shadow:
       0 24px 64px rgba(0, 0, 0, 0.55),
@@ -206,6 +212,10 @@
     letter-spacing: -0.025em;
     text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
     color: #fff;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .np-track-info h2 {
@@ -214,6 +224,9 @@
     margin: 0 0 0.2rem 0;
     color: rgba(255, 255, 255, 0.75);
     text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .np-track-info h3 {
@@ -222,6 +235,9 @@
     margin: 0;
     color: rgba(255, 255, 255, 0.5);
     text-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* Right pane: Lyrics */
@@ -378,6 +394,10 @@
 
   /* Accessibility: prefers-reduced-motion */
   @media (prefers-reduced-motion: reduce) {
+    .now-playing-view {
+      animation: none;
+    }
+
     .lyric-line {
       transition: none;
       transform: none !important;
