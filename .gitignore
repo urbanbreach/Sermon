@@ -1,90 +1,82 @@
-# Node
-node_modules/
-dist/
-build/
-.pnpm-store/
-*.tsbuildinfo
+# Keep this repository focused on application code + core metadata.
+# Everything at the top level is ignored by default unless explicitly allowed.
+/*
 
-# Rust
-target/
-**/*.rs.bk
-Cargo.lock.bak
+# Core repository files
+!/.gitignore
+!/README.md
+!/LICENSE
+!/LICENSE.*
+!/.editorconfig
+!/.gitattributes
+!/.github/
+!/Cargo.toml
+!/Cargo.lock
+!/rust-toolchain.toml
+!/package.json
+!/pnpm-lock.yaml
+!/pnpm-workspace.yaml
 
-# OS
-.DS_Store
-Thumbs.db
-Desktop.ini
-ehthumbs.db
-ehthumbs_vista.db
+# App code and project tooling
+!/crates/
+!/src-tauri/
+!/ui/
+!/scripts/
 
-# IDEs
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-.project
-.classpath
-.settings/
-*.sublime-workspace
-*.sublime-project
-rust-analyzer.cmd
+# Preserve intentional placeholders
+!**/.gitkeep
 
-# Environment
-.env
-.env.local
-.env.*.local
-*.local
+# Dependencies / build outputs
+**/node_modules/
+**/target/
+**/dist/
+**/dist-ssr/
+**/build/
+**/release/
+**/.vite/
+**/.cache/
+**/.parcel-cache/
+**/*.tsbuildinfo
 
-# Logs
-*.log
-artifacts/logs/
+# Test outputs
+**/coverage/
+**/.nyc_output/
+**/test-results/
+**/playwright-report/
 
-# Sermon Artifacts (screenshots gitignored, but keep docs)
-artifacts/ui/**/*.png
-artifacts/ui/**/*.jpg
-artifacts/ui/**/*.jpeg
-!artifacts/ui/**/REVIEW.md
-!artifacts/ui/**/IMPLEMENTATION_REPORT.md
+# Logs and temp files
+**/logs/
+**/*.log
+**/*.tmp
+**/*.temp
+**/*.bak
+**/*.backup
+**/*~
+**/*.swp
+**/*.swo
 
-# Tauri
-src-tauri/target/
-src-tauri/WixTools/
-src-tauri/icons/*.ico.bak
+# Environment / secrets
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.template
 
-# Database (SQLite for future milestones)
-*.db
-*.db-shm
-*.db-wal
-*.sqlite
-*.sqlite3
+# Databases
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.sqlite
+**/*.sqlite3
 
-# Test artifacts
-coverage/
-.nyc_output/
-test-results/
-playwright-report/
+# OS/editor clutter
+**/.DS_Store
+**/Thumbs.db
+**/Desktop.ini
+**/ehthumbs.db
+**/ehthumbs_vista.db
+**/.idea/
+**/.vscode/
+**/rust-analyzer.cmd
 
-# Temporary files
-*.tmp
-*.temp
-*.bak
-*.backup
-~$*
-%TEMP%/
-
-# Screenshots folder (user captures)
-screenshots/
-
-# Session files (AI orchestration debug)
-session-*.md
-
-# AI Orchestration (Sisyphus internal)
-#.sisyphus/
-
-# Internal planning docs (not for public repo)
-#plans/
-#prompts/
-
-# UI test fixtures (large binary files)
-#ui/fixtures/
+# Tauri generated files
+/src-tauri/gen/schemas/
