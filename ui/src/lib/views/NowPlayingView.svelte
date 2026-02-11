@@ -1,475 +1,395 @@
 <script lang="ts">
-  import { goBack } from '../state/route';
-  import { 
-    currentTrack, playbackState, progress, 
-    positionMs, durationMs, seek, audioDebug
-  } from '../state/playback';
+  import { onMount } from 'svelte';
+  import { currentTrack, currentTrackFull } from '../state/playback';
+  import { currentLyrics, currentLineIndex, lyricsStatus } from '../state/lyrics';
+  import { currentArtworkUrl } from '../state/artwork';
+  import { clearAlphabetSelector } from '../state/alphabetSelector';
+  import { reduceEffects } from '../state/effects';
   import ArtworkImage from '../components/ArtworkImage.svelte';
-  import { ArrowLeft, Disc, Activity, Cpu, Speaker } from '@lucide/svelte';
-  
-  function handleGoBack() {
-    goBack();
-  }
+  import { Disc } from '@lucide/svelte';
 
-  function formatDuration(ms: number): string {
-    if (!ms && ms !== 0) return '--:--';
-    const minutes = Math.floor(ms / 60000);
-    const seconds = Math.floor((ms % 60000) / 1000);
-    return minutes + ":" + (seconds < 10 ? '0' : '') + seconds;
-  }
+  let lyricsScrollEl: HTMLDivElement | undefined = $state(undefined);
 
-  function handleSeek(e: Event) {
-    const target = e.target as HTMLInputElement;
-    const percent = parseFloat(target.value);
-    const ms = percent * ($durationMs || 0);
-    seek(ms);
-  }
+  onMount(() => {
+    clearAlphabetSelector();
+  });
 
-  // Helper to format sample rate (e.g. 44100 -> 44.1 kHz)
-  function formatSampleRate(hz?: number): string {
-    if (!hz) return 'Unknown';
-    return (hz / 1000).toFixed(1) + ' kHz';
-  }
+  // Auto-scroll to active lyric line
+  $effect(() => {
+    const idx = $currentLineIndex;
+    if (!lyricsScrollEl || idx < 0) return;
+    const activeLine = lyricsScrollEl.querySelector('.lyric-line.active');
+    if (activeLine) {
+      const reduced = $reduceEffects || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      activeLine.scrollIntoView({
+        behavior: reduced ? 'auto' : 'smooth',
+        block: 'center',
+      });
+    }
+  });
 
-  // Helper for channels
-  function formatChannels(ch?: number): string {
-    if (!ch) return 'Stereo';
-    if (ch === 1) return 'Mono';
-    if (ch === 2) return 'Stereo';
-    return `${ch} Ch`;
-  }
+  // Derive album context for ArtworkImage props
+  const albumContext = $derived.by(() => {
+    const full = $currentTrackFull;
+    const basic = $currentTrack;
+    if (!full && !basic) return { artistSort: '', titleSort: '' };
+    const artistRaw = full?.albumArtist || full?.artist || basic?.artist || 'unknown artist';
+    const titleRaw = full?.album || basic?.album || 'unknown album';
+    return {
+      artistSort: artistRaw.trim().toLowerCase(),
+      titleSort: titleRaw.trim().toLowerCase(),
+    };
+  });
 </script>
 
-<div class="now-playing-view">
-  <div class="top-nav">
-    <button class="back-btn" onclick={handleGoBack}>
-      <ArrowLeft size={20} />
-      <span>Back</span>
-    </button>
-  </div>
-  
-  <div class="content-grid">
-    <div class="artwork-section">
-      <div class="art-container">
-        {#if ($currentTrack as any)?.artworkCacheKey}
-          <ArtworkImage 
-            cacheKey={($currentTrack as any)?.artworkCacheKey} 
-            size={512} 
-            alt="Album artwork" 
-            class="art-image" 
+<div
+  class="now-playing-view"
+  data-testid="now-playing-view"
+  data-reduce-effects={$reduceEffects}
+  style:--album-art={$currentArtworkUrl ? `url(${$currentArtworkUrl})` : 'none'}
+>
+  {#if $currentTrack}
+    <div class="np-content">
+      <!-- Left: Artwork + Track Info -->
+      <div class="np-artwork-pane" data-testid="now-playing-artwork">
+        <div class="np-artwork-frame">
+          <ArtworkImage
+            artistSort={albumContext.artistSort}
+            titleSort={albumContext.titleSort}
+            size={512}
+            alt="Album artwork for {$currentTrack.title || 'Unknown'}"
+            class="np-art-img"
           />
+        </div>
+        <div class="np-track-info">
+          <h1>{$currentTrack.title || 'Untitled'}</h1>
+          <h2>{$currentTrack.artist || 'Unknown Artist'}</h2>
+          <h3>{$currentTrack.album || 'Unknown Album'}</h3>
+        </div>
+      </div>
+
+      <!-- Right: Lyrics -->
+      <div class="np-lyrics-pane" data-testid="now-playing-lyrics">
+        {#if $lyricsStatus === 'loading'}
+          <div class="np-lyrics-state">
+            <div class="lyrics-loading-pulse"></div>
+            <p>Loading lyrics&hellip;</p>
+          </div>
+        {:else if $lyricsStatus === 'error'}
+          <div class="np-lyrics-state">
+            <p>Failed to load lyrics.</p>
+          </div>
+        {:else if $currentLyrics && $currentLyrics.length > 0}
+          <div class="np-lyrics-scroll" bind:this={lyricsScrollEl}>
+            <div class="np-lyrics-spacer"></div>
+            {#each $currentLyrics as line, i (i)}
+              <p
+                class="lyric-line"
+                class:active={i === $currentLineIndex}
+                class:before={i < $currentLineIndex}
+                class:after={i > $currentLineIndex}
+              >
+                {line || '\u00A0'}
+              </p>
+            {/each}
+            <div class="np-lyrics-spacer"></div>
+          </div>
         {:else}
-          <div class="art-placeholder">
-            <Disc size={64} strokeWidth={1} />
+          <div class="np-lyrics-state">
+            <Disc size={40} strokeWidth={1.5} />
+            <p>No lyrics available</p>
           </div>
         {/if}
       </div>
     </div>
-
-    <div class="info-section">
-      <div class="track-header">
-        <h1>{$currentTrack?.title || 'Nothing Playing'}</h1>
-        <h2>{$currentTrack?.artist || 'Unknown Artist'}</h2>
-        <h3>{$currentTrack?.album || 'Unknown Album'}</h3>
-      </div>
-
-      {#if $audioDebug}
-        <div class="tech-grid">
-          <div class="tech-item">
-            <span class="label">Format</span>
-            <span class="value">{$audioDebug.decode_format.codec?.toUpperCase() || 'PCM'}</span>
-          </div>
-          <div class="tech-item">
-            <span class="label">Bit Depth</span>
-            <span class="value">{$audioDebug.decode_format.bit_depth}-bit</span>
-          </div>
-          <div class="tech-item">
-            <span class="label">Sample Rate</span>
-            <span class="value">{formatSampleRate($audioDebug.decode_format.sample_rate)}</span>
-          </div>
-          <div class="tech-item">
-            <span class="label">Channels</span>
-            <span class="value">{formatChannels($audioDebug.decode_format.channels)}</span>
-          </div>
-        </div>
-
-        <div class="signal-path">
-          <div class="path-header">
-            <Activity size={14} />
-            <span>SIGNAL PATH</span>
-          </div>
-          <div class="path-flow">
-            <div class="node source">
-              <span class="node-icon"><Disc size={14} /></span>
-              <div class="node-info">
-                <span class="node-title">Source</span>
-                <span class="node-detail">
-                  {$audioDebug.decode_format.codec?.toUpperCase()} 
-                  {formatSampleRate($audioDebug.decode_format.sample_rate)} / {$audioDebug.decode_format.bit_depth}bit
-                </span>
-              </div>
-            </div>
-            
-            <div class="connector"></div>
-
-            <div class="node engine">
-              <span class="node-icon"><Cpu size={14} /></span>
-              <div class="node-info">
-                <span class="node-title">Engine</span>
-                <span class="node-detail">
-                  {$audioDebug.output_mode === 'exclusive' ? 'WASAPI Exclusive' : 'WASAPI Shared'}
-                  {#if $audioDebug.bit_perfect === 'yes'}
-                    <span class="badge-perfect">BIT-PERFECT</span>
-                  {/if}
-                </span>
-              </div>
-            </div>
-
-            <div class="connector"></div>
-
-            <div class="node output">
-              <span class="node-icon"><Speaker size={14} /></span>
-              <div class="node-info">
-                <span class="node-title">Output</span>
-                <span class="node-detail">
-                  {$audioDebug.device_name}
-                  <br/>
-                  {formatSampleRate($audioDebug.output_format.sample_rate)} / {$audioDebug.output_format.bit_depth}bit
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      {/if}
+  {:else}
+    <!-- Empty: nothing playing -->
+    <div class="np-empty" data-testid="now-playing-empty">
+      <Disc size={64} strokeWidth={1} />
+      <h2>Nothing Playing</h2>
+      <p>Select a track to get started</p>
     </div>
-  </div>
-
-  <div class="bottom-controls">
-    <div class="scrubber-container">
-      <div class="time-info">
-        <span>{formatDuration($positionMs)}</span>
-        <span>{formatDuration($durationMs)}</span>
-      </div>
-      <input 
-        type="range" 
-        class="scrubber"
-        min="0" 
-        max="1" 
-        step="0.001" 
-        value={$progress} 
-        onchange={handleSeek}
-      />
-    </div>
-  </div>
+  {/if}
 </div>
 
 <style>
   .now-playing-view {
-    position: absolute;
-    inset: 0;
-    background: transparent;
-    z-index: 100;
-    display: flex;
-    flex-direction: column;
-    padding: 2rem;
-    color: var(--text-primary);
-    box-sizing: border-box;
-    overflow: hidden;
-  }
-
-  .top-nav {
-    margin-bottom: 2rem;
-  }
-
-  .back-btn {
-    background: var(--surface-1);
-    border: 1px solid var(--divider-color);
-    padding: 0.5rem 1rem;
-    color: var(--text-secondary);
-    cursor: pointer;
-    border-radius: 99px;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-  }
-
-  .back-btn:hover {
-    background: var(--surface-hover);
-    color: var(--text-primary);
-    border-color: var(--text-primary);
-  }
-
-  .content-grid {
     flex: 1;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4rem;
-    align-items: center;
-    max-width: 1400px;
-    margin: 0 auto;
-    width: 100%;
-    padding-bottom: 4rem; /* Space for bottom controls */
-  }
-
-  .artwork-section {
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  .art-container {
-    width: 100%;
-    max-width: 500px;
-    aspect-ratio: 1;
-    background: #111;
-    border-radius: 4px; /* Brutalist: sharp or small radius */
-    box-shadow: 0 30px 80px rgba(0,0,0,0.5);
     position: relative;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    color: #fff;
+    background: var(--surface-0, #0a0a0a);
   }
 
-  :global(.art-image) {
+  /* Blurred album art background */
+  .now-playing-view::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--album-art, none);
+    background-size: cover;
+    background-position: center;
+    filter: blur(36px) saturate(0.95);
+    opacity: 0.5;
+    transform: scale(1.1);
+    z-index: 0;
+  }
+
+  /* Gradient overlay for readability */
+  .now-playing-view::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(120deg, rgba(10, 10, 10, 0.35), rgba(10, 10, 10, 0.6));
+    z-index: 0;
+  }
+
+  /* Reduce effects: matte fallback */
+  .now-playing-view[data-reduce-effects='true']::before {
+    filter: none;
+    opacity: 0.15;
+  }
+
+  /* Two-column content */
+  .np-content {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    display: flex;
+    gap: 3rem;
+    padding: 2.5rem;
+    min-height: 0;
+    align-items: center;
+  }
+
+  /* Left pane: Artwork + Track Info */
+  .np-artwork-pane {
+    flex: 0 0 auto;
+    width: 45%;
+    max-width: 500px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.75rem;
+  }
+
+  .np-artwork-frame {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow:
+      0 24px 64px rgba(0, 0, 0, 0.55),
+      0 4px 16px rgba(0, 0, 0, 0.35);
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  :global(.np-art-img) {
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
 
-  .art-placeholder {
+  .np-track-info {
+    text-align: center;
     width: 100%;
-    height: 100%;
-    background: #1a1a1a;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: rgba(255, 255, 255, 0.1);
+    padding: 0 0.5rem;
   }
 
-  .info-section {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    max-width: 600px;
-  }
-
-  .track-header {
-    margin-bottom: 3rem;
-  }
-
-  .track-header h1 {
-    font-size: clamp(2rem, 4vw, 3.5rem);
+  .np-track-info h1 {
+    font-size: clamp(1.5rem, 2.5vw, 2.25rem);
     font-weight: 800;
-    line-height: 1.1;
-    margin: 0 0 0.5rem 0;
-    letter-spacing: -0.03em;
+    line-height: 1.15;
+    margin: 0 0 0.35rem 0;
+    letter-spacing: -0.025em;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+    color: #fff;
   }
 
-  .track-header h2 {
-    font-size: clamp(1.2rem, 2vw, 1.75rem);
+  .np-track-info h2 {
+    font-size: clamp(1rem, 1.5vw, 1.3rem);
     font-weight: 500;
-    color: var(--text-secondary);
-    margin: 0 0 0.25rem 0;
-    letter-spacing: -0.01em;
+    margin: 0 0 0.2rem 0;
+    color: rgba(255, 255, 255, 0.75);
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
   }
 
-  .track-header h3 {
-    font-size: 1.1rem;
-    color: var(--text-tertiary);
-    margin: 0;
+  .np-track-info h3 {
+    font-size: clamp(0.85rem, 1.2vw, 1.05rem);
     font-weight: 400;
+    margin: 0;
+    color: rgba(255, 255, 255, 0.5);
+    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
   }
 
-  .tech-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 2rem;
-    margin-bottom: 3rem;
-    padding-bottom: 2rem;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-  }
-
-  .tech-item {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .tech-item .label {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--text-tertiary);
-    font-weight: 600;
-  }
-
-  .tech-item .value {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 1.25rem;
-    color: var(--text-primary);
-  }
-
-  .signal-path {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .path-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--text-tertiary);
-    font-weight: 600;
-  }
-
-  .path-flow {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    position: relative;
-  }
-
-  .node {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.75rem;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 4px;
-  }
-
-  .node-icon {
-    color: var(--text-tertiary);
+  /* Right pane: Lyrics */
+  .np-lyrics-pane {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
+    overflow: hidden;
+    position: relative;
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0%,
+      black 10%,
+      black 90%,
+      transparent 100%
+    );
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent 0%,
+      black 10%,
+      black 90%,
+      transparent 100%
+    );
   }
 
-  .node-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
+  .np-lyrics-scroll {
+    max-height: 100%;
+    width: 100%;
+    overflow-y: auto;
+    text-align: center;
+    scrollbar-width: none;
+    scroll-behavior: smooth;
+    padding: 0 1.5rem;
   }
 
-  .node-title {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--text-secondary);
+  .np-lyrics-scroll::-webkit-scrollbar {
+    display: none;
   }
 
-  .node-detail {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    color: var(--text-tertiary);
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+  .np-lyrics-spacer {
+    height: 40vh;
   }
 
-  .connector {
-    width: 1px;
-    height: 0.75rem;
-    background: rgba(255,255,255,0.1);
-    margin-left: 1.25rem; /* Align with icon center roughly */
+  /* Lyric lines */
+  .lyric-line {
+    margin: 0;
+    padding: 0.5rem 0;
+    font-size: clamp(1.5rem, 2.2vw, 2rem);
+    font-weight: 700;
+    line-height: 1.2;
+    transition: all 0.3s ease;
+    color: rgba(255, 255, 255, 0.3);
+    cursor: default;
   }
 
-  .badge-perfect {
-    background: rgba(255, 255, 255, 0.1);
+  .lyric-line.active {
     color: #fff;
-    font-size: 0.6rem;
-    padding: 0.1rem 0.3rem;
-    border-radius: 2px;
-    font-weight: 600;
+    transform: scale(1.05);
+    text-shadow: 0 0 40px rgba(255, 255, 255, 0.3);
   }
 
-  .bottom-controls {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 2rem 4rem;
-    background: var(--surface-0);
-    border-top: 1px solid var(--divider-color);
+  .lyric-line.before {
+    color: rgba(255, 255, 255, 0.25);
   }
 
-  .scrubber-container {
-    width: 100%;
-    max-width: 800px;
-    margin: 0 auto;
+  .lyric-line.after {
+    color: rgba(255, 255, 255, 0.35);
+  }
+
+  /* Lyrics empty / loading / error states */
+  .np-lyrics-state {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    align-items: center;
+    gap: 1rem;
+    color: rgba(255, 255, 255, 0.4);
+    text-align: center;
   }
 
-  .time-info {
+  .np-lyrics-state p {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 500;
+  }
+
+  .lyrics-loading-pulse {
+    width: 36px;
+    height: 36px;
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    border-top-color: rgba(255, 255, 255, 0.6);
+    border-radius: 50%;
+    animation: lyric-spin 0.8s linear infinite;
+  }
+
+  @keyframes lyric-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Empty state: nothing playing */
+  .np-empty {
+    position: relative;
+    z-index: 1;
+    flex: 1;
     display: flex;
-    justify-content: space-between;
-    font-size: 0.8rem;
-    color: var(--text-tertiary);
-    font-family: 'JetBrains Mono', monospace;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    color: rgba(255, 255, 255, 0.3);
   }
 
-  .scrubber {
-    width: 100%;
-    height: 4px;
-    background: rgba(255,255,255,0.1);
-    border-radius: 2px;
-    appearance: none;
-    cursor: pointer;
-    outline: none;
-  }
-  
-  .scrubber::-webkit-slider-thumb {
-    appearance: none;
-    width: 12px;
-    height: 12px;
-    background: #fff;
-    border-radius: 0; /* Square thumb for brutalist feel */
-    transition: transform 0.1s;
-    margin-top: -4px;
-  }
-  
-  .scrubber::-webkit-slider-runnable-track {
-    height: 4px;
-    border-radius: 2px;
-  }
-  
-  .scrubber::-webkit-slider-thumb:hover {
-    transform: scale(1.5);
+  .np-empty h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.5);
   }
 
+  .np-empty p {
+    margin: 0;
+    font-size: 0.95rem;
+    color: rgba(255, 255, 255, 0.3);
+  }
+
+  /* Responsive: stack vertically below 900px */
   @media (max-width: 900px) {
-    .content-grid {
-      grid-template-columns: 1fr;
+    .np-content {
+      flex-direction: column;
+      padding: 1.5rem;
       gap: 2rem;
-      text-align: center;
+      align-items: stretch;
     }
 
-    .artwork-section {
-      justify-content: center;
-    }
-
-    .info-section {
-      align-items: center;
-    }
-
-    .track-header h1 {
-      font-size: 2rem;
-    }
-
-    .tech-grid {
+    .np-artwork-pane {
       width: 100%;
-      text-align: left;
+      max-width: 320px;
+      align-self: center;
     }
 
-    .signal-path {
-      width: 100%;
-      text-align: left;
+    .np-lyrics-pane {
+      flex: 1;
+    }
+
+    .lyric-line {
+      font-size: 1.25rem;
+    }
+  }
+
+  /* Accessibility: prefers-reduced-motion */
+  @media (prefers-reduced-motion: reduce) {
+    .lyric-line {
+      transition: none;
+      transform: none !important;
+    }
+
+    .np-lyrics-scroll {
+      scroll-behavior: auto;
+    }
+
+    .lyrics-loading-pulse {
+      animation: none;
+      border-color: rgba(255, 255, 255, 0.3);
     }
   }
 </style>
